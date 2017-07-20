@@ -1,0 +1,14 @@
+[package]
+name = "rust_sms"
+version = "0.1.0"
+authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+
+[lib]
+name = "rust_sms"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rust_sms_bin"
+path = "src/main.rs"
+
+[dependencies]
