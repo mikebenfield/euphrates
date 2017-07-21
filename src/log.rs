@@ -1,8 +1,8 @@
 //! # Logging facilities
 //!
-//! Simple usage: create an instance of either the [`LogNothing`], [`LogErrors`],
-//! [`LogMajorsAndErrors`], or [`LogEverything`] structs, then apply one of the
-//! [`log_error`], [`log_major`], or [`log_minor`] macros.
+//! Simple usage: create an instance of either the [`LogNothing`], [`LogFaults`],
+//! [`LogMajorsAndFaults`], or [`LogEverything`] structs, then apply one of the
+//! [`log_fault`], [`log_major`], or [`log_minor`] macros.
 //!
 //! For example:
 //!
@@ -10,20 +10,21 @@
 //! let log = log::LogEverything(std::io::stdout());
 //! log_minor(log, "Something minor happened");
 //! log_major(log, "Something major happened");
-//! log_error(log, "A tragic error happened");
+//! log_fault(log, "A tragic error happened");
 //! ```
 //! 
-//! In increasing order of priority, there are minor, major, and error log entires.
+//! In increasing order of priority, there are minor, major, and fault log entires.
 //! The [`Log`] trait accepts all three of these, but is designed so that
 //! types may not record all three, and so that `rustc` can optimize away all
-//! calls when logs are not actually accepted.
+//! calls when logs are not actually recorded. Fault log entries are intended to
+//! log faulty Master System code; for instance, attempts to write to ROM.
 //!
 //! [`Log`]: trait.Log.html
 //! [`LogNothing`]: struct.LogNothing.html
-//! [`LogErrors`]: struct.LogErrors.html
-//! [`LogMajorsAndErrors`]: struct.LogMajorsAndErrors.html
+//! [`LogFaults`]: struct.LogFaults.html
+//! [`LogMajorsAndFaults`]: struct.LogMajorsAndFaults.html
 //! [`LogEverything`]: struct.LogEverything.html
-//! [`log_error`]: ../macro.log_error.html
+//! [`log_fault`]: ../macro.log_error.html
 //! [`log_major`]: ../macro.log_major.html
 //! [`log_minor`]: ../macro.log_minor.html
 
@@ -51,7 +52,7 @@ impl std::error::Error for Error {
 pub trait Log {
     fn log_minor0(&mut self, s: String);
     fn log_major0(&mut self, s: String);
-    fn log_error0(&mut self, s: String);
+    fn log_fault0(&mut self, s: String);
 
     /// Will this `Log` actually record minor log entries? If constantly `false`,
     /// `rustc` can optimize away calls to the [`log_minor`] macro.
@@ -64,11 +65,11 @@ pub trait Log {
 
     /// See [`does_log_minor`].
     /// [`does_log_minor`]: #ty_method.does_log-minor
-    fn does_log_error(&self) -> bool;
+    fn does_log_fault(&self) -> bool;
 
-    /// Returns `Ok` if no error has been recorded; else returns a string (Error)
-    /// indicating the first error recorded.
-    fn check_error(&self) -> Result<(), Error>;
+    /// Returns `Ok` if no fault has been recorded; else returns a string
+    /// indicating the first fault recorded.
+    fn check_fault(&self) -> Option<String>;
 }
 
 trait Bool {
@@ -87,16 +88,16 @@ impl Bool for False {
     fn get() -> bool { false }
 }
 
-struct LogGeneral<LogMinor: Bool, LogMajor: Bool, LogError: Bool, W: Write> {
+struct LogGeneral<LogMinor: Bool, LogMajor: Bool, LogFault: Bool, W: Write> {
     write: W,
-    error: Result<(), Error>,
+    fault: Option<String>,
     pd1: std::marker::PhantomData<LogMinor>,
     pd2: std::marker::PhantomData<LogMajor>,
-    pd3: std::marker::PhantomData<LogError>,
+    pd3: std::marker::PhantomData<LogFault>,
 }
 
-impl<LogMinor: Bool, LogMajor: Bool, LogError: Bool, W: Write> Log for
-  LogGeneral<LogMinor, LogMajor, LogError, W> {
+impl<LogMinor: Bool, LogMajor: Bool, LogFault: Bool, W: Write> Log for
+  LogGeneral<LogMinor, LogMajor, LogFault, W> {
     fn log_minor0(&mut self, s: String) {
         self.write.write_all(s.as_bytes());
         self.write.write_all(b"\n");
@@ -105,20 +106,18 @@ impl<LogMinor: Bool, LogMajor: Bool, LogError: Bool, W: Write> Log for
         self.write.write_all(s.as_bytes());
         self.write.write_all(b"\n");
     }
-    fn log_error0(&mut self, s: String) {
-        self.error =
-            match &self.error {
-                &Ok(()) => Err(Error { msg: s.clone() }),
-                x => x.clone(),
-            };
+    fn log_fault0(&mut self, s: String) {
+        if self.fault.is_none() {
+            self.fault = Some(s);
+        }
         self.write.write_all(s.as_bytes());
         self.write.write_all(b"\n");
     }
     fn does_log_minor(&self) -> bool { LogMinor::get() }
     fn does_log_major(&self) -> bool { LogMajor::get() }
-    fn does_log_error(&self) -> bool { LogError::get() }
-    fn check_error(&self) -> Result<(), Error> {
-        self.error.clone()
+    fn does_log_fault(&self) -> bool { LogFault::get() }
+    fn check_fault(&self) -> Option<String> {
+        self.fault.clone()
     }
 }
 
@@ -141,7 +140,7 @@ impl LogNothing {
         LogNothing(
             LogGeneral {
                 write: Default::default(),
-                error: Ok(()),
+                fault: Ok(()),
                 pd1: Default::default(),
                 pd2: Default::default(),
                 pd3: Default::default(),
@@ -150,9 +149,9 @@ impl LogNothing {
     }
 }
 
-pub struct LogErrors<W: Write>(LogGeneral<False, False, True, W>);
+pub struct LogFaults<W: Write>(LogGeneral<False, False, True, W>);
 
-pub struct LogMajorsAndErrors<W: Write>(LogGeneral<False, True, True, W>);
+pub struct LogMajorsAndFaults<W: Write>(LogGeneral<False, True, True, W>);
 
 pub struct LogEverything<W: Write>(LogGeneral<True, True, True, W>);
 
@@ -163,7 +162,7 @@ macro_rules! impl_new {
                 $type_name(
                     LogGeneral {
                         write: write,
-                        error: Ok(()),
+                        fault: Ok(()),
                         pd1: Default::default(),
                         pd2: Default::default(),
                         pd3: Default::default(),
@@ -174,9 +173,9 @@ macro_rules! impl_new {
     }
 }
 
-impl_new!{LogErrors}
+impl_new!{LogFaults}
 
-impl_new!{LogMajorsAndErrors}
+impl_new!{LogMajorsAndFaults}
 
 impl_new!{LogEverything}
 
@@ -189,8 +188,8 @@ macro_rules! impl_log {
             fn log_major0(&mut self, s: String) {
                 self.0.log_major0(s)
             }
-            fn log_error0(&mut self, s: String) {
-                self.0.log_error0(s)
+            fn log_fault0(&mut self, s: String) {
+                self.0.log_fault0(s)
             }
             fn does_log_minor(&self) -> bool {
                 self.0.does_log_minor()
@@ -198,11 +197,11 @@ macro_rules! impl_log {
             fn does_log_major(&self) -> bool {
                 self.0.does_log_major()
             }
-            fn does_log_error(&self) -> bool {
-                self.0.does_log_error()
+            fn does_log_fault(&self) -> bool {
+                self.0.does_log_fault()
             }
-            fn check_error(&self) -> Result<(), Error> {
-                self.0.check_error()
+            fn check_fault(&self) -> Option<String> {
+                self.0.check_fault()
             }
         }
     }
@@ -210,9 +209,9 @@ macro_rules! impl_log {
 
 impl_log!{[] LogNothing}
 
-impl_log!{[<W: Write>] LogErrors<W>}
+impl_log!{[<W: Write>] LogFaults<W>}
 
-impl_log!{[<W: Write>] LogMajorsAndErrors<W>}
+impl_log!{[<W: Write>] LogMajorsAndFaults<W>}
 
 impl_log!{[<W: Write>] LogEverything<W>}
 
@@ -251,12 +250,12 @@ macro_rules! log_major {
 }
 
 #[macro_export]
-macro_rules! log_error {
+macro_rules! log_fault {
     ($log: expr, $fmt: expr, $($arg: tt)*) => {
         if $log.does_log_major() {
             $log.log_major0(
                 format!(
-                    "Error: {}",
+                    "Fault: {}",
                     format!($fmt, $($arg)*)
                 )
             )

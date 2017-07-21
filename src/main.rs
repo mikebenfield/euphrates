@@ -11,7 +11,7 @@ fn main() {
     let mut args: Vec<String> = Vec::new();
     args.extend(std::env::args());
     if args.len() < 3 {
-        println!("Usage: exec filename n");
+        eprintln!("Usage: exec filename n");
         return;
     }
     let filename = &args[1];
@@ -24,16 +24,4 @@ fn main() {
     let n: u32 = args[2].parse().expect("Usage: exec filename n");
 
     main_loop(&mut em, n);
-
-    // let mut z80: types::TestingZ80 = Default::default();
-    // match env::args().nth(1) {
-    //     Some(s) => {
-    //         read_file(&mut z80.memory, s);
-    //     }
-    //     _ => panic!("provide a filename"),
-    // }
-    // for _ in 0..0x50000 {
-    //     execute::execute1(&mut z80);
-    //     println!("\n  {:?}", z80);
-    // }
 }
