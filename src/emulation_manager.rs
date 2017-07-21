@@ -36,8 +36,8 @@ impl<L: Log, M: MemoryMapperHardware> Log for EmulationManager<L, M> {
     fn log_major0(&mut self, s: String) {
         self.log.log_major0(s)
     }
-    fn log_error0(&mut self, s: String) {
-        self.log.log_error0(s)
+    fn log_fault0(&mut self, s: String) {
+        self.log.log_fault0(s)
     }
     fn does_log_minor(&self) -> bool {
         self.log.does_log_minor()
@@ -45,11 +45,11 @@ impl<L: Log, M: MemoryMapperHardware> Log for EmulationManager<L, M> {
     fn does_log_major(&self) -> bool {
         self.log.does_log_major()
     }
-    fn does_log_error(&self) -> bool {
-        self.log.does_log_error()
+    fn does_log_fault(&self) -> bool {
+        self.log.does_log_fault()
     }
-    fn check_error(&self) -> Result<(), Error> {
-        self.log.check_error()
+    fn check_fault(&self) -> Option<String> {
+        self.log.check_fault()
     }
 }
 

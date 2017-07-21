@@ -107,11 +107,11 @@ impl<LogMinor: Bool, LogMajor: Bool, LogFault: Bool, W: Write> Log for
         self.write.write_all(b"\n");
     }
     fn log_fault0(&mut self, s: String) {
+        self.write.write_all(s.as_bytes());
+        self.write.write_all(b"\n");
         if self.fault.is_none() {
             self.fault = Some(s);
         }
-        self.write.write_all(s.as_bytes());
-        self.write.write_all(b"\n");
     }
     fn does_log_minor(&self) -> bool { LogMinor::get() }
     fn does_log_major(&self) -> bool { LogMajor::get() }
@@ -140,7 +140,7 @@ impl LogNothing {
         LogNothing(
             LogGeneral {
                 write: Default::default(),
-                fault: Ok(()),
+                fault: None,
                 pd1: Default::default(),
                 pd2: Default::default(),
                 pd3: Default::default(),
@@ -162,7 +162,7 @@ macro_rules! impl_new {
                 $type_name(
                     LogGeneral {
                         write: write,
-                        fault: Ok(()),
+                        fault: None,
                         pd1: Default::default(),
                         pd2: Default::default(),
                         pd3: Default::default(),
