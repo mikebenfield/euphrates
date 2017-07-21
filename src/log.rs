@@ -1,10 +1,11 @@
-//! Facilities for the emulated SMS to record logs.
+//! # Logging facilities
 //!
 //! Simple usage: create an instance of either the [`LogNothing`], [`LogErrors`],
 //! [`LogMajorsAndErrors`], or [`LogEverything`] structs, then apply one of the
 //! [`log_error`], [`log_major`], or [`log_minor`] macros.
 //!
 //! For example:
+//!
 //! ```
 //! let log = log::LogEverything(std::io::stdout());
 //! log_minor(log, "Something minor happened");
@@ -12,10 +13,10 @@
 //! log_error(log, "A tragic error happened");
 //! ```
 //! 
-//! In increasing order of priority, there are minor, major, and error log
-//! 
-//! entries. The [`Log`] trait accepts all three of these, but is designed
-//! so that `rustc` will optimize away unused
+//! In increasing order of priority, there are minor, major, and error log entires.
+//! The [`Log`] trait accepts all three of these, but is designed so that
+//! types may not record all three, and so that `rustc` can optimize away all
+//! calls when logs are not actually accepted.
 //!
 //! [`Log`]: trait.Log.html
 //! [`LogNothing`]: struct.LogNothing.html
@@ -51,10 +52,23 @@ pub trait Log {
     fn log_minor0(&mut self, s: String);
     fn log_major0(&mut self, s: String);
     fn log_error0(&mut self, s: String);
+
+    /// Will this `Log` actually record minor log entries? If constantly `false`,
+    /// `rustc` can optimize away calls to the [`log_minor`] macro.
+    /// [`log_minor`]: ../macro.log_minor.html
     fn does_log_minor(&self) -> bool;
+
+    /// See [`does_log_minor`].
+    /// [`does_log_minor`]: #ty_method.does_log-minor
     fn does_log_major(&self) -> bool;
+
+    /// See [`does_log_minor`].
+    /// [`does_log_minor`]: #ty_method.does_log-minor
     fn does_log_error(&self) -> bool;
-    fn check(&self) -> Result<(), Error>;
+
+    /// Returns `Ok` if no error has been recorded; else returns a string (Error)
+    /// indicating the first error recorded.
+    fn check_error(&self) -> Result<(), Error>;
 }
 
 trait Bool {
@@ -103,7 +117,7 @@ impl<LogMinor: Bool, LogMajor: Bool, LogError: Bool, W: Write> Log for
     fn does_log_minor(&self) -> bool { LogMinor::get() }
     fn does_log_major(&self) -> bool { LogMajor::get() }
     fn does_log_error(&self) -> bool { LogError::get() }
-    fn check(&self) -> Result<(), Error> {
+    fn check_error(&self) -> Result<(), Error> {
         self.error.clone()
     }
 }
@@ -187,8 +201,8 @@ macro_rules! impl_log {
             fn does_log_error(&self) -> bool {
                 self.0.does_log_error()
             }
-            fn check(&self) -> Result<(), Error> {
-                self.0.check()
+            fn check_error(&self) -> Result<(), Error> {
+                self.0.check_error()
             }
         }
     }

@@ -1,14 +1,15 @@
 [package]
-name = "rust_sms"
+name = "attalus"
 version = "0.1.0"
 authors = ["Michael Benfield <mike.benfield@gmail.com>"]
 
 [lib]
-name = "rust_sms"
+name = "attalus"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rust_sms_bin"
+name = "attalus"
 path = "src/main.rs"
+doc = false
 
 [dependencies]

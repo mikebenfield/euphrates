@@ -1,10 +1,10 @@
 #![recursion_limit = "1024"]
 
-extern crate rust_sms;
+extern crate attalus;
 
-use rust_sms::emulation_manager::*;
-use rust_sms::log::*;
-use rust_sms::hardware::memory_mapper::implementation::*;
+use attalus::emulation_manager::*;
+use attalus::log::*;
+use attalus::hardware::memory_mapper::implementation::*;
 
 fn main() {
     let log = LogEverything::new(std::io::stdout());

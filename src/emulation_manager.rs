@@ -48,8 +48,8 @@ impl<L: Log, M: MemoryMapperHardware> Log for EmulationManager<L, M> {
     fn does_log_error(&self) -> bool {
         self.log.does_log_error()
     }
-    fn check(&self) -> Result<(), Error> {
-        self.log.check()
+    fn check_error(&self) -> Result<(), Error> {
+        self.log.check_error()
     }
 }
 
