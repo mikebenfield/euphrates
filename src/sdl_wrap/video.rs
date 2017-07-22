@@ -157,7 +157,7 @@ impl vdp::Canvas for WindowCanvas {
         let blue = (0x30 & color) >> 4;
         let green = (0x0C) << 1;
         let red = (0x03 & color) << 6;
-        self.pixels[y*self.logical_width + x];
+        self.pixels[y*self.logical_width + x] = blue | green | red;
     }
 
     fn render(&mut self) -> Result<(), vdp::CanvasError> {

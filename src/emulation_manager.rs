@@ -113,15 +113,16 @@ pub fn main_loop<L: Log, M: MemoryMapperHardware, C: Canvas>(
 
     for i in 0usize..n {
         log_major!(em, "EM: loop {}", i);
-        vdp_cycles += draw_line(em, canvas).unwrap();
+        // vdp_cycles += draw_line(em, canvas).unwrap();
 
         while em.cycles_by_z80 < vdp_cycles {
             interpreter::execute1(em);
         }
         canvas.paint(5, i % 255, 0);
         canvas.paint(10, i % 255, 0xFF);
+        canvas.render();
 
-        // std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         if sdl_wrap::event::check_quit() {
             break;
