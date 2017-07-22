@@ -236,6 +236,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
         }
 
         if line >= 192 {
+            // we are out of the active display region
             return;
         }
 
@@ -337,7 +338,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
             let pattern_byte3 = vdp.vram[32*pattern_index + tile_line + 3];
 
             for pixel in 0..8u8 {
-                let mut palette_index: usize = palette_index0;
+                let mut palette_index = palette_index0;
                 // pixel 0 will be the leftmost pixel to draw... but that is
                 // found in the most significant bit of each byte
                 assign_bit(&mut palette_index, 0, pattern_byte0, 7 - pixel);
@@ -353,14 +354,12 @@ pub fn draw_line<C: Canvas, V: Vdp>(
                 if priority || line_colors[x0 as usize] == 0x80 {
                     line_colors[x0 as usize] = color;
                 }
-        }
-
-        // Now we can actually draw
-        for i in 0..256usize {
-            if line_colors[i] != 0x80 {
-                // println!("Major: Vdp: drewnonzero color {} at {}, {}", line_colors[i], i, line);
             }
-            canvas.paint(i, line, line_colors[i]);
+
+            // Now we can actually draw
+            for i in 0..256usize {
+                canvas.paint(i, line, line_colors[i]);
+            }
         }
     }
 
@@ -374,6 +373,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
     if v.is_requesting_interrupt() {
         v.request_maskable_interrupt();
     }
+    let vdp = v.get_mut_vdp_hardware();
 
     Ok(684)
 }
