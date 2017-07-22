@@ -243,6 +243,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
 
         //// first, draw sprites to line_colors
         let mut sprites_drawn = 0;
+        let bit8 = (vdp.registers[6] & 0x04) as usize << 6;
         for sprite_index in 0..64 {
             let y = vdp.vram[sat_address + sprite_index] as usize + 1;
             let x = (vdp.vram[sat_address + 0x80 + 2*sprite_index] as isize) -
@@ -253,6 +254,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
                 };
 
             let n = vdp.vram[sat_address + 0x81 + 2*sprite_index] as usize;
+            let pattern_index = n | bit8;
             if y == 0xD1 {
                 // such a y coordinate has a special meaning in 192-line mode: don't
                 // render any more sprites this line
@@ -274,10 +276,10 @@ pub fn draw_line<C: Canvas, V: Vdp>(
             let sprite_line = line - y;
 
             // we have 8 pixels, each of which needs a byte of color
-            let pattern_byte0 = vdp.vram[32*n + sprite_line];
-            let pattern_byte1 = vdp.vram[32*n + sprite_line + 1];
-            let pattern_byte2 = vdp.vram[32*n + sprite_line + 2];
-            let pattern_byte3 = vdp.vram[32*n + sprite_line + 3];
+            let pattern_byte0 = vdp.vram[32*pattern_index + sprite_line];
+            let pattern_byte1 = vdp.vram[32*pattern_index + sprite_line + 1];
+            let pattern_byte2 = vdp.vram[32*pattern_index + sprite_line + 2];
+            let pattern_byte3 = vdp.vram[32*pattern_index + sprite_line + 3];
             for pixel in 0..8u8 {
                 let mut palette_index = 0u8;
                 // pixel 0 will be the leftmost pixel to draw... but that is
@@ -312,6 +314,45 @@ pub fn draw_line<C: Canvas, V: Vdp>(
                     line_colors[x0 as usize] = color;
                 }
             }
+        }
+
+        // 256 width, 192 height
+        // 28 rows of tiles
+        // Now draw background tiles - no scrolling yet
+        let tile_row = line / 28;
+        let tile_line = line % 28;
+        for tile_index in 0..32*28 {
+            let tile_address = nt_address + tile_index * tile_row * 2;
+            let low_byte = vdp.vram[tile_address];
+            let high_byte = vdp.vram[tile_adress + 1];
+            let pattern_index = (low_byte as usize) | (high_byte & 1 as usize) << 8;
+            let horiz_flip = 0 != high_byte & 0x02;
+            let vert_flip = 0 != high_byte & 0x04;
+            let palette = 0x10 * (((high_byte & 0x08) >> 3) as usize);
+            let priority = 0 != high_byte & 0x10;
+
+            let pattern_byte0 = vdp.vram[32*pattern_index + tile_line];
+            let pattern_byte1 = vdp.vram[32*pattern_index + tile_line + 1];
+            let pattern_byte2 = vdp.vram[32*pattern_index + tile_line + 2];
+            let pattern_byte3 = vdp.vram[32*pattern_index + tile_line + 3];
+
+            for pixel in 0..8u8 {
+                let mut palette_index: usize = palette_index0;
+                // pixel 0 will be the leftmost pixel to draw... but that is
+                // found in the most significant bit of each byte
+                assign_bit(&mut palette_index, 0, pattern_byte0, 7 - pixel);
+                assign_bit(&mut palette_index, 1, pattern_byte1, 7 - pixel);
+                assign_bit(&mut palette_index, 2, pattern_byte2, 7 - pixel);
+                assign_bit(&mut palette_index, 3, pattern_byte3, 7 - pixel);
+
+                let color = vdp.cram[palette + palette_index as usize];
+
+                // the x coordinate of the canvas where this pixel will be drawn
+                let x0 = x + 7 - (pixel as isize);
+
+                if priority || line_colors[x0 as usize] == 0x80 {
+                    line_colors[x0 as usize] = color;
+                }
         }
 
         // Now we can actually draw
