@@ -1,5 +1,7 @@
-use log::*;
+use std;
 
+use sdl_wrap;
+use log::*;
 use hardware::z80::*;
 use hardware::irq::*;
 use hardware::vdp::*;
@@ -102,16 +104,27 @@ impl<L: Log, M: MemoryMapperHardware> Z80 for EmulationManager<L, M> {
     }
 }
 
-pub fn main_loop<L: Log, M: MemoryMapperHardware>(em: &mut EmulationManager<L, M>, n: u32) {
+pub fn main_loop<L: Log, M: MemoryMapperHardware, C: Canvas>(
+  em: &mut EmulationManager<L, M>,
+  canvas: &mut C,
+  n: usize
+) {
     let mut vdp_cycles: u64 = 0;
 
-    for _ in 0..n {
-        let mut c = NoCanvas {};
-
-        vdp_cycles += draw_line(em, &mut c);
+    for i in 0usize..n {
+        log_major!(em, "EM: loop {}", i);
+        vdp_cycles += draw_line(em, canvas).unwrap();
 
         while em.cycles_by_z80 < vdp_cycles {
             interpreter::execute1(em);
+        }
+        canvas.paint(5, i % 255, 0);
+        canvas.paint(10, i % 255, 0xFF);
+
+        // std::thread::sleep(std::time::Duration::from_millis(20));
+
+        if sdl_wrap::event::check_quit() {
+            break;
         }
     }
 }

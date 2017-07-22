@@ -1,3 +1,6 @@
+
+use std::error::Error;
+
 use bits::*;
 use log::Log;
 
@@ -171,22 +174,35 @@ pub trait Vdp: Log + Irq {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct CanvasError(String);
+
+impl<T: Error> From<T> for CanvasError {
+    fn from(t: T) -> CanvasError {
+        CanvasError(t.description().to_string())
+    }
+}
+
 pub trait Canvas {
     fn paint(&mut self, x: usize, y: usize, color: u8);
+    fn render(&mut self) -> Result<(), CanvasError>;
 }
 
 pub struct NoCanvas;
 
 impl Canvas for NoCanvas {
     fn paint(&mut self, _: usize, _: usize, _: u8) {}
+    fn render(&mut self) -> Result<(), CanvasError> { Ok(()) }
 }
 
 #[allow(unused_variables)]
 pub fn draw_line<C: Canvas, V: Vdp>(
     v: &mut V,
     canvas: &mut C,
-) -> u64 {
+) -> Result<u64, CanvasError> {
     log_minor!(v, "Vdp: draw line");
+
+    let mut rendered_frame = false;
 
     {
         let vdp = v.get_mut_vdp_hardware();
@@ -223,7 +239,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
 
         if line >= 192 {
             // we are out of the active display region
-            return 684;
+            return Ok(684);
         }
 
         let mut line_colors = [0x80u8; 256];
@@ -303,13 +319,25 @@ pub fn draw_line<C: Canvas, V: Vdp>(
 
         // Now we can actually draw
         for i in 0..256usize {
+            if line_colors[i] != 0x80 {
+                println!("Major: Vdp: drewnonzero color {} at {}, {}", line_colors[i], i, line);
+            }
             canvas.paint(i, line, line_colors[i]);
         }
+
+        if line == 261 {
+            rendered_frame = true;
+            canvas.render()?;
+        }
+    }
+
+    if rendered_frame {
+        log_major!(v, "Vdp: rendered frame");
     }
 
     if v.is_requesting_interrupt() {
         v.request_maskable_interrupt();
     }
 
-    684
+    Ok(684)
 }
