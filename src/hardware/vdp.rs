@@ -139,6 +139,7 @@ pub trait Vdp: Log + Irq {
             // CRAM
             let addr = vdp.code_address & 0x1F;
             vdp.cram[addr as usize] = x;
+            println!("Major: Vdp: wrote cram {:?}", vdp.cram);
         } else {
             // VRAM
             let addr = vdp.code_address & 0x3FFF;
@@ -199,14 +200,11 @@ impl Canvas for NoCanvas {
 pub fn draw_line<C: Canvas, V: Vdp>(
     v: &mut V,
     canvas: &mut C,
-) -> Result<u64, CanvasError> {
-    log_minor!(v, "Vdp: draw line");
+) -> Result<y64, CanvasError> {
+    let line = v.get_vdp_hardware().v0;
+    log_minor!(v, "Vdp: draw line {}", line);
 
-    let mut rendered_frame = false;
-
-    {
-        let vdp = v.get_mut_vdp_hardware();
-
+    fn draw_line0<C: Canvas>(vdp: &mut VdpHardware, canvas: &mut C) {
         let nt_address = ((vdp.registers[2] & 0x0E) as usize) << 10;
         let sat_address = ((vdp.registers[5] & 0x7E) as usize) << 7;
         let overscan_color: u16 = (vdp.registers[7] & 0x0F) as u16;
@@ -238,8 +236,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
         }
 
         if line >= 192 {
-            // we are out of the active display region
-            return Ok(684);
+            return;
         }
 
         let mut line_colors = [0x80u8; 256];
@@ -320,19 +317,17 @@ pub fn draw_line<C: Canvas, V: Vdp>(
         // Now we can actually draw
         for i in 0..256usize {
             if line_colors[i] != 0x80 {
-                println!("Major: Vdp: drewnonzero color {} at {}, {}", line_colors[i], i, line);
+                // println!("Major: Vdp: drewnonzero color {} at {}, {}", line_colors[i], i, line);
             }
             canvas.paint(i, line, line_colors[i]);
         }
-
-        if line == 261 {
-            rendered_frame = true;
-            canvas.render()?;
-        }
     }
 
-    if rendered_frame {
-        log_major!(v, "Vdp: rendered frame");
+    draw_line0(v.get_mut_vdp_hardware(), canvas);
+
+    if line == 261 {
+        log_major!(v, "Vdp: rendering frame");
+        canvas.render()?;
     }
 
     if v.is_requesting_interrupt() {

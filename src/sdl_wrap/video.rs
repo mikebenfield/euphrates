@@ -155,8 +155,9 @@ impl WindowCanvas {
 impl vdp::Canvas for WindowCanvas {
     fn paint(&mut self, x: usize, y: usize, color: u8) {
         let blue = (0x30 & color) >> 4;
-        let green = (0x0C) << 1;
+        let green = (0x0C & color) << 1;
         let red = (0x03 & color) << 6;
+        // println!("DRAWING {:b}", blue | green | red);
         self.pixels[y*self.logical_width + x] = blue | green | red;
     }
 
