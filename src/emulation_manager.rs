@@ -113,6 +113,7 @@ pub fn main_loop<L: Log, M: MemoryMapperHardware, C: Canvas>(
 
     for i in 0usize..n {
         log_major!(em, "EM: loop {}", i);
+        // println!("EM: loop {} of {}", i, n);
         vdp_cycles += draw_line(em, canvas).unwrap();
 
         while em.cycles_by_z80 < vdp_cycles {

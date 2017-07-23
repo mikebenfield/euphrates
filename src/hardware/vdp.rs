@@ -203,6 +203,11 @@ pub fn draw_line<C: Canvas, V: Vdp>(
 ) -> Result<y64, CanvasError> {
     let line = v.get_vdp_hardware().v0;
     log_minor!(v, "Vdp: draw line {}", line);
+    v.get_mut_vdp_hardware().registers[2] = 0xFF; // XXX
+    // let ntaddr = ((v.get_vdp_hardware().registers[2] & 0x0E) as usize) << 10;
+    // log_major!(v, "Vdp: ntaddr {}", ntaddr);
+    // let sat_address = ((v.get_vdp_hardware().registers[5] & 0x7E) as usize) << 7;
+    // log_major!(v, "Vdp: sataddr {}", sat_address);
 
     fn draw_line0<C: Canvas>(vdp: &mut VdpHardware, canvas: &mut C) {
         let nt_address = ((vdp.registers[2] & 0x0E) as usize) << 10;
@@ -244,7 +249,7 @@ pub fn draw_line<C: Canvas, V: Vdp>(
 
         //// first, draw sprites to line_colors
         let mut sprites_drawn = 0;
-        let bit8 = (vdp.registers[6] & 0x04) as usize << 6;
+        let bit8 = ((vdp.registers[6] & 0x04) as usize) << 6;
         for sprite_index in 0..64 {
             let y = vdp.vram[sat_address + sprite_index] as usize + 1;
             let x = (vdp.vram[sat_address + 0x80 + 2*sprite_index] as isize) -
@@ -322,14 +327,14 @@ pub fn draw_line<C: Canvas, V: Vdp>(
         // Now draw background tiles - no scrolling yet
         let tile_row = line / 28;
         let tile_line = line % 28;
-        for tile_index in 0..32*28 {
+        for tile_index in 0..32 {
             let tile_address = nt_address + tile_index * tile_row * 2;
             let low_byte = vdp.vram[tile_address];
-            let high_byte = vdp.vram[tile_adress + 1];
-            let pattern_index = (low_byte as usize) | (high_byte & 1 as usize) << 8;
+            let high_byte = vdp.vram[tile_address + 1];
+            let pattern_index = (low_byte as usize) | ((high_byte & 1) as usize) << 8;
             let horiz_flip = 0 != high_byte & 0x02;
             let vert_flip = 0 != high_byte & 0x04;
-            let palette = 0x10 * (((high_byte & 0x08) >> 3) as usize);
+            let palette_index0 = (high_byte & 0x08) << 1;
             let priority = 0 != high_byte & 0x10;
 
             let pattern_byte0 = vdp.vram[32*pattern_index + tile_line];
@@ -346,10 +351,11 @@ pub fn draw_line<C: Canvas, V: Vdp>(
                 assign_bit(&mut palette_index, 2, pattern_byte2, 7 - pixel);
                 assign_bit(&mut palette_index, 3, pattern_byte3, 7 - pixel);
 
-                let color = vdp.cram[palette + palette_index as usize];
+                let color = vdp.cram[palette_index as usize];
 
                 // the x coordinate of the canvas where this pixel will be drawn
-                let x0 = x + 7 - (pixel as isize);
+                // let x0 = (tile_index*8 + 7) as isize - (pixel as isize);
+                let x0 = tile_index*8 + pixel as usize;
 
                 if priority || line_colors[x0 as usize] == 0x80 {
                     line_colors[x0 as usize] = color;
@@ -373,7 +379,6 @@ pub fn draw_line<C: Canvas, V: Vdp>(
     if v.is_requesting_interrupt() {
         v.request_maskable_interrupt();
     }
-    let vdp = v.get_mut_vdp_hardware();
 
     Ok(684)
 }

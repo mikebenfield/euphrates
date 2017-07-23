@@ -215,7 +215,7 @@ impl MemoryMapperHardware for SegaMemoryMapperHardware {
         if can_write {
             log_minor!(m, "MemoryMapper: wrote");
         } else {
-            log_major!(m, "MemoryMapper: failed write");
+            log_fault!(m, "MemoryMapper: failed write");
         }
     }
 

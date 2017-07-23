@@ -33,9 +33,9 @@ fn main() {
     let n: usize = args[2].parse().expect("Usage: exec filename n");
 
     let mut win = attalus::sdl_wrap::video::WindowCanvas::new().unwrap();
-    win.set_window_size(400, 400);
+    win.set_window_size(700, 700);
     win.set_title("Attalus");
-    win.set_logical_size(256, 256);
+    win.set_logical_size(256, 192);
 
     main_loop(&mut em, &mut win, n);
 

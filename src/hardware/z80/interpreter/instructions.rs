@@ -408,7 +408,6 @@ pub fn dec<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
     assign_bit(&mut f, HF, ((x & 0b111) == 0) as u8, 0);
     assign_bit(&mut f, PF, (x == 0x80) as u8, 0);
     set_bit(&mut f, NF);
-    println!("Setting F to {:0>2X}", f);
     F.set(z, f);
 }
 
