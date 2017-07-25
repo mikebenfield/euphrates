@@ -4,3 +4,6 @@ mod execute;
 pub use self::execute::execute1;
 
 pub use self::instructions::{nonmaskable_interrupt, maskable_interrupt};
+
+#[cfg(test)]
+mod tests;

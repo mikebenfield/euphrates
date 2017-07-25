@@ -13,3 +13,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+
+[dev-dependencies]
+quickcheck = "0.4"
+

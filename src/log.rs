@@ -6,11 +6,15 @@
 //!
 //! For example:
 //!
-//! ```
-//! let log = log::LogEverything(std::io::stdout());
-//! log_minor(log, "Something minor happened");
-//! log_major(log, "Something major happened");
-//! log_fault(log, "A tragic error happened");
+//! ```rust
+//! # #[macro_use] extern crate attalus;
+//! # fn main() {
+//! use attalus::log::*;
+//! let mut log = LogEverything::new(std::io::stdout());
+//! log_minor!(log, "Something minor happened");
+//! log_major!(log, "Something major happened");
+//! log_fault!(log, "A tragic error happened");
+//! # }
 //! ```
 //! 
 //! In increasing order of priority, there are minor, major, and fault log entires.
@@ -252,8 +256,8 @@ macro_rules! log_major {
 #[macro_export]
 macro_rules! log_fault {
     ($log: expr, $fmt: expr, $($arg: tt)*) => {
-        if $log.does_log_major() {
-            $log.log_major0(
+        if $log.does_log_fault() {
+            $log.log_fault0(
                 format!(
                     "Fault: {}",
                     format!($fmt, $($arg)*)
@@ -262,6 +266,6 @@ macro_rules! log_fault {
         }
     };
     ($log: expr, $fmt: expr) => {
-        log_major!($log, "{}", $fmt);
+        log_fault!($log, "{}", $fmt);
     };
 }
