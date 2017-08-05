@@ -6,22 +6,29 @@
 
 BEGIN {
   FS=": "
+  looking_pc = 1
 }
 
 $2 == "Z80" && $3 == "PC" { 
-    printf("%10s:", NR, $4)
+    if (looking_pc) {
+        looking_pc = 0
+        printf("%10s: %2s", NR, $4)
+    }
 }
 
 $2 == "Z80" && $3 == "opcode" {
-    printf("  %12-s", $4)
+    opcodes = opcodes " " $4
 }
 
 $2 == "Z80" && $3 == "op" {
-    printf("   %21-s", $4)
+    printf("%22-s :   %21-s\n", opcodes, $4)
+    opcodes = ""
+    looking_pc = 1
 }
 
 $2 == "Z80" && $3 == "status" {
-    print "  " $4
+    printf("%s  ", $4);
+    # print "  " $4
 }
 
 #$1 == "Z80:" && /Reset/ {

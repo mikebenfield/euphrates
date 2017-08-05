@@ -24,7 +24,7 @@ fn set_zero(flags: &mut u8, x: u8) {
 //// Interrupts
 ///////////////
 
-pub fn rst_impl<Z: Z80>(z: &mut Z, p: u8) {
+pub fn rst<Z: Z80>(z: &mut Z, p: u8) {
     let sp = SP.get(z);
     let pch = PCH.get(z);
     let pcl = PCL.get(z);
@@ -38,7 +38,7 @@ pub fn rst_impl<Z: Z80>(z: &mut Z, p: u8) {
 pub fn nonmaskable_interrupt<Z: Z80>(z: &mut Z) {
     let iff1 = z.get_z80_hardware().iff1;
     z.get_mut_z80_hardware().iff2 = !iff1;
-    rst_impl(z, 0x66);
+    rst(z, 0x66);
 }
 
 pub fn maskable_interrupt<Z: Z80>(z: &mut Z) -> bool {
@@ -51,7 +51,7 @@ pub fn maskable_interrupt<Z: Z80>(z: &mut Z) -> bool {
 
         let im = z.get_z80_hardware().interrupt_mode;
         match im {
-            Im1 => rst_impl(z, 0x38),
+            Im1 => rst(z, 0x38),
             _ => unimplemented!(),
         }
     } else {
@@ -943,22 +943,6 @@ pub fn retn<Z: Z80>(z: &mut Z) {
     SP.set(z, sp.wrapping_add(2));
 }
 
-pub fn rst<Z: Z80>(z: &mut Z, arg: u8) {
-    let p: u8 = match arg {
-        0 => 0,
-        1 => 8,
-        2 => 0x10,
-        3 => 0x18,
-        4 => 0x20,
-        5 => 0x28,
-        6 => 0x30,
-        7 => 0x38,
-        _ => panic!("rst: invalid t value"),
-    };
-
-    rst_impl(z, p);
-}
-
 //// Input and Output Group
 ///////////////////////////
 
@@ -1003,7 +987,7 @@ pub fn in_c<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
 }
 
 /// The Z80 manual lists this instruction under IN r, (C) as "undefined"
-/// It sets 
+/// It sets
 pub fn in0<Z: Z80>(z: &mut Z) {
     log_minor!(z, "Z80: op: {:?}", "IN flag, (C)");
 

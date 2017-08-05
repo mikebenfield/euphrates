@@ -118,6 +118,32 @@ pub trait Z80: Log + Io + MemoryMapper {
     fn cycles(&mut self, i: u64);
 }
 
+// impl std::fmt::Display for Z80 {
+//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//         fn get_register_value(z: &Z80Hardware, r: Reg16) -> u16 {
+//             let reff: &u8 = &z.registers[r as usize];
+//             unsafe {
+//                 let reff2: &u16 = std::mem::transmute(reff);
+//                 *reff2
+//             }
+//         }
+//         write!(
+//             f,
+//             "{{ AF = {:0>4X}, BC = {:0>4X}, DE = {:0>4X}, \
+//             HL = {:0>4X}, IX = {:0>4X}, IY = {:0>4X}, \
+//             SP = {:0>4X}, PC = {:0>4X} }}",
+//             self.get_z80_hardware().registers[AF],
+//             self.get_z80_hardware().registers[BC],
+//             self.get_z80_hardware().registers[DE],
+//             self.get_z80_hardware().registers[HL],
+//             self.get_z80_hardware().registers[IX],
+//             self.get_z80_hardware().registers[IY],
+//             self.get_z80_hardware().registers[SP],
+//             self.get_z80_hardware().registers[PC],
+//         )
+//     }
+// }
+
 pub trait Gettable<Output>: std::fmt::Debug + Copy {
     fn get<Z: Z80>(self, z: &mut Z) -> Output;
 }

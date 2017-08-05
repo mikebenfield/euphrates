@@ -196,11 +196,65 @@ impl Canvas for NoCanvas {
     fn render(&mut self) -> Result<(), CanvasError> { Ok(()) }
 }
 
+pub fn draw_frame<C: Canvas, V: Vdp>(
+    v: &mut V,
+    canvas: &mut C,
+) -> Result<u64, CanvasError> {
+    log_minor!(v, "Vdp: drawing frame");
+    v.request_maskable_interrupt();
+    let vdp = v.get_mut_vdp_hardware();
+    let nt_address = ((vdp.registers[2] & 0x0E) as usize) << 10;
+    let sat_address = ((vdp.registers[5] & 0x7E) as usize) << 7;
+    let overscan_color: u16 = (vdp.registers[7] & 0x0F) as u16;
+    let x_starting_column: u16 = 32 - ((vdp.registers[8] & 0xF8) as u16 >> 3);
+    let x_scroll: u16 = (vdp.registers[8] & 0x07) as u16;
+    let y_starting_column: u16 = (vdp.registers[9] & 0xF8) as u16 >> 3;
+    let y_scroll: u16 = (vdp.registers[9] & 0x07) as u16;
+
+    vdp.v0 = 0;
+
+    let bit8 = ((vdp.registers[6] & 0x04) as usize) << 6;
+    for sprite_index in 0..64 {
+        let y = vdp.vram[sat_address + sprite_index] as usize + 1;
+        let x = (vdp.vram[sat_address + 0x80 + 2*sprite_index] as usize) -
+            if 0 != vdp.registers[0] & 0x08 {
+                8
+            } else {
+                0
+            };
+        let n = vdp.vram[sat_address + 0x81 + 2*sprite_index] as usize;
+        let pattern_address = 32*n | bit8;
+        for pixel_y in 0..8 {
+            let pattern_byte0 = vdp.vram[pattern_address + 8*pixel_y];
+            let pattern_byte1 = vdp.vram[pattern_address + 8*pixel_y + 1];
+            let pattern_byte2 = vdp.vram[pattern_address + 8*pixel_y + 2];
+            let pattern_byte3 = vdp.vram[pattern_address + 8*pixel_y + 3];
+            for pixel_x in 0..8 {
+                let mut palette_index = 0u8;
+
+                assign_bit(&mut palette_index, 0, pattern_byte0, 7 - pixel_x);
+                assign_bit(&mut palette_index, 1, pattern_byte1, 7 - pixel_x);
+                assign_bit(&mut palette_index, 2, pattern_byte2, 7 - pixel_x);
+                assign_bit(&mut palette_index, 3, pattern_byte3, 7 - pixel_x);
+
+                if palette_index == 0 {
+                    continue;
+                }
+
+                let color = vdp.cram[0x10 + palette_index as usize];
+                canvas.paint(x + pixel_x as usize, y + pixel_y as usize, color);
+            }
+        }
+    }
+    vdp.status_flags |= 1 << INT;
+    Ok(684*262)
+}
+
 #[allow(unused_variables)]
 pub fn draw_line<C: Canvas, V: Vdp>(
     v: &mut V,
     canvas: &mut C,
-) -> Result<y64, CanvasError> {
+) -> Result<u64, CanvasError> {
     let line = v.get_vdp_hardware().v0;
     log_minor!(v, "Vdp: draw line {}", line);
     v.get_mut_vdp_hardware().registers[2] = 0xFF; // XXX

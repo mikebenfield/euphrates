@@ -1,4 +1,4 @@
-// mnemonic, changes: ld becomes ld16 for 16 bit operands. ditto, inc, dec, add,
+// mnemonic, changes: ld becomes ld16 for 16 bit operands. ditto inc, dec, add,
 // adc, sbc.
 // `in` is split into 3: `in_n` for the instruction taking its address from n
 // `in_c` for the one taking its address from C and `in_f` for the one that just
@@ -506,7 +506,7 @@ macro_rules! process_instructions {
 [ [0xDD, 0x25          ] ; dec             ; [ IXH             ] ;  8 ;  true ]
 [ [0xDD, 0x26, n       ] ; ld              ; [ IXH, $n         ] ; 11 ;  true ]
 [ [0xDD, 0x29          ] ; add16           ; [ IX, IX          ] ; 15 ; false ]
-[ [0xDD, 0x2A, n, n    ] ; ld              ; [ IX, ($nn)       ] ; 20 ; false ]
+[ [0xDD, 0x2A, n, n    ] ; ld16            ; [ IX, ($nn)       ] ; 20 ; false ]
 [ [0xDD, 0x2B          ] ; dec16           ; [ IX              ] ; 10 ; false ]
 [ [0xDD, 0x2C          ] ; inc             ; [ IXL             ] ;  8 ;  true ]
 [ [0xDD, 0x2D          ] ; dec             ; [ IXL             ] ;  8 ;  true ]

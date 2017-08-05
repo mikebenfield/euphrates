@@ -16,7 +16,7 @@
 //! log_fault!(log, "A tragic error happened");
 //! # }
 //! ```
-//! 
+//!
 //! In increasing order of priority, there are minor, major, and fault log entires.
 //! The [`Log`] trait accepts all three of these, but is designed so that
 //! types may not record all three, and so that `rustc` can optimize away all
