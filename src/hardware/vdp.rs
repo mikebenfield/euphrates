@@ -185,7 +185,7 @@ impl Canvas for NoCanvas {
 pub fn draw_line<C: Canvas, V: Vdp>(
     v: &mut V,
     canvas: &mut C,
-) -> u32 {
+) -> u64 {
     log_minor!(v, "Vdp: draw line");
 
     {

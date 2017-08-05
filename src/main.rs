@@ -1,13 +1,23 @@
 #![recursion_limit = "1024"]
 
-extern crate attalus;
+// extern crate attalus;
 
-use attalus::emulation_manager::*;
-use attalus::log::*;
-use attalus::hardware::memory_mapper::implementation::*;
+mod bits;
+#[macro_use]
+pub mod log;
+pub mod hardware;
+pub mod emulation_manager;
+use emulation_manager::*;
+use log::*;
+use hardware::memory_mapper::implementation::*;
+
+// use attalus::emulation_manager::*;
+// use attalus::log::*;
+// use attalus::hardware::memory_mapper::implementation::*;
 
 fn main() {
-    let log = LogEverything::new(std::io::stdout());
+    // let log = LogEverything::new(std::io::stdout());
+    let log = LogNothing::new();
     let mut args: Vec<String> = Vec::new();
     args.extend(std::env::args());
     if args.len() < 3 {

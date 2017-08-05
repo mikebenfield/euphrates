@@ -1,3 +1,6 @@
+
+#[macro_use]
+mod instruction_list;
 pub mod interpreter;
 mod types;
 

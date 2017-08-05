@@ -13,7 +13,7 @@ pub struct EmulationManager<L: Log, M: MemoryMapperHardware> {
     io_hardware: IoHardware,
     z80_hardware: Z80Hardware,
     vdp_hardware: VdpHardware,
-    cycles_by_z80: u32,
+    cycles_by_z80: u64,
 }
 
 impl<L: Log, M: MemoryMapperHardware> EmulationManager<L, M> {
@@ -97,14 +97,13 @@ impl<L: Log, M: MemoryMapperHardware> Z80 for EmulationManager<L, M> {
     fn get_mut_z80_hardware(&mut self) -> &mut Z80Hardware {
         &mut self.z80_hardware
     }
-    fn cycles(&mut self, i: &[u32]) {
-        let s: u32 = i.iter().sum();
-        self.cycles_by_z80 += 3 * s;
+    fn cycles(&mut self, i: u64) {
+        self.cycles_by_z80 += 3 * i;
     }
 }
 
 pub fn main_loop<L: Log, M: MemoryMapperHardware>(em: &mut EmulationManager<L, M>, n: u32) {
-    let mut vdp_cycles = 0;
+    let mut vdp_cycles: u64 = 0;
 
     for _ in 0..n {
         let mut c = NoCanvas {};

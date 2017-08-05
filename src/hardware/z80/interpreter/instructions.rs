@@ -25,8 +25,6 @@ fn set_zero(flags: &mut u8, x: u8) {
 ///////////////
 
 pub fn rst_impl<Z: Z80>(z: &mut Z, p: u8) {
-    log_minor!(z, "Z80: Reset to {:0>2X}", p);
-
     let sp = SP.get(z);
     let pch = PCH.get(z);
     let pcl = PCL.get(z);
@@ -38,8 +36,6 @@ pub fn rst_impl<Z: Z80>(z: &mut Z, p: u8) {
 }
 
 pub fn nonmaskable_interrupt<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: Nonmaskable interrupt");
-
     let iff1 = z.get_z80_hardware().iff1;
     z.get_mut_z80_hardware().iff2 = !iff1;
     rst_impl(z, 0x66);
@@ -67,19 +63,15 @@ pub fn maskable_interrupt<Z: Z80>(z: &mut Z) -> bool {
 //// 8-Bit Load Group
 /////////////////////
 
-pub fn load8<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
+pub fn ld<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
     z: &mut Z, arg1: T1, arg2: T2
 ) {
-    log_minor!(z, "Z80: op: LD {:?}, {:?}", arg1, arg2);
-
     let val = arg2.get(z);
     arg1.set(z, val);
 }
 
 // XXX text about interrupts in manual
-pub fn load8_ir<Z: Z80>(z: &mut Z, arg: Reg8) {
-    log_minor!(z, "Z80: op: LD {:?}, {:?}", A, arg);
-
+pub fn ld8_ir<Z: Z80>(z: &mut Z, arg: Reg8) {
     let val = arg.get(z);
     let mut f = F.get(z);
     set_zero(&mut f, val);
@@ -93,18 +85,14 @@ pub fn load8_ir<Z: Z80>(z: &mut Z, arg: Reg8) {
 //// 16-Bit Load Group
 //////////////////////
 
-pub fn load16<Z: Z80, T1: Settable<u16>, T2: Gettable<u16>>(
+pub fn ld16<Z: Z80, T1: Settable<u16>, T2: Gettable<u16>>(
     z: &mut Z, arg1: T1, arg2: T2
 ) {
-    log_minor!(z, "Z80: op: LD {:?}, {:?}", arg1, arg2);
-
     let val = arg2.get(z);
     arg1.set(z, val);
 }
 
 pub fn push<Z: Z80>(z: &mut Z, reg: Reg16) {
-    log_minor!(z, "Z80: op: PUSH {:?}", reg);
-
     let (lo, hi) = to8(reg.get(z));
     let sp = SP.get(z);
     Address(sp.wrapping_sub(1)).set(z, hi);
@@ -113,8 +101,6 @@ pub fn push<Z: Z80>(z: &mut Z, reg: Reg16) {
 }
 
 pub fn pop<Z: Z80>(z: &mut Z, reg: Reg16) {
-    log_minor!(z, "Z80: op: POP {:?}", reg);
-
     let sp = SP.get(z);
     let lo = Address(sp).get(z);
     let hi = Address(sp.wrapping_add(1)).get(z);
@@ -129,8 +115,6 @@ pub fn pop<Z: Z80>(z: &mut Z, reg: Reg16) {
 pub fn ex<Z: Z80, T1: Settable<u16>>(
    z: &mut Z, reg1: T1, reg2: Reg16
 ) {
-    log_minor!(z, "Z80: op: EX {:?}, {:?}", reg1, reg2);
-
     let val1 = reg1.get(z);
     let val2 = reg2.get(z);
     reg1.set(z, val2);
@@ -138,8 +122,6 @@ pub fn ex<Z: Z80, T1: Settable<u16>>(
 }
 
 pub fn exx<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: EXX");
-
     for &(reg1, reg2) in [(BC, BC0), (DE, DE0), (HL, HL0)].iter() {
         let val1 = reg1.get(z);
         let val2 = reg2.get(z);
@@ -171,53 +153,41 @@ fn ld_id_flag_impl<Z: Z80>(z: &mut Z) {
 // these ldi and ldd instructions affect the XF and YF registers
 // in ways I have not attempted to emulate
 pub fn ldi<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: LDI");
-
     ld_id_impl(z, 1);
     ld_id_flag_impl(z);
 }
 
 pub fn ldd<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: LDD");
-
     ld_id_impl(z, -1);
     ld_id_flag_impl(z);
 }
 
 pub fn ldir<Z: Z80>(z: &mut Z) {
     // XXX check interrupts
-
-    log_minor!(z, "Z80: op: LDIR");
-
     while {
         // goofy hack to get a do-while loop
         ld_id_impl(z, 1);
-        z.cycles(&[4, 4, 3, 5, 5]);
+        z.cycles(21);
         BC.get(z) != 0
     }
     {}
 
     ld_id_flag_impl(z);
 
-    z.cycles(&[4, 3, 5, 5]);
+    z.cycles(17);
 }
 
 pub fn lddr<Z: Z80>(z: &mut Z) {
-    // XXX check interrupts
-
-    log_minor!(z, "Z80: op: LDDR");
-
     while {
-        // goofy hack to get a do-while loop
         ld_id_impl(z, -1);
-        z.cycles(&[4, 4, 3, 5, 5]);
+        z.cycles(21);
         BC.get(z) != 0
     }
     {}
 
     ld_id_flag_impl(z);
 
-    z.cycles(&[4, 3, 5, 5]);
+    z.cycles(17);
 }
 
 fn cpi_impl<Z: Z80>(z: &mut Z) {
@@ -232,22 +202,18 @@ fn cpi_impl<Z: Z80>(z: &mut Z) {
 }
 
 pub fn cpi<Z: Z80>(z80: &mut Z) {
-    log_minor!(z80, "Z80: op: CPI");
-
     cpi_impl(z80);
 }
 
 pub fn cpir<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: CPIR");
-
     while {
         cpi_impl(z);
-        z.cycles(&[4, 4, 3, 5, 5]);
+        z.cycles(21);
         BC.get(z) != 0 && F.get(z) & (1 << ZF) != 0
     }
     {}
 
-    z.cycles(&[4, 3, 5, 5]);
+    z.cycles(17);
 }
 
 fn cpd_impl<Z: Z80>(z: &mut Z) {
@@ -262,30 +228,25 @@ fn cpd_impl<Z: Z80>(z: &mut Z) {
 }
 
 pub fn cpd<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: CPD");
-
     cpd_impl(z);
 }
 
 pub fn cpdr<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: CPDR");
-
     while {
         cpd_impl(z);
-        z.cycles(&[4, 4, 3, 5, 5]);
+        z.cycles(21);
         BC.get(z) !=0 && F.get(z) & (1 << ZF) != 0
     }
     {}
 
-    z.cycles(&[4, 3, 5, 5]);
+    z.cycles(17);
 }
 
 //// 8-Bit Arithmetic Group
 ///////////////////////////
 
-fn add8_impl<Z: Z80>(z: &mut Z, x: u8, cf: u8) -> u8 {
+fn add_impl<Z: Z80>(z: &mut Z, a: u8, x: u8, cf: u8) -> u8 {
     // XXX optimize?
-    let a = A.get(z);
     let result16 = (x as u16).wrapping_add(a as u16).wrapping_add(cf as u16);
     let result8 = result16 as u8;
     let mut f = F.get(z);
@@ -311,32 +272,34 @@ fn add8_impl<Z: Z80>(z: &mut Z, x: u8, cf: u8) -> u8 {
     return result8;
 }
 
-pub fn add8<Z: Z80, T1: Gettable<u8>>(
-  z: &mut Z, arg: T1
+pub fn add<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
+  z: &mut Z,
+  arg1: T1,
+  arg2: T2,
 ) {
-    log_minor!(z, "Z80: op: ADD {:?}, {:?}", A, arg);
-
-    let val = arg.get(z);
-    let result = add8_impl(z, val, 0);
-    A.set(z, result);
+    let a = arg1.get(z);
+    let b = arg2.get(z);
+    let result = add_impl(z, a, b, 0);
+    arg1.set(z, result);
 }
 
-pub fn adc8<Z: Z80, T1: Gettable<u8>>(
-  z: &mut Z, arg: T1
+pub fn adc<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
+  z: &mut Z,
+  arg1: T1,
+  arg2: T2,
 ) {
-    log_minor!(z, "Z80: op: ADC {:?}, {:?}", A, arg);
-
     let mut cf = 0u8;
     let f = F.get(z);
     assign_bit(&mut cf, 0, f, CF);
-    let x = arg.get(z);
-    let result = add8_impl(z, x, cf);
-    A.set(z, result);
+    let a = arg1.get(z);
+    let x = arg2.get(z);
+    let result = add_impl(z, a, x, cf);
+    arg1.set(z, result);
 }
 
-fn sub8_impl<Z: Z80>(z: &mut Z, x: u8, cf: u8) -> u8 {
+fn sub_impl<Z: Z80>(z: &mut Z, a: u8, x: u8, cf: u8) -> u8 {
     // XXX check that flags are set correctly
-    let result = add8_impl(z, !x, 1 ^ cf);
+    let result = add_impl(z, a, !x, 1 ^ cf);
     let mut f = F.get(z);
     f ^= 1 << CF;
     f ^= 1 << HF;
@@ -345,27 +308,29 @@ fn sub8_impl<Z: Z80>(z: &mut Z, x: u8, cf: u8) -> u8 {
     result
 }
 
-pub fn sub8<Z: Z80, T1: Gettable<u8>>(
-  z: &mut Z, arg: T1
+pub fn sub<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
+  z: &mut Z,
+  arg1: T1,
+  arg2: T2,
 ) {
-    log_minor!(z, "Z80: op: SUB {:?}, {:?}", A, arg);
-
-    let val = arg.get(z);
-    let result = sub8_impl(z, val, 0);
-    A.set(z, result);
+    let a = arg1.get(z);
+    let x = arg2.get(z);
+    let result = sub_impl(z, a, x, 0);
+    arg1.set(z, result);
 }
 
-pub fn sbc8<Z: Z80, T1: Gettable<u8>>(
-  z: &mut Z, arg: T1
+pub fn sbc<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
+  z: &mut Z,
+  arg1: T1,
+  arg2: T2,
 ) {
-    log_minor!(z, "Z80: op: SBC {:?}, {:?}", A, arg);
-
     let mut cf = 0u8;
     let f = F.get(z);
     assign_bit(&mut cf, 0, f, CF);
-    let x = arg.get(z);
-    let result = sub8_impl(z, x, cf);
-    A.set(z, result);
+    let a = arg1.get(z);
+    let x = arg2.get(z);
+    let result = sub_impl(z, a, x, cf);
+    arg1.set(z, result);
 }
 
 fn andor_impl<Z: Z80>(z: &mut Z, result: u8) {
@@ -391,8 +356,6 @@ fn andor_impl<Z: Z80>(z: &mut Z, result: u8) {
 }
 
 pub fn and<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) {
-    log_minor!(z, "Z80: op: AND {:?}", arg);
-
     let result = arg.get(z) & A.get(z);
     andor_impl(z, result);
 }
@@ -400,13 +363,9 @@ pub fn and<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) {
 pub fn or<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) {
     let result = arg.get(z) | A.get(z);
     andor_impl(z, result);
-
-    log_minor!(z, "Z80: op: OR {:?}", arg);
 }
 
 pub fn xor<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) {
-    log_minor!(z, "Z80: op: XOR {:?}", arg);
-
     let result = arg.get(z) ^ A.get(z);
     andor_impl(z, result);
 }
@@ -414,19 +373,15 @@ pub fn xor<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) {
 fn cp_impl<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) {
     let x = arg.get(z);
     let a = A.get(z);
-    sub8_impl(z, x, 0);
+    sub_impl(z, a, x, 0);
     A.set(z, a);
 }
 
 pub fn cp<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) {
-    log_minor!(z, "Z80: op: CP {:?}", arg);
-
     cp_impl(z, arg);
 }
 
-pub fn inc8<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
-    log_minor!(z, "Z80: op: INC {:?}", arg);
-
+pub fn inc<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
     let x = arg.get(z);
     let result = x.wrapping_add(1);
     arg.set(z, result);
@@ -441,9 +396,7 @@ pub fn inc8<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
     F.set(z, f);
 }
 
-pub fn dec8<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
-    log_minor!(z, "Z80: op: DEC {:?}", arg);
-
+pub fn dec<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
     let x = arg.get(z);
     let result = x.wrapping_sub(1);
     arg.set(z, result);
@@ -463,8 +416,6 @@ pub fn dec8<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
 //////////////////////////////////////////////////////
 
 pub fn daa<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: DAA");
-
     // see the table in Young
     let a = A.get(z);
     let cf = F.get(z) & (1 << CF) != 0;
@@ -502,8 +453,6 @@ pub fn daa<Z: Z80>(z: &mut Z) {
 }
 
 pub fn cpl<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: CPL");
-
     let a = A.get(z);
     A.set(z, !a);
     let mut f = F.get(z);
@@ -513,18 +462,13 @@ pub fn cpl<Z: Z80>(z: &mut Z) {
 }
 
 pub fn neg<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: NEG");
-
     // subtracts A from 0
     let a = A.get(z);
-    A.set(z, 0);
-    let result = sub8_impl(z, a, 0);
+    let result = sub_impl(z, 0, a, 0);
     A.set(z, result);
 }
 
 pub fn ccf<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: CCF");
-
     let mut f = F.get(z);
     f ^= 1 << CF;
     clear_bit(&mut f, NF);
@@ -532,8 +476,6 @@ pub fn ccf<Z: Z80>(z: &mut Z) {
 }
 
 pub fn scf<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: SCF");
-
     let mut f = F.get(z);
     clear_bit(&mut f, HF);
     clear_bit(&mut f, NF);
@@ -542,25 +484,19 @@ pub fn scf<Z: Z80>(z: &mut Z) {
 }
 
 pub fn nop<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: NOP");
 }
 
 // XXX implement
 pub fn halt<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: HALT");
 }
 
 pub fn di<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: DI");
-
     z.get_mut_z80_hardware().iff1 = false;
     z.get_mut_z80_hardware().iff2 = false;
 }
 
 pub fn ei<Z: Z80>(z: &mut Z) {
     use super::execute::execute1;
-
-    log_minor!(z, "Z80: op: EI");
 
     // Interrupts are not actually enabled until after the following instruction
     execute1(z);
@@ -569,21 +505,20 @@ pub fn ei<Z: Z80>(z: &mut Z) {
     z.get_mut_z80_hardware().iff2 = true;
 }
 
-pub fn im0<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: IM 0");
-
-    z.get_mut_z80_hardware().interrupt_mode = Im0;
+pub fn im<Z: Z80>(z: &mut Z, m: u8) {
+    match m {
+        0 => z.get_mut_z80_hardware().interrupt_mode = Im0,
+        1 => z.get_mut_z80_hardware().interrupt_mode = Im1,
+        2 => z.get_mut_z80_hardware().interrupt_mode = Im2,
+        _ => panic!("Z80: Invalid interrupt mode"),
+    }
 }
 
 pub fn im1<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: IM 1");
-
     z.get_mut_z80_hardware().interrupt_mode = Im1;
 }
 
 pub fn im2<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: IM 2");
-
     z.get_mut_z80_hardware().interrupt_mode = Im2;
 }
 
@@ -618,8 +553,6 @@ fn add16_impl<Z: Z80>(z: &mut Z, x: u16, y: u16, cf: u16) -> u16 {
 }
 
 pub fn add16<Z: Z80>(z: &mut Z, arg1: Reg16, arg2: Reg16) {
-    log_minor!(z, "Z80: op: ADD {:?}, {:?}", arg1, arg2);
-
     let x = arg1.get(z);
     let y = arg2.get(z);
     let result = add16_impl(z, x, y, 0);
@@ -627,8 +560,6 @@ pub fn add16<Z: Z80>(z: &mut Z, arg1: Reg16, arg2: Reg16) {
 }
 
 pub fn adc16<Z: Z80>(z: &mut Z, arg1: Reg16, arg2: Reg16) {
-    log_minor!(z, "Z80: op: ADC {:?}, {:?}", arg1, arg2);
-
     let x = arg1.get(z);
     let y = arg2.get(z);
     let mut cf = 0u8;
@@ -649,8 +580,6 @@ fn sub16_impl<Z: Z80>(z: &mut Z, x: u16, y: u16, cf: u16) -> u16 {
 }
 
 pub fn sbc16<Z: Z80>(z: &mut Z, arg1: Reg16, arg2: Reg16) {
-    log_minor!(z, "Z80: op: SBC {:?}, {:?}", arg1, arg2);
-
     let x = arg1.get(z);
     let y = arg2.get(z);
     let mut cf = 0u8;
@@ -660,15 +589,11 @@ pub fn sbc16<Z: Z80>(z: &mut Z, arg1: Reg16, arg2: Reg16) {
 }
 
 pub fn inc16<Z: Z80>(z: &mut Z, arg: Reg16) {
-    log_minor!(z, "Z80: op: INC {:?}", arg);
-
     let val = arg.get(z);
     arg.set(z, val.wrapping_add(1));
 }
 
 pub fn dec16<Z: Z80>(z: &mut Z, arg: Reg16) {
-    log_minor!(z, "Z80: op: DEC {:?}", arg);
-
     let val = arg.get(z);
     arg.set(z, val.wrapping_sub(1));
 }
@@ -697,14 +622,10 @@ macro_rules! rotate_shift_functions_noa {
         }
 
         pub fn $fn_general<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1) {
-            log_minor!(z, $string_general, arg);
-
             $fn_impl2(z, arg);
         }
 
         pub fn $fn_store<Z: Z80, T1: Settable<u8>>(z: &mut Z, arg: T1, store: Reg8) {
-            log_minor!(z, $string_store, arg, store);
-
             $fn_impl2(z, arg);
             let result = arg.get(z);
             store.set(z, result);
@@ -716,8 +637,6 @@ macro_rules! rotate_shift_functions {
 ($fn_impl: ident $fn_impl2: ident $fn_general: ident $string_general: expr,
 $fn_store: ident $string_store: expr, $fn_a: ident $string_a: expr) => {
     pub fn $fn_a<Z: Z80>(z: &mut Z) {
-        log_minor!(z, $string_a);
-
         let a = A.get(z);
         let result = $fn_impl(z, a);
         A.set(z, result);
@@ -845,8 +764,6 @@ rotate_shift_functions_noa!{
 }
 
 pub fn rld<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: RLD");
-
     let hl: u8 = Address(HL).get(z);
     let hl_lo: u8 = 0xF & hl;
     let hl_hi: u8 = 0xF0 & hl;
@@ -866,8 +783,6 @@ pub fn rld<Z: Z80>(z: &mut Z) {
 }
 
 pub fn rrd<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: RRD");
-
     let hl: u8 = Address(HL).get(z);
     let hl_lo: u8 = 0xF & hl;
     let hl_hi: u8 = 0xF0 & hl;
@@ -890,8 +805,6 @@ pub fn rrd<Z: Z80>(z: &mut Z) {
 ///////////////////////////////////
 
 pub fn bit<Z: Z80, T: Gettable<u8>>(z: &mut Z, b: u8, arg: T) {
-    log_minor!(z, "Z80: op: BIT {:?}, {:?}", b, arg);
-
     let x = arg.get(z);
     let mut f = F.get(z);
     assign_bit(&mut f, ZF, !x, b);
@@ -907,14 +820,10 @@ fn set_impl<Z: Z80, T: Settable<u8>>(z: &mut Z, b: u8, arg: T) {
 }
 
 pub fn set<Z: Z80, T: Settable<u8>>(z: &mut Z, b: u8, arg: T) {
-    log_minor!(z, "Z80: op: SET {:?}, {:?}", b, arg);
-
     set_impl(z, b, arg);
 }
 
 pub fn set_store<Z: Z80, T: Settable<u8>>(z: &mut Z, b: u8, arg: T, reg: Reg8) {
-    log_minor!(z, "Z80: op: SET {:?}, {:?}, {:?}", b, arg, reg);
-
     set_impl(z, b, arg);
     let x = arg.get(z);
     reg.set(z, x);
@@ -927,14 +836,10 @@ fn res_impl<Z: Z80, T: Settable<u8>>(z: &mut Z, b: u8, arg: T) {
 }
 
 pub fn res<Z: Z80, T: Settable<u8>>(z: &mut Z, b: u8, arg: T) {
-    log_minor!(z, "Z80: op: RES {:?}, {:?}", b, arg);
-
     res_impl(z, b, arg);
 }
 
 pub fn res_store<Z: Z80, T: Settable<u8>>(z: &mut Z, b: u8, arg: T, reg: Reg8) {
-    log_minor!(z, "Z80: op: RES {:?}, {:?}, {:?}", b, arg, reg);
-
     res_impl(z, b, arg);
     let x = arg.get(z);
     reg.set(z, x);
@@ -944,151 +849,47 @@ pub fn res_store<Z: Z80, T: Settable<u8>>(z: &mut Z, b: u8, arg: T, reg: Reg8) {
 ///////////////
 
 pub fn jp<Z: Z80, T: Gettable<u16>>(z: &mut Z, arg: T) {
-    log_minor!(z, "Z80: op: JP {:?}", arg);
-
     let addr = arg.get(z);
     PC.set(z, addr);
 }
 
-fn check_cc_impl<Z: Z80>(z: &mut Z, arg: u8) -> bool {
-    let f = F.get(z);
-    match arg {
-        0 => (f & 1 << ZF) == 0,
-        1 => (f & 1 << ZF) != 0,
-        2 => (f & 1 << CF) == 0,
-        3 => (f & 1 << CF) != 0,
-        4 => (f & 1 << PF) == 0,
-        5 => (f & 1 << PF) != 0,
-        6 => (f & 1 << SF) == 0,
-        7 => (f & 1 << SF) != 0,
-        _ => panic!("jp_cc: bogus arg"),
+pub fn jpcc<Z: Z80>(z: &mut Z, cc: ConditionCode, arg: u16) {
+    if cc.get(z) {
+        jp(z, arg);
     }
 }
 
-fn cc_code_to_string_impl(arg: u8) -> String {
-    match arg {
-        0 => "NZ",
-        1 => "Z",
-        2 => "NC",
-        3 => "C",
-        4 => "PO",
-        5 => "PE",
-        6 => "P",
-        7 => "N",
-        _ => panic!("jp_cc: bogus arg"),
-    }.to_owned()
-}
-
-pub fn jp_cc<Z: Z80>(z: &mut Z, arg: u8) {
+pub fn jr<Z: Z80>(z: &mut Z, e: i8) {
     let pc = PC.get(z);
-    let n1 = Address(PC).get(z);
-    let n2 = Address(pc.wrapping_add(1)).get(z);
-    let nn = to16(n1, n2);
-
-    log_minor!(z, "Z80: op: JP {:?}, {:?}", cc_code_to_string_impl(arg), nn);
-
-    PC.set(z, pc.wrapping_add(2));
-    if check_cc_impl(z, arg) {
-        PC.set(z, nn);
-    }
+    let new_pc = pc.wrapping_add(e as i16 as u16);
+    PC.set(z, new_pc);
 }
 
-fn jr_impl<Z: Z80>(z: &mut Z, doit: bool) -> i8 {
-    let pc = PC.get(z);
-    let new_pc = pc.wrapping_add(1);
-    let n: u8 = Address(PC).get(z);
-    let ni = n as i8;
-    if doit {
-        let new_new_pc = new_pc.wrapping_add(ni as i16 as u16);
-        PC.set(z, new_new_pc);
+pub fn jrcc<Z: Z80>(z: &mut Z, cc: ConditionCode, e: i8) {
+    if cc.get(z) {
+        jr(z, e);
+        z.cycles(12);
     } else {
-        PC.set(z, new_pc);
-    }
-    ni
-}
-
-pub fn jr<Z: Z80>(z: &mut Z) {
-    let ni = jr_impl(z, true);
-
-    log_minor!(z, "Z80: op: JR {:?}", ni);
-}
-
-pub fn jr_c<Z: Z80>(z: &mut Z) {
-    let f = F.get(z);
-    let cond = (f & 1 << CF) != 0;
-    let ni = jr_impl(z, cond);
-
-    log_minor!(z, "Z80: op: JR C {:?}", ni);
-
-    if cond {
-        z.cycles(&[4, 3, 5]);
-    } else {
-        z.cycles(&[4, 3]);
+        z.cycles(7);
     }
 }
 
-pub fn jr_nc<Z: Z80>(z: &mut Z) {
-    let f = F.get(z);
-    let cond = (f & 1 << CF) == 0;
-    let ni = jr_impl(z, cond);
-
-    log_minor!(z, "Z80: op: JR NC {:?}", ni);
-
-    if cond {
-        z.cycles(&[4, 3, 5]);
-    } else {
-        z.cycles(&[4, 3]);
-    }
-}
-
-pub fn jr_z<Z: Z80>(z: &mut Z) {
-    let f = F.get(z);
-    let cond = (f & 1 << ZF) != 0;
-    let ni = jr_impl(z, cond);
-
-    log_minor!(z, "Z80: op: JR Z {:?}", ni);
-
-    if cond {
-        z.cycles(&[4, 3, 5]);
-    } else {
-        z.cycles(&[4, 3]);
-    }
-}
-
-pub fn jr_nz<Z: Z80>(z: &mut Z) {
-    let f = F.get(z);
-    let cond = (f & 1 << ZF) == 0;
-    let ni = jr_impl(z, cond);
-
-    log_minor!(z, "Z80: op: JR NZ {:?}", ni);
-
-    if cond {
-        z.cycles(&[4, 3, 5]);
-    } else {
-        z.cycles(&[4, 3]);
-    }
-}
-
-pub fn djnz<Z: Z80>(z: &mut Z) {
+pub fn djnz<Z: Z80>(z: &mut Z, e: i8) {
     let b = B.get(z);
     let new_b = b.wrapping_sub(1);
     B.set(z, new_b);
-    let cond = new_b != 0;
-    let ni = jr_impl(z, cond);
-
-    log_minor!(z, "Z80: op: DJNZ {:?}", ni);
-
-    if cond {
-        z.cycles(&[5, 3, 5]);
+    if new_b != 0 {
+        jr(z, e);
+        z.cycles(13);
     } else {
-        z.cycles(&[5, 3]);
+        z.cycles(8);
     }
 }
 
 //// Call and Return Group
 //////////////////////////
 
-fn call_nn_impl<Z: Z80>(z: &mut Z, nn: u16) {
+pub fn call<Z: Z80>(z: &mut Z, nn: u16) {
     let pch = PCH.get(z);
     let pcl = PCL.get(z);
     let sp = SP.get(z);
@@ -1098,25 +899,16 @@ fn call_nn_impl<Z: Z80>(z: &mut Z, nn: u16) {
     PC.set(z, nn);
 }
 
-pub fn call_nn<Z: Z80>(z: &mut Z, nn: u16) {
-    log_minor!(z, "Z80: op: CALL {:?}", nn);
-
-    call_nn_impl(z, nn);
-}
-
-pub fn call_cc_nn<Z: Z80>(z: &mut Z, arg: u8, nn: u16) {
-    log_minor!(z, "Z80: op: CALL {:?}, {:?}", cc_code_to_string_impl(arg), nn);
-
-    if check_cc_impl(z, arg) {
-        call_nn_impl(z, nn);
-
-        z.cycles(&[4, 3, 4, 3, 3]);
+pub fn callcc<Z: Z80>(z: &mut Z, cc: ConditionCode, nn: u16) {
+    if cc.get(z) {
+        call(z, nn);
+        z.cycles(17);
     } else {
-        z.cycles(&[4, 3, 3]);
+        z.cycles(10);
     }
 }
 
-fn ret_impl<Z: Z80>(z: &mut Z) {
+pub fn ret<Z: Z80>(z: &mut Z) {
     let sp = SP.get(z);
     let n1 = Address(sp).get(z);
     PCL.set(z, n1);
@@ -1125,33 +917,22 @@ fn ret_impl<Z: Z80>(z: &mut Z) {
     SP.set(z, sp.wrapping_add(2));
 }
 
-pub fn ret<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: RET");
-
-    ret_impl(z);
-}
-
-pub fn ret_cc<Z: Z80>(z: &mut Z, arg: u8) {
-    log_minor!(z, "Z80: op: RET {:?}", cc_code_to_string_impl(arg));
-
-    if check_cc_impl(z, arg) {
-        ret_impl(z);
-        z.cycles(&[5, 3, 3]);
+pub fn retcc<Z: Z80>(z: &mut Z, cc: ConditionCode) {
+    if cc.get(z) {
+        ret(z);
+        z.cycles(11);
     } else {
-        z.cycles(&[5]);
+        z.cycles(5);
     }
 }
 
 pub fn reti<Z: Z80>(z: &mut Z) {
     // XXX implement
-    log_minor!(z, "Z80: op: RETI");
 
     unimplemented!();
 }
 
 pub fn retn<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: RETN");
-
     let iff2 = z.get_z80_hardware().iff2;
     z.get_mut_z80_hardware().iff1 = iff2;
 
@@ -1176,33 +957,33 @@ pub fn rst<Z: Z80>(z: &mut Z, arg: u8) {
         _ => panic!("rst: invalid t value"),
     };
 
-    log_minor!(z, "Z80: op: RST {:?}", p);
-
     rst_impl(z, p);
 }
 
 //// Input and Output Group
 ///////////////////////////
 
-pub fn in_a<Z: Z80>(z: &mut Z, arg: u8) {
-    log_minor!(z, "Z80: op: IN A, ({:?})", arg);
-
-    let a = A.get(z);
-    let addr = to16(arg, a);
-    z.get_mut_z80_hardware().address = addr;
-    let x = z.input(addr);
+pub fn in_n<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
+    z: &mut Z,
+    arg1: T1,
+    arg2: T2,
+) {
+    let address_lo = arg2.get(z);
+    let address_hi = arg1.get(z);
+    let address = to16(address_lo, address_hi);
+    z.get_mut_z80_hardware().address = address;
+    let x = z.input(address);
     z.get_mut_z80_hardware().data = x;
-    A.set(z, x);
+    arg1.set(z, x);
 }
 
-pub fn in_c<Z: Z80>(z: &mut Z, arg: Reg8) {
-    log_minor!(z, "Z80: op: IN {:?} (C)", arg);
-
-    let addr = BC.get(z);
-    z.get_mut_z80_hardware().address = addr;
-    let x = z.input(addr);
+pub fn in_f<Z: Z80, T1: Gettable<u8>>(z: &mut Z, arg: T1) -> u8 {
+    let address_lo = arg.get(z);
+    let address_hi = B.get(z);
+    let address = to16(address_lo, address_hi);
+    z.get_mut_z80_hardware().address = address;
+    let x = z.input(address);
     z.get_mut_z80_hardware().data = x;
-    arg.set(z, x);
     let mut f = F.get(z);
     set_sign(&mut f, x);
     set_zero(&mut f, x);
@@ -1210,6 +991,16 @@ pub fn in_c<Z: Z80>(z: &mut Z, arg: Reg8) {
     clear_bit(&mut f, HF);
     clear_bit(&mut f, NF);
     F.set(z, f);
+    x
+}
+
+pub fn in_c<Z: Z80, T1: Settable<u8>, T2: Gettable<u8>>(
+    z: &mut Z,
+    arg1: T1,
+    arg2: T2
+) {
+    let x = in_f(z, arg2);
+    arg1.set(z, x);
 }
 
 /// The Z80 manual lists this instruction under IN r, (C) as "undefined"
@@ -1257,10 +1048,8 @@ pub fn ini<Z: Z80>(z: &mut Z) {
 }
 
 pub fn inir<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: INIR");
-
     while {
-        z.cycles(&[4, 5, 3, 4, 5]);
+        z.cycles(21);
         inid_impl(z, 1) != 0
     }
     {}
@@ -1270,12 +1059,10 @@ pub fn inir<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, NF);
     F.set(z, f);
 
-    z.cycles(&[4, 5, 3, 4]);
+    z.cycles(16);
 }
 
 pub fn ind<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: IND");
-
     let new_b = inid_impl(z, 0xFFFF);
     let mut f = F.get(z);
     set_zero(&mut f, new_b);
@@ -1284,10 +1071,8 @@ pub fn ind<Z: Z80>(z: &mut Z) {
 }
 
 pub fn indr<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: INDR");
-
     while {
-        z.cycles(&[4, 5, 3, 4, 5]);
+        z.cycles(21);
         inid_impl(z, 0xFFFF) != 0
     }
     {}
@@ -1297,27 +1082,35 @@ pub fn indr<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, NF);
     F.set(z, f);
 
-    z.cycles(&[4, 5, 3, 4]);
+    z.cycles(16);
 }
 
-pub fn out<Z: Z80>(z: &mut Z, n: u8) {
-    log_minor!(z, "Z80: op: OUT ({:?}), A", n);
-
-    let a = A.get(z);
-    let addr = to16(n, a);
-    z.get_mut_z80_hardware().address = addr;
-    z.get_mut_z80_hardware().data = a;
-    z.output(addr, a);
+pub fn out_n<Z: Z80, T1: Gettable<u8>, T2: Gettable<u8>> (
+    z: &mut Z,
+    arg1: T1,
+    arg2: T2,
+) {
+    let address_lo = arg1.get(z);
+    let address_hi = A.get(z);
+    let address = to16(address_lo, address_hi);
+    let x = arg2.get(z);
+    z.get_mut_z80_hardware().address = address;
+    z.get_mut_z80_hardware().data = x;
+    z.output(address, x);
 }
 
-pub fn out_c<Z: Z80>(z: &mut Z, arg: Reg8) {
-    log_minor!(z, "Z80: op: OUT (C), {:?}", arg);
-
-    let addr = BC.get(z);
-    z.get_mut_z80_hardware().address = addr;
-    let r = arg.get(z);
-    z.get_mut_z80_hardware().data = r;
-    z.output(addr, r);
+pub fn out_c<Z: Z80, T1: Gettable<u8>, T2: Gettable<u8>> (
+    z: &mut Z,
+    arg1: T1,
+    arg2: T2,
+) {
+    let address_lo = arg1.get(z);
+    let address_hi = B.get(z);
+    let address = to16(address_lo, address_hi);
+    let x = arg2.get(z);
+    z.get_mut_z80_hardware().address = address;
+    z.get_mut_z80_hardware().data = x;
+    z.output(address, x);
 }
 
 fn outid_impl<Z: Z80>(z: &mut Z, inc: u16) {
@@ -1338,8 +1131,6 @@ fn outid_impl<Z: Z80>(z: &mut Z, inc: u16) {
 }
 
 pub fn outi<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: OUTI");
-
     outid_impl(z, 1);
     let new_b = B.get(z);
     let mut f = F.get(z);
@@ -1349,10 +1140,8 @@ pub fn outi<Z: Z80>(z: &mut Z) {
 }
 
 pub fn otir<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: OTIR");
-
     while {
-        z.cycles(&[4, 5, 3, 4, 5]);
+        z.cycles(21);
         outid_impl(z, 1);
         B.get(z) != 0
     }
@@ -1362,12 +1151,10 @@ pub fn otir<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, ZF);
     set_bit(&mut f, NF);
 
-    z.cycles(&[4, 5, 3, 4]);
+    z.cycles(16);
 }
 
 pub fn outd<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: OUTD");
-
     outid_impl(z, 0xFFFF);
     let new_b = B.get(z);
     let mut f = F.get(z);
@@ -1377,10 +1164,8 @@ pub fn outd<Z: Z80>(z: &mut Z) {
 }
 
 pub fn otdr<Z: Z80>(z: &mut Z) {
-    log_minor!(z, "Z80: op: OTDR");
-
     while {
-        z.cycles(&[4, 5, 3, 4, 5]);
+        z.cycles(21);
         outid_impl(z, 0xFFFF);
         B.get(z) != 0
     }
@@ -1390,5 +1175,5 @@ pub fn otdr<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, ZF);
     set_bit(&mut f, NF);
 
-    z.cycles(&[4, 5, 3, 4]);
+    z.cycles(16);
 }

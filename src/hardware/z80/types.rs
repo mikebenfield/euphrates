@@ -36,6 +36,13 @@ pub enum Reg16 {
 
 pub use self::Reg16::*;
 
+#[derive(Clone, Copy, Debug)]
+pub enum ConditionCode {
+    NZcc, Zcc, NCcc, Ccc, POcc, PEcc, Pcc, Mcc
+}
+
+pub use self::ConditionCode::*;
+
 pub const CF: u8 = 0;
 pub const NF: u8 = 1;
 pub const PF: u8 = 2;
@@ -108,7 +115,7 @@ impl std::fmt::Display for Z80Hardware {
 pub trait Z80: Log + Io + MemoryMapper {
     fn get_z80_hardware(&self) -> &Z80Hardware;
     fn get_mut_z80_hardware(&mut self) -> &mut Z80Hardware;
-    fn cycles(&mut self, i: &[u32]);
+    fn cycles(&mut self, i: u64);
 }
 
 pub trait Gettable<Output>: std::fmt::Debug + Copy {
@@ -238,3 +245,20 @@ impl Settable<u8> for Shift {
         Address(addr).set(z, x);
     }
 }
+
+impl Gettable<bool> for ConditionCode {
+    fn get<Z: Z80>(self, z: &mut Z) -> bool {
+        let f = F.get(z);
+        match self {
+            NZcc => f & (1 << ZF) == 0,
+            Zcc  => f & (1 << ZF) != 0,
+            NCcc => f & (1 << CF) == 0,
+            Ccc => f & (1 << CF) != 0,
+            POcc => f & (1 << PF) == 0,
+            PEcc => f & (1 << PF) != 0,
+            Pcc => f & (1 << SF) == 0,
+            Mcc => f & (1 << SF) != 0,
+        }
+    }
+}
+
