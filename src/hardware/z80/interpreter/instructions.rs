@@ -167,27 +167,27 @@ pub fn ldir<Z: Z80>(z: &mut Z) {
     while {
         // goofy hack to get a do-while loop
         ld_id_impl(z, 1);
-        z.cycles(21);
+        z.advance_t_states(21);
         BC.get(z) != 0
     }
     {}
 
     ld_id_flag_impl(z);
 
-    z.cycles(17);
+    z.advance_t_states(17);
 }
 
 pub fn lddr<Z: Z80>(z: &mut Z) {
     while {
         ld_id_impl(z, -1);
-        z.cycles(21);
+        z.advance_t_states(21);
         BC.get(z) != 0
     }
     {}
 
     ld_id_flag_impl(z);
 
-    z.cycles(17);
+    z.advance_t_states(17);
 }
 
 fn cpi_impl<Z: Z80>(z: &mut Z) {
@@ -208,15 +208,15 @@ pub fn cpi<Z: Z80>(z80: &mut Z) {
 pub fn cpir<Z: Z80>(z: &mut Z) {
     while {
         cpi_impl(z);
-        z.cycles(21);
+        z.advance_t_states(21);
         BC.get(z) != 0 && F.get(z) & (1 << ZF) != 0
     }
     {}
 
-    z.cycles(17);
+    z.advance_t_states(17);
 }
 
-fn cpd_impl<Z: Z80>(z: &mut Z) {
+pub fn cpd<Z: Z80>(z: &mut Z) {
     cp_impl(z, Address(HL));
     let bc = BC.get(z);
     BC.set(z, bc.wrapping_sub(1));
@@ -227,19 +227,17 @@ fn cpd_impl<Z: Z80>(z: &mut Z) {
     F.set(z, f);
 }
 
-pub fn cpd<Z: Z80>(z: &mut Z) {
-    cpd_impl(z);
-}
-
 pub fn cpdr<Z: Z80>(z: &mut Z) {
     while {
-        cpd_impl(z);
-        z.cycles(21);
+        inc_r(z);
+        inc_r(z);
+        cpd(z);
+        z.advance_t_states(21);
         BC.get(z) !=0 && F.get(z) & (1 << ZF) != 0
     }
     {}
 
-    z.cycles(17);
+    z.advance_t_states(17);
 }
 
 //// 8-Bit Arithmetic Group
@@ -485,7 +483,6 @@ pub fn scf<Z: Z80>(z: &mut Z) {
 pub fn nop<Z: Z80>(z: &mut Z) {
 }
 
-// XXX implement
 pub fn halt<Z: Z80>(z: &mut Z) {
 }
 
@@ -495,10 +492,11 @@ pub fn di<Z: Z80>(z: &mut Z) {
 }
 
 pub fn ei<Z: Z80>(z: &mut Z) {
-    use super::execute::execute1;
+    use super::execute::execute_loop;
 
     // Interrupts are not actually enabled until after the following instruction
-    execute1(z);
+    let t_states = z.get_t_states();
+    execute_loop(z, 1 + t_states);
 
     z.get_mut_z80_hardware().iff1 = true;
     z.get_mut_z80_hardware().iff2 = true;
@@ -867,9 +865,9 @@ pub fn jr<Z: Z80>(z: &mut Z, e: i8) {
 pub fn jrcc<Z: Z80>(z: &mut Z, cc: ConditionCode, e: i8) {
     if cc.get(z) {
         jr(z, e);
-        z.cycles(12);
+        z.advance_t_states(12);
     } else {
-        z.cycles(7);
+        z.advance_t_states(7);
     }
 }
 
@@ -879,9 +877,9 @@ pub fn djnz<Z: Z80>(z: &mut Z, e: i8) {
     B.set(z, new_b);
     if new_b != 0 {
         jr(z, e);
-        z.cycles(13);
+        z.advance_t_states(13);
     } else {
-        z.cycles(8);
+        z.advance_t_states(8);
     }
 }
 
@@ -901,9 +899,9 @@ pub fn call<Z: Z80>(z: &mut Z, nn: u16) {
 pub fn callcc<Z: Z80>(z: &mut Z, cc: ConditionCode, nn: u16) {
     if cc.get(z) {
         call(z, nn);
-        z.cycles(17);
+        z.advance_t_states(17);
     } else {
-        z.cycles(10);
+        z.advance_t_states(10);
     }
 }
 
@@ -919,9 +917,9 @@ pub fn ret<Z: Z80>(z: &mut Z) {
 pub fn retcc<Z: Z80>(z: &mut Z, cc: ConditionCode) {
     if cc.get(z) {
         ret(z);
-        z.cycles(11);
+        z.advance_t_states(11);
     } else {
-        z.cycles(5);
+        z.advance_t_states(5);
     }
 }
 
@@ -1032,7 +1030,7 @@ pub fn ini<Z: Z80>(z: &mut Z) {
 
 pub fn inir<Z: Z80>(z: &mut Z) {
     while {
-        z.cycles(21);
+        z.advance_t_states(21);
         inid_impl(z, 1) != 0
     }
     {}
@@ -1042,7 +1040,7 @@ pub fn inir<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, NF);
     F.set(z, f);
 
-    z.cycles(16);
+    z.advance_t_states(16);
 }
 
 pub fn ind<Z: Z80>(z: &mut Z) {
@@ -1055,7 +1053,7 @@ pub fn ind<Z: Z80>(z: &mut Z) {
 
 pub fn indr<Z: Z80>(z: &mut Z) {
     while {
-        z.cycles(21);
+        z.advance_t_states(21);
         inid_impl(z, 0xFFFF) != 0
     }
     {}
@@ -1065,7 +1063,7 @@ pub fn indr<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, NF);
     F.set(z, f);
 
-    z.cycles(16);
+    z.advance_t_states(16);
 }
 
 pub fn out_n<Z: Z80, T1: Gettable<u8>, T2: Gettable<u8>> (
@@ -1124,7 +1122,7 @@ pub fn outi<Z: Z80>(z: &mut Z) {
 
 pub fn otir<Z: Z80>(z: &mut Z) {
     while {
-        z.cycles(21);
+        z.advance_t_states(21);
         outid_impl(z, 1);
         B.get(z) != 0
     }
@@ -1134,7 +1132,7 @@ pub fn otir<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, ZF);
     set_bit(&mut f, NF);
 
-    z.cycles(16);
+    z.advance_t_states(16);
 }
 
 pub fn outd<Z: Z80>(z: &mut Z) {
@@ -1148,7 +1146,7 @@ pub fn outd<Z: Z80>(z: &mut Z) {
 
 pub fn otdr<Z: Z80>(z: &mut Z) {
     while {
-        z.cycles(21);
+        z.advance_t_states(21);
         outid_impl(z, 0xFFFF);
         B.get(z) != 0
     }
@@ -1158,5 +1156,5 @@ pub fn otdr<Z: Z80>(z: &mut Z) {
     set_bit(&mut f, ZF);
     set_bit(&mut f, NF);
 
-    z.cycles(16);
+    z.advance_t_states(16);
 }

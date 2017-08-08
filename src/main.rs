@@ -10,34 +10,44 @@ extern crate attalus;
 // use log::*;
 // use hardware::memory_mapper::implementation::*;
 
-use attalus::emulation_manager::*;
-use attalus::log::*;
-use attalus::hardware::memory_mapper::implementation::*;
+// use attalus::emulation_manager::*;
+// use attalus::log::*;
+// use attalus::hardware::memory_mapper::implementation::*;
+use attalus::hardware::z80::test_against;
+
+extern crate rand;
+use rand::SeedableRng;
 
 fn main() {
-    // let log = LogEverything::new(std::io::stdout());
-    let log = LogNothing::new();
-    let mut args: Vec<String> = Vec::new();
-    args.extend(std::env::args());
-    if args.len() < 3 {
-        eprintln!("Usage: exec filename n");
-        return;
+    let mut rng = rand::IsaacRng::from_seed(&[1,2,3,4,5]);
+    let r = test_against::test_against(100, 1, &mut rng).unwrap();
+    match r {
+        test_against::TestResult::TestFailed(x) => println!("test failure {:?}", x),
+        _ => {}
     }
-    let filename = &args[1];
-    let smmh =
-        <SegaMemoryMapperHardware as MemoryMapperHardware>::
-            new_from_file(filename.clone(), 0x2000).unwrap();
+    // let log = LogEverything::new(std::io::stdout());
+    // let log = LogNothing::new();
+    // let mut args: Vec<String> = Vec::new();
+    // args.extend(std::env::args());
+    // if args.len() < 3 {
+    //     eprintln!("Usage: exec filename n");
+    //     return;
+    // }
+    // let filename = &args[1];
+    // let smmh =
+    //     <SegaMemoryMapperHardware as MemoryMapperHardware>::
+    //         new_from_file(filename.clone(), 0x2000).unwrap();
 
-    let mut em = EmulationManager::new(log, smmh);
+    // let mut em = EmulationManager::new(log, smmh);
 
-    let n: usize = args[2].parse().expect("Usage: exec filename n");
+    // let n: usize = args[2].parse().expect("Usage: exec filename n");
 
-    let mut win = attalus::sdl_wrap::video::WindowCanvas::new().unwrap();
-    win.set_window_size(700, 700);
-    win.set_title("Attalus");
-    win.set_logical_size(256, 192);
+    // let mut win = attalus::sdl_wrap::video::WindowCanvas::new().unwrap();
+    // win.set_window_size(700, 700);
+    // win.set_title("Attalus");
+    // win.set_logical_size(256, 192);
 
-    main_loop(&mut em, &mut win, n);
+    // main_loop(&mut em, &mut win, n);
 
     // attalus::graphics::WindowCanvas::new(500, 500);
     // let sdl = sdl2::init().unwrap();

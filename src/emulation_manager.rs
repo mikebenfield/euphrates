@@ -1,4 +1,3 @@
-use std;
 
 use sdl_wrap;
 use log::*;
@@ -99,8 +98,17 @@ impl<L: Log, M: MemoryMapperHardware> Z80 for EmulationManager<L, M> {
     fn get_mut_z80_hardware(&mut self) -> &mut Z80Hardware {
         &mut self.z80_hardware
     }
-    fn cycles(&mut self, i: u64) {
-        self.cycles_by_z80 += 3 * i;
+    fn advance_t_states(&mut self, t_states: u64) {
+        self.cycles_by_z80 += 3 * t_states;
+    }
+    fn get_t_states(&self) -> u64 {
+        self.cycles_by_z80 / 3
+    }
+    fn end_on_halt(&self) -> bool {
+        true
+    }
+    fn use_r_register(&self) -> bool {
+        true
     }
 }
 
@@ -117,9 +125,10 @@ pub fn main_loop<L: Log, M: MemoryMapperHardware, C: Canvas>(
         // vdp_cycles += draw_line(em, canvas).unwrap();
         vdp_cycles += draw_frame(em, canvas).unwrap();
 
-        while em.cycles_by_z80 < vdp_cycles {
-            interpreter::execute1(em);
-        }
+        interpreter::execute_loop(em, vdp_cycles / 3);
+        // while em.cycles_by_z80 < vdp_cycles {
+        //     interpreter::execute1(em);
+        // }
         // canvas.paint(5, i % 256, 0b101000);
         // canvas.paint(10, i % 256, 0xFF);
         // canvas.paint(15, i % 256, 0b110011);

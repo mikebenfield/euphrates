@@ -1,8 +1,9 @@
 
 #[macro_use]
 mod instruction_list;
-pub mod interpreter;
 mod types;
+pub mod interpreter;
+pub mod test_against;
 
 pub use self::types::*;
 

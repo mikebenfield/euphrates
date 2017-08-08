@@ -226,6 +226,69 @@ impl MemoryMapperHardware for SegaMemoryMapperHardware {
     }
 }
 
+#[derive(Copy)]
+pub struct SimpleMemoryMapperHardware {
+    pub mem: [u8; 0x10000]
+}
+
+impl Default for SimpleMemoryMapperHardware {
+    fn default() -> SimpleMemoryMapperHardware {
+        SimpleMemoryMapperHardware {
+            mem: [0; 0x10000]
+        }
+    }
+}
+
+impl Clone for SimpleMemoryMapperHardware {
+    fn clone(&self) -> SimpleMemoryMapperHardware {
+        SimpleMemoryMapperHardware {
+            mem: self.mem
+        }
+    }
+}
+
+impl std::fmt::Debug for SimpleMemoryMapperHardware {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        format!("SimpleMemoryMapperHardware {{ mem: {:?} (...) }}", &self.mem[0..64]);
+        Ok(())
+    }
+}
+
+impl MemoryMapperHardware for SimpleMemoryMapperHardware {
+    fn new(rom: &[u8], cart_ram_size: usize) -> Result<SimpleMemoryMapperHardware, MemoryMapError> {
+        let mut mem: [u8; 0x10000] = [0; 0x10000];
+        mem[0..rom.len()].copy_from_slice(rom);
+        Ok(
+            SimpleMemoryMapperHardware {
+                mem: mem
+            }
+        )
+    }
+
+    fn new_from_file(filename: String, cart_ram_size: usize) -> Result<SimpleMemoryMapperHardware, MemoryMapError> {
+        use std::fs::File;
+        use std::io::Read;
+
+        let mut f = File::open(filename)?;
+        let mut buf: Vec<u8> = Vec::new();
+        f.read_to_end(&mut buf)?;
+
+        SimpleMemoryMapperHardware::new(&buf[0..], cart_ram_size)
+    }
+
+    fn read<M: MemoryMapper0<Hardware = SimpleMemoryMapperHardware>>(m: &mut M, address: u16) -> u8 {
+        m.get_memory_mapper_hardware().mem[address as usize]
+    }
+
+    fn write<M: MemoryMapper0<Hardware = SimpleMemoryMapperHardware>>(m: &mut M, address: u16, value: u8) {
+        m.get_mut_memory_mapper_hardware().mem[address as usize] = value
+    }
+
+    fn check_ok<M: MemoryMapper0<Hardware = SimpleMemoryMapperHardware>>(m: &mut M) -> Result<(), MemoryMapError> {
+        Ok(())
+    }
+}
+
 impl<H: MemoryMapperHardware, M: MemoryMapper0<Hardware = H>> MemoryMapper for M {
     fn read(&mut self, address: u16) -> u8 {
         <H as MemoryMapperHardware>::read(self, address)

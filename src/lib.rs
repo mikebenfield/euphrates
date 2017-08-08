@@ -1,5 +1,6 @@
-// #![recursion_limit = "1024"]
 
+extern crate rand;
+extern crate tempdir;
 extern crate sdl2;
 
 mod bits;

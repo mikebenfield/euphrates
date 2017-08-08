@@ -4,7 +4,8 @@ use ::bits::*;
 use super::instructions;
 use hardware::z80::types::*;
 
-pub fn execute1<Z: Z80>(z: &mut Z) {
+/// Returns `true` if execution should continue; `false` if it has been halted.
+pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
     if z.does_log_minor() {
         let s = format!("{}", z.get_z80_hardware());
         log_minor!(z, "Z80: status: {}", s);
@@ -15,6 +16,18 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
     let mut nn: u16;
     let mut e: i8;
     let mut d: i8;
+
+    enum Prefix {
+        NoPrefix,
+        Ed,
+        Cb,
+        Dd,
+        Fd,
+        Ddcb,
+        Fdcb,
+    }
+
+    let mut prefix = Prefix::NoPrefix;
 
     fn read_pc<Z: Z80>(z: &mut Z) -> u8 {
         let pc = PC.get(z);
@@ -46,51 +59,63 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
         };
     }
 
+    macro_rules! do_instruction {
+        ($mnemonic: ident, $t_states: expr $(,$arguments: tt)*) => {
+            log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments),*));
+            apply_args!($mnemonic, $($arguments),*);
+            z.advance_t_states($t_states);
+            if z.get_t_states() >= t_states_do {
+                return true;
+            }
+            prefix = Prefix::NoPrefix;
+            continue;
+        }
+    }
+
     macro_rules! instruction_noprefix {
-        ([$code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
-            if opcode == $code {
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+        ([0x76] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
+            // as currently structured, I can't execute HALT from a regular instruction function
+            if opcode == 0x76 {
+                z.advance_t_states($t_states);
+                if z.end_on_halt() && !z.get_z80_hardware().iff1 {
+                    return false;
+                }
+                if z.get_t_states() >= t_states_do {
+                    return true;
+                }
+                prefix = Prefix::NoPrefix;
+                continue;
             }
         };
-        ([$code: expr, e] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([$code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
+            if opcode == $code {
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
+            }
+        };
+        ([$code: expr, e] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 e = read_pc(z) as i8;
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([$code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([$code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 d = read_pc(z) as i8;
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([$code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([$code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 n = read_pc(z);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([$code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([$code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 let n1: u8 = read_pc(z);
                 let n2: u8 = read_pc(z);
                 nn = to16(n1, n2);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ($($ignore: tt)*) => {
@@ -98,23 +123,17 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
     }
 
     macro_rules! instruction_ed {
-        ([0xED, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xED, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xED, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xED, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 let n1: u8 = read_pc(z);
                 let n2: u8 = read_pc(z);
                 nn = to16(n1, n2);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ($($ignore: tt)*) => {
@@ -122,12 +141,9 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
     }
 
     macro_rules! instruction_cb {
-        ([0xCB, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xCB, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ($($ignore: tt)*) => {
@@ -135,12 +151,9 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
     }
 
     macro_rules! instruction_ddcb {
-        ([0xDD, 0xCB, d, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xDD, 0xCB, d, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ($($ignore: tt)*) => {
@@ -148,12 +161,9 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
     }
 
     macro_rules! instruction_fdcb {
-        ([0xFD, 0xCB, d, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xFD, 0xCB, d, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ($($ignore: tt)*) => {
@@ -161,51 +171,36 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
     }
 
     macro_rules! instruction_dd {
-        ([0xDD, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xDD, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 let n1: u8 = read_pc(z);
                 let n2: u8 = read_pc(z);
                 nn = to16(n1, n2);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xDD, $code: expr, d, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xDD, $code: expr, d, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 d = read_pc(z) as i8;
                 n = read_pc(z);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xDD, $code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xDD, $code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 d = read_pc(z) as i8;
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xDD, $code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xDD, $code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 n = read_pc(z);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xDD, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xDD, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ($($ignore: tt)*) => {
@@ -213,73 +208,47 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
     }
 
     macro_rules! instruction_fd {
-        ([0xFD, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xFD, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 let n1: u8 = read_pc(z);
                 let n2: u8 = read_pc(z);
                 nn = to16(n1, n2);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xFD, $code: expr, d, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xFD, $code: expr, d, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 d = read_pc(z) as i8;
                 n = read_pc(z);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xFD, $code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xFD, $code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 d = read_pc(z) as i8;
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xFD, $code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xFD, $code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 n = read_pc(z);
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
-        ([0xFD, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $cycles: expr ; $is_undoc: expr ) => {
+        ([0xFD, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments,)*));
-                apply_args!($mnemonic, $($arguments),*);
-                z.cycles($cycles);
-                return;
+                do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ($($ignore: tt)*) => {
         };
     }
 
-    enum Prefix {
-        NoPrefix,
-        Ed,
-        Cb,
-        Dd,
-        Fd,
-        Ddcb,
-        Fdcb,
-    }
-
-    let mut prefix = Prefix::NoPrefix;
-
     loop {
         match prefix {
             Prefix::NoPrefix => {
                 opcode = read_pc(z);
+                inc_r(z);
                 process_instructions!(instruction_noprefix, d, e, n, nn);
                 if opcode == 0xED {
                     prefix = Prefix::Ed;
@@ -301,30 +270,43 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
             },
             Prefix::Ed => {
                 opcode = read_pc(z);
+                inc_r(z);
                 process_instructions!(instruction_ed, d, e, n, nn);
-                z.cycles(8);
-                return;
+                z.advance_t_states(8);
+                if z.get_t_states() >= t_states_do {
+                    return true;
+                }
+                prefix = Prefix::NoPrefix;
+                continue;
             },
             Prefix::Cb => {
                 opcode = read_pc(z);
+                inc_r(z);
                 process_instructions!(instruction_cb, d, e, n, nn);
-                z.cycles(8);
-                return;
+                z.advance_t_states(8);
+                if z.get_t_states() >= t_states_do {
+                    return true;
+                }
+                prefix = Prefix::NoPrefix;
+                continue;
             },
             Prefix::Ddcb => {
                 d = read_pc(z) as i8;
                 opcode = read_pc(z);
+                // inc_r(z);
                 process_instructions!(instruction_ddcb, d, e, n, nn);
                 panic!("Z80: can't happen: missing opcode DD CB {:0>2X} {:0>2X}", d as u8, opcode);
             },
             Prefix::Fdcb => {
                 d = read_pc(z) as i8;
                 opcode = read_pc(z);
+                // inc_r(z);
                 process_instructions!(instruction_fdcb, d, e, n, nn);
                 panic!("Z80: can't happen: missing opcode FD CB {:0>2X} {:0>2X}", d as u8, opcode);
             },
             Prefix::Dd => {
                 opcode = read_pc(z);
+                inc_r(z);
                 process_instructions!(instruction_dd, d, e, n, nn);
                 if opcode == 0xED {
                     prefix = Prefix::Ed;
@@ -335,20 +317,25 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
                     continue;
                 }
                 if opcode == 0xDD {
-                    z.cycles(4);
+                    z.advance_t_states(4);
                     prefix = Prefix::Dd;
                     continue;
                 }
                 if opcode == 0xFD {
-                    z.cycles(4);
+                    z.advance_t_states(4);
                     prefix = Prefix::Fd;
                     continue;
+                }
+                z.advance_t_states(4);
+                if z.get_t_states() >= t_states_do {
+                    return true;
                 }
                 prefix = Prefix::NoPrefix;
                 continue;
             },
             Prefix::Fd => {
                 opcode = read_pc(z);
+                inc_r(z);
                 process_instructions!(instruction_fd, d, e, n, nn);
                 if opcode == 0xED {
                     prefix = Prefix::Ed;
@@ -359,91 +346,22 @@ pub fn execute1<Z: Z80>(z: &mut Z) {
                     continue;
                 }
                 if opcode == 0xDD {
-                    z.cycles(4);
+                    z.advance_t_states(4);
                     prefix = Prefix::Dd;
                     continue;
                 }
                 if opcode == 0xFD {
-                    z.cycles(4);
+                    z.advance_t_states(4);
                     prefix = Prefix::Fd;
                     continue;
+                }
+                z.advance_t_states(4);
+                if z.get_t_states() >= t_states_do {
+                    return true;
                 }
                 prefix = Prefix::NoPrefix;
                 continue;
             },
-            _ => {
-                unimplemented!();
-            },
         }
     }
 }
-        //     Prefix::Ed => {
-        //         opcode = read_pc(z);
-        //         $ed_instructions;
-        //         z.cycles(8);
-        //         return;
-        //     },
-        //     Prefix::Cb => {
-        //         opcode = read_pc(z);
-        //         $cb_instructions;
-        //         panic!("Can't happen!: missing opcode 0xCB 0x{:0>2X}", opcode);
-        //     },
-        //     Prefix::Ddcb => {
-        //         d = read_pc(z) as i8;
-        //         opcode = read_pc(z);
-        //         $ddcb_instructions;
-        //         z.cycles(12);
-        //         return;
-        //     },
-        //     Prefix::Fdcb => {
-        //         d = read_pc(z) as i8;
-        //         opcode = read_pc(z);
-        //         $fdcb_instructions;
-        //         z.cycles(12);
-        //         return;
-        //     },
-        //     Prefix::Dd => {
-        //         $dd_instructions;
-        //         if opcode == 0xCB {
-        //             prefix = Prefix::Ddcb;
-        //             continue;
-        //         }
-        //         if opcode == 0xDD {
-        //             z.cycles(4);
-        //             prefix = Prefix::Dd;
-        //             continue;
-        //         }
-        //         if opcode == 0xFD {
-        //             z.cycles(4);
-        //             prefix = Prefix::Fd;
-        //             continue;
-        //         }
-        //         z.cycles(4);
-        //         return;
-        //     },
-        //     Prefix::Fd => {
-        //         $fd_instructions;
-        //         if opcode == 0xCB {
-        //             prefix = Prefix::Ddcb;
-        //             continue;
-        //         }
-        //         if opcode == 0xDD {
-        //             z.cycles(4);
-        //             prefix = Prefix::Dd;
-        //             continue;
-        //         }
-        //         if opcode == 0xFD {
-        //             z.cycles(4);
-        //             prefix = Prefix::Fd;
-        //             continue;
-        //         }
-        //         z.cycles(4);
-        //         return;
-        //     },
-//     process_instructions_noprefix!{
-// [[0x00]             ; nop        ; []          ;   4 ; false ;]
-// [[0x01, n, n]         ; ld16       ; [BC,nn]       ;  10 ; false ;]
-// [[0x06, n]           ; ld         ; [B,n]         ;   7 ; false ;]
-// [[0x10, e]           ; djnz       ; [e]           ;   8 ; false ;]
-//     }
-// }

@@ -115,7 +115,21 @@ impl std::fmt::Display for Z80Hardware {
 pub trait Z80: Log + Io + MemoryMapper {
     fn get_z80_hardware(&self) -> &Z80Hardware;
     fn get_mut_z80_hardware(&mut self) -> &mut Z80Hardware;
-    fn cycles(&mut self, i: u64);
+    fn advance_t_states(&mut self, count: u64);
+    fn get_t_states(&self) -> u64;
+
+    // options
+    fn end_on_halt(&self) -> bool;
+    fn use_r_register(&self) -> bool;
+}
+
+
+pub fn inc_r<Z: Z80>(z: &mut Z) {
+    if z.use_r_register() {
+        let r = R.get(z);
+        let ir = r.wrapping_add(1) & 0x7F;
+        R.set(z, ir | (r & 0x80));
+    }
 }
 
 // impl std::fmt::Display for Z80 {
@@ -260,14 +274,14 @@ impl Settable<u8> for Address<u16> {
 
 impl Gettable<u8> for Shift {
     fn get<Z: Z80>(self, z: &mut Z) -> u8 {
-        let addr = self.0.get(z) + (self.1 as i16 as u16);
+        let addr = self.0.get(z).wrapping_add(self.1 as i16 as u16);
         Address(addr).get(z)
     }
 }
 
 impl Settable<u8> for Shift {
     fn set<Z: Z80>(self, z: &mut Z, x: u8) {
-        let addr = self.0.get(z) + (self.1 as i16 as u16);
+        let addr = self.0.get(z).wrapping_add(self.1 as i16 as u16);
         Address(addr).set(z, x);
     }
 }
@@ -287,4 +301,3 @@ impl Gettable<bool> for ConditionCode {
         }
     }
 }
-
