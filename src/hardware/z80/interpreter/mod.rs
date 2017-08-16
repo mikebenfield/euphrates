@@ -1,10 +1,15 @@
 mod instructions;
-mod execute;
-// mod generated_dispatch;
+mod run;
 
-pub use self::execute::execute_loop;
+use super::{Z80, Z80Emulator};
+use self::run::run;
+use ::hardware::io::Io;
 
-pub use self::instructions::{nonmaskable_interrupt, maskable_interrupt};
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Z80Interpreter;
 
-#[cfg(test)]
-mod tests;
+impl<I: Io> Z80Emulator<I> for Z80Interpreter {
+    fn run(&mut self, z: &mut Z80<I>, cycles: u64) {
+        run(z, cycles);
+    }
+}

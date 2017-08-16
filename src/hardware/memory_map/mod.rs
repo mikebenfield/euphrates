@@ -13,13 +13,17 @@
 //!
 //! [`SegaMemoryMapperHardware`]: implementation/struct.SegaMemoryMapperHardware.html
 
-pub mod implementation;
+pub mod sega_memory_map;
+pub mod simple_memory_map;
 
 use std;
 use std::error::Error;
 use std::fmt;
 
-use log::Log;
+use log::*;
+
+pub use self::sega_memory_map::*;
+pub use self::simple_memory_map::*;
 
 #[derive(Clone, Debug)]
 pub struct MemoryMapError {
@@ -46,11 +50,7 @@ impl Error for MemoryMapError {
     }
 }
 
-/// Users of memory mappers will access them through this trait. This is largely
-/// so that users won't have to pass around a Log with every memory read and
-/// write.
-pub trait MemoryMapper: Log {
-    fn read(&mut self, i: u16) -> u8;
-    fn write(&mut self, i: u16, v: u8);
-    fn check_ok(&self) -> Result<(), MemoryMapError>;
+pub trait MemoryMap {
+    fn read(&self, logical_address: u16) -> u8;
+    fn write(&mut self, logical_address: u16, value: u8);
 }

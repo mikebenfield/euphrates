@@ -1,19 +1,21 @@
-use log::Log;
 
-use super::vdp::Vdp;
+use ::log;
 
-#[derive(Clone, Copy, Default)]
-pub struct IoHardware {
+use super::*;
+use ::hardware::vdp;
+use ::hardware::memory_map::sega_memory_map::*;
+
+pub struct Sms2Io {
     memory_control: u8,
     io_control: u8,
     ab: u8,
     b_misc: u8,
+    mem: SegaMemoryMap,
+    vdp: vdp::Vdp,
 }
 
-pub trait Io: Log + Vdp {
-    fn get_io_hardware(&self) -> &IoHardware;
-
-    fn get_mut_io_hardware(&mut self) -> &mut IoHardware;
+impl Io for Sms2Io {
+    type MemoryMap = SegaMemoryMap;
 
     fn input(&mut self, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
@@ -31,33 +33,33 @@ pub trait Io: Log + Vdp {
                 }
                 0b01000000 => {
                     // V counter
-                    self.read_v()
+                    self.vdp.read_v()
                 }
                 0b01000001 => {
                     // H counter
-                    self.read_h()
+                    self.vdp.read_h()
                 }
                 0b10000000 => {
                     // VDP data
-                    self.read_data()
+                    self.vdp.read_data()
                 }
                 0b10000001 => {
                     // VDP control
-                    self.read_control()
+                    self.vdp.read_control()
                 }
                 0b11000000 => {
                     // IO port A/B register
-                    self.get_io_hardware().ab
+                    self.ab
                 }
                 0b11000001 => {
-                    self.get_io_hardware().b_misc
+                    self.b_misc
                 }
                 _ => {
                     panic!("Missing IO address in input");
                 }
             };
 
-        log_minor!(self, "Io: input: address {:0>4X}, value 0x{:0>2X}", address, value);
+        log_minor!("Io: input: address {:0>4X}, value 0x{:0>2X}", address, value);
 
         value
     }
@@ -66,34 +68,42 @@ pub trait Io: Log + Vdp {
         let masked = (address & 0b11000001) as u8;
         match masked {
             0b00000000 => {
-                log_major!(self, "Io: output memory control: {:0>2X}", x);
-                self.get_mut_io_hardware().memory_control = x;
+                log_major!("Io: output memory control: {:0>2X}", x);
+                self.memory_control = x;
             }
             0b00000001 => {
-                log_major!(self, "Io: output io control: {:0>2X}", x);
-                self.get_mut_io_hardware().io_control = x;
+                log_major!("Io: output io control: {:0>2X}", x);
+                self.io_control = x;
             }
             0b01000000 => {
                 // SN76489 PSG - XXX not implemented
-                log_major!(self, "Io: Attempted to output to SN76489 PSG");
+                log_major!("Io: Attempted to output to SN76489 PSG");
             }
             0b01000001 => {
                 // SN76489 PSG - XXX not implemented
-                log_major!(self, "Io: Attempted to output to SN76489 PSG");
+                log_major!("Io: Attempted to output to SN76489 PSG");
             }
             0b10000000 => {
                 // VDP data
-                self.write_data(x);
+                self.vdp.write_data(x);
             }
             0b10000001 => {
                 // VDP control
-                self.write_control(x);
+                self.vdp.write_control(x);
             }
             _ => {
                 // writes to the remaining addresses have no effect
-                log_major!(self, "Io: Attempted to output to bogus address");
+                log_major!("Io: Attempted to output to bogus address");
             }
         }
-        log_minor!(self, "Io: output: address {:0>4X}, value 0x{:0>2X}", address, x);
+        log_minor!("Io: output: address {:0>4X}, value 0x{:0>2X}", address, x);
+    }
+
+    fn mem(&self) -> &SegaMemoryMap {
+        &self.mem
+    }
+
+    fn mem_mut(&mut self) -> &mut SegaMemoryMap {
+        &mut self.mem
     }
 }

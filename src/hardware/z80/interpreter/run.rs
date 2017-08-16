@@ -1,16 +1,12 @@
 
+use ::log;
 use ::bits::*;
 
 use super::instructions;
 use hardware::z80::types::*;
+use hardware::io::Io;
 
-/// Returns `true` if execution should continue; `false` if it has been halted.
-pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
-    if z.does_log_minor() {
-        let s = format!("{}", z.get_z80_hardware());
-        log_minor!(z, "Z80: status: {}", s);
-    }
-
+pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     let mut opcode: u8;
     let mut n: u8;
     let mut nn: u16;
@@ -29,12 +25,12 @@ pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
 
     let mut prefix = Prefix::NoPrefix;
 
-    fn read_pc<Z: Z80>(z: &mut Z) -> u8 {
+    fn read_pc<I: Io>(z: &mut Z80<I>) -> u8 {
         let pc = PC.get(z);
-        log_minor!(z, "Z80: PC: {:0>4X}", pc);
+        log_minor!("Z80: PC: {:0>4X}", pc);
         let opcode: u8 = Address(pc).get(z);
         PC.set(z, pc + 1);
-        log_minor!(z, "Z80: opcode: {:0>2X}", opcode);
+        log_minor!("Z80: opcode: {:0>2X}", opcode);
         opcode
     }
 
@@ -60,33 +56,28 @@ pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
     }
 
     macro_rules! do_instruction {
+        (halt, $t_states: expr $(,$arguments: tt)*) => {
+            use std;
+            log_minor!("Z80: op: halt");
+            apply_args!(halt, $($arguments),*);
+            z.cycles = std::cmp::max(z.cycles, cycles);
+            let pc = PC.get(z);
+            PC.set(z, pc.wrapping_sub(1));
+            return;
+        };
         ($mnemonic: ident, $t_states: expr $(,$arguments: tt)*) => {
-            log_minor!(z, "Z80: op: {}", stringify!($mnemonic $($arguments),*));
+            log_minor!("Z80: op: {}", stringify!($mnemonic $($arguments),*));
             apply_args!($mnemonic, $($arguments),*);
-            z.advance_t_states($t_states);
-            if z.get_t_states() >= t_states_do {
-                return true;
+            z.cycles += $t_states;
+            if z.cycles >= cycles {
+                return;
             }
             prefix = Prefix::NoPrefix;
             continue;
-        }
+        };
     }
 
     macro_rules! instruction_noprefix {
-        ([0x76] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
-            // as currently structured, I can't execute HALT from a regular instruction function
-            if opcode == 0x76 {
-                z.advance_t_states($t_states);
-                if z.end_on_halt() && !z.get_z80_hardware().iff1 {
-                    return false;
-                }
-                if z.get_t_states() >= t_states_do {
-                    return true;
-                }
-                prefix = Prefix::NoPrefix;
-                continue;
-            }
-        };
         ([$code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
@@ -272,9 +263,9 @@ pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
                 opcode = read_pc(z);
                 inc_r(z);
                 process_instructions!(instruction_ed, d, e, n, nn);
-                z.advance_t_states(8);
-                if z.get_t_states() >= t_states_do {
-                    return true;
+                z.cycles += 8;
+                if z.cycles >= cycles {
+                    return;
                 }
                 prefix = Prefix::NoPrefix;
                 continue;
@@ -283,9 +274,9 @@ pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
                 opcode = read_pc(z);
                 inc_r(z);
                 process_instructions!(instruction_cb, d, e, n, nn);
-                z.advance_t_states(8);
-                if z.get_t_states() >= t_states_do {
-                    return true;
+                z.cycles += 8;
+                if z.cycles >= cycles {
+                    return;
                 }
                 prefix = Prefix::NoPrefix;
                 continue;
@@ -317,18 +308,18 @@ pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
                     continue;
                 }
                 if opcode == 0xDD {
-                    z.advance_t_states(4);
+                    z.cycles += 4;
                     prefix = Prefix::Dd;
                     continue;
                 }
                 if opcode == 0xFD {
-                    z.advance_t_states(4);
+                    z.cycles += 4;
                     prefix = Prefix::Fd;
                     continue;
                 }
-                z.advance_t_states(4);
-                if z.get_t_states() >= t_states_do {
-                    return true;
+                z.cycles += 4;
+                if z.cycles >= cycles {
+                    return;
                 }
                 prefix = Prefix::NoPrefix;
                 continue;
@@ -346,18 +337,18 @@ pub fn execute_loop<Z: Z80>(z: &mut Z, t_states_do: u64) -> bool {
                     continue;
                 }
                 if opcode == 0xDD {
-                    z.advance_t_states(4);
+                    z.cycles += 4;
                     prefix = Prefix::Dd;
                     continue;
                 }
                 if opcode == 0xFD {
-                    z.advance_t_states(4);
+                    z.cycles += 4;
                     prefix = Prefix::Fd;
                     continue;
                 }
-                z.advance_t_states(4);
-                if z.get_t_states() >= t_states_do {
-                    return true;
+                z.cycles += 4;
+                if z.cycles >= cycles {
+                    return;
                 }
                 prefix = Prefix::NoPrefix;
                 continue;

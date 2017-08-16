@@ -4,6 +4,7 @@
 // `in_c` for the one taking its address from C and `in_f` for the one that just
 // sets flags. Also these instructions don't take their arguments in parentheses
 // because that makes no sense.
+#[macro_export]
 macro_rules! process_instructions {
     (@ $macro_name: ident, $d: ident, $e: ident, $n: ident, $nn: ident,
         $(

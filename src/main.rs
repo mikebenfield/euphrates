@@ -1,5 +1,10 @@
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
 
 extern crate attalus;
+
+
 
 // mod bits;
 // #[macro_use]
@@ -13,18 +18,19 @@ extern crate attalus;
 // use attalus::emulation_manager::*;
 // use attalus::log::*;
 // use attalus::hardware::memory_mapper::implementation::*;
-use attalus::hardware::z80::test_against;
+// use attalus::hardware::z80::test_against;
 
 extern crate rand;
 use rand::SeedableRng;
 
+
 fn main() {
-    let mut rng = rand::IsaacRng::from_seed(&[1,2,3,4,5]);
-    let r = test_against::test_against(100, 1, &mut rng).unwrap();
-    match r {
-        test_against::TestResult::TestFailed(x) => println!("test failure {:?}", x),
-        _ => {}
-    }
+    // let mut rng = rand::IsaacRng::from_seed(&[1,2,3,4,5]);
+    // let r = test_against::test_against(100, 1, &mut rng).unwrap();
+    // match r {
+    //     test_against::TestResult::TestFailed(x) => println!("test failure {:?}", x),
+    //     _ => {}
+    // }
     // let log = LogEverything::new(std::io::stdout());
     // let log = LogNothing::new();
     // let mut args: Vec<String> = Vec::new();

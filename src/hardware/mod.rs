@@ -21,6 +21,6 @@
 
 pub mod io;
 pub mod irq;
-pub mod memory_mapper;
+pub mod memory_map;
 pub mod vdp;
 pub mod z80;
