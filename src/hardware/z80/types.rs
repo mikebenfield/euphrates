@@ -27,10 +27,10 @@ pub use self::Reg8::*;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Reg16 {
-    BC=0, DE=2, AF=4, HL=6,
-    BC0=8, DE0=10, AF0=12, HL0=14,
-    IX=16, IY=18,
-    SP=20, PC=22
+    BC, DE, AF, HL,
+    BC0, DE0, AF0, HL0,
+    IX, IY,
+    SP, PC
 }
 
 pub use self::Reg16::*;
@@ -80,25 +80,39 @@ pub struct Z80<I: Io> {
     pub cycles: u64,
     pub address: u16,
     pub data: u8,
+
+    /// Represents the iff1 flag, determining whether maskable interrupts are
+    /// accepted.
+    ///
+    /// The Z80 `ei` instruction is supposed to set iff1, but then interrupts
+    /// aren't supposed to actually be accepted until after the following
+    /// instruction. To emulate this, my `ei` implementation sets the `iff1`
+    /// field to the current value of `cycles`. Then when an interrupt is
+    /// desired, the function `maskable_interrupt` first checks to see if
+    /// `cycles` is larger than `iff1`.
     pub iff1: u64,
     pub iff2: bool,
     pub interrupt_mode: InterruptMode,
-    pub registers: [u8; 26],
+    registers: [u16; 13],
 }
 
 impl<I> Z80<I>
 where I: Io {
     pub fn new(io: I) -> Z80<I> {
+        let mut registers = [0u16; 13];
+        // according to Young 2.4 these are the power on defaults
+        registers[AF as usize] = 0xFFFF;
+        registers[SP as usize] = 0xFFFF;
         Z80 {
             io: io,
             halted: false,
             cycles: 0,
             address: 0,
             data: 0,
-            iff1: 0,
+            iff1: 0xFFFFFFFFFFFFFFFF,
             iff2: false,
             interrupt_mode: Im0,
-            registers: [0; 26],
+            registers: registers,
         }
     }
 }
@@ -154,33 +168,33 @@ impl Gettable<u16> for u16 {
 
 impl Gettable<u8> for Reg8 {
     fn get<I: Io>(self, z: &Z80<I>) -> u8 {
-        z.registers[self as usize]
+        let byte_array: &[u8; 26] = 
+            unsafe {
+                std::mem::transmute(&z.registers)
+            };
+        byte_array[self as usize]
     }
 }
 
 impl Settable<u8> for Reg8 {
     fn set<I: Io>(self, z: &mut Z80<I>, x: u8) {
-        z.registers[self as usize] = x
+        let byte_array: &mut [u8; 26] =
+            unsafe {
+                std::mem::transmute(&z.registers)
+            };
+        byte_array[self as usize] = x
     }
 }
 
 impl Gettable<u16> for Reg16 {
     fn get<I: Io>(self, z: &Z80<I>) -> u16 {
-        let reff: &u8 = &z.registers[self as usize];
-        unsafe {
-            let reff2: &u16 = std::mem::transmute(reff);
-            *reff2
-        }
+        z.registers[self as usize]
     }
 }
 
 impl Settable<u16> for Reg16 {
     fn set<I: Io>(self, z: &mut Z80<I>, x: u16) {
-        let reff: &mut u8 = &mut z.registers[self as usize];
-        unsafe {
-            let reff2: &mut u16 = std::mem::transmute(reff);
-            *reff2 = x;
-        }
+        z.registers[self as usize] = x
     }
 }
 

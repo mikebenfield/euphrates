@@ -49,7 +49,7 @@ pub fn maskable_interrupt<I: Io>(z: &mut Z80<I>) -> bool {
     z.iff1 = 0;
     z.iff2 = false;
 
-    if iff1 > z.cycles {
+    if iff1 < z.cycles {
         log_minor!("Z80: Maskable interrupt allowed");
 
         let im = z.interrupt_mode;
@@ -572,7 +572,7 @@ pub fn halt<I: Io>(z: &mut Z80<I>) {
 }
 
 pub fn di<I: Io>(z: &mut Z80<I>) {
-    z.iff1 = 0;
+    z.iff1 = 0xFFFFFFFFFFFFFFFF;
     z.iff2 = false;
 }
 
@@ -1129,8 +1129,11 @@ pub fn inir<I: Io>(z: &mut Z80<I>) {
     while {
         z.cycles += 21;
         inid_impl(z, 1) != 0
+    } {
+        // r was already incremented twice by `run`
+        inc_r(z);
+        inc_r(z);
     }
-    {}
 
     let mut f = F.get(z);
     set_bit(&mut f, ZF);
@@ -1255,7 +1258,6 @@ pub fn otdr<I: Io>(z: &mut Z80<I>) {
         z.cycles += 21;
         outid_impl(z, 0xFFFF);
         B.get(z) != 0
-    }
     } {
         // r was already incremented twice by `run`
         inc_r(z);
