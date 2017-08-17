@@ -5,15 +5,6 @@ use ::bits::*;
 use ::hardware::z80::types::*;
 use ::hardware::io::Io;
 
-// fn set_parity(z80: &mut Z80, x: u8) {
-//     let mut tmp = x;
-//     tmp ^= tmp >> 4;
-//     tmp ^= tmp >> 2;
-//     tmp ^= tmp >> 1;
-//     let parity = (!tmp) & 1;
-//     set_flag(z80, Flag::P, parity != 0);
-// }
-
 fn set_sign<I: Io>(z80: &mut Z80<I>, x: u8) {
     let mut f = F.get(z80);
     assign_bit(&mut f, SF, x, SF);
@@ -26,13 +17,11 @@ fn set_zero<I: Io>(z80: &mut Z80<I>, x: u8) {
     F.set(z80, f);
 }
 
-fn set_parity(flags: &mut u8, x: u8) {
-    let mut tmp = x;
-    tmp ^= tmp >> 4;
-    tmp ^= tmp >> 2;
-    tmp ^= tmp >> 1;
-    let parity: u8 = (!tmp) & 1;
-    assign_bit(flags, PF, parity, 0);
+fn set_parity<I: Io>(z80: &mut Z80<I>, x: u8) {
+    let parity = x.count_ones() %2 == 0;
+    let mut f = F.get(z80);
+    assign_bit(&mut f, PF, parity as u8, 0);
+    F.set(z80, f);
 }
 
 //// Interrupts
@@ -385,13 +374,13 @@ pub fn sbc<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
 fn andor_impl<I: Io>(z: &mut Z80<I>, result: u8) {
     A.set(z, result);
 
+    // note that for AND and OR, the manual says PF is set according to whether
+    // there is overflow. I'm betting that is a mistake.
+    set_parity(z, result);
     set_sign(z, result);
     set_zero(z, result);
     let mut f = F.get(z);
 
-    // note that for AND and OR, the manual says PF is set according to whether
-    // there is overflow. I'm betting that is a mistake.
-    set_parity(&mut f, result);
     clear_bit(&mut f, HF);
     clear_bit(&mut f, NF);
     clear_bit(&mut f, CF);
@@ -492,12 +481,12 @@ pub fn daa<I: Io>(z: &mut Z80<I>) {
         a.wrapping_add(diff)
     };
     A.set(z, new_a);
+    set_parity(z, new_a);
     set_zero(z, new_a);
     set_sign(z, new_a);
     let mut f = F.get(z);
     assign_bit(&mut f, CF, new_cf, 0);
     assign_bit(&mut f, HF, new_hf, 0);
-    set_parity(&mut f, new_a);
     F.set(z, f);
 }
 
@@ -680,10 +669,10 @@ macro_rules! rotate_shift_functions_noa {
         pub fn $fn_general<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1) {
             $fn_impl2(z, arg);
             let result = arg.get(z);
+            set_parity(z, result);
             set_sign(z, result);
             set_zero(z, result);
             let mut f = F.get(z);
-            set_parity(&mut f, result);
             F.set(z, f);
         }
 
@@ -822,10 +811,10 @@ pub fn rld<I: Io>(z: &mut Z80<I>) {
     Address(HL).set(z, hl_lo << 4 | a_lo);
     A.set(z, hl_hi >> 4 | a_hi);
     let a = A.get(z);
+    set_parity(z, a);
     set_sign(z, a);
     set_zero(z, a);
     let mut f = F.get(z);
-    set_parity(&mut f, a);
     clear_bit(&mut f, HF);
     clear_bit(&mut f, NF);
     F.set(z, f);
@@ -840,10 +829,10 @@ pub fn rrd<I: Io>(z: &mut Z80<I>) {
     Address(HL).set(z, a_lo << 4 | hl_hi >> 4);
     A.set(z, hl_lo | a_hi);
     let a = A.get(z);
+    set_parity(z, a);
     set_zero(z, a);
     set_sign(z, a);
     let mut f = F.get(z);
-    set_parity(&mut f, a);
     clear_bit(&mut f, HF);
     clear_bit(&mut f, NF);
     F.set(z, f);
@@ -1011,10 +1000,10 @@ pub fn in_f<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) -> u8 {
     z.address = address;
     let x = z.io.input(address);
     z.data = x;
+    set_parity(z, x);
     set_sign(z, x);
     set_zero(z, x);
     let mut f = F.get(z);
-    set_parity(&mut f, x);
     clear_bit(&mut f, HF);
     clear_bit(&mut f, NF);
     F.set(z, f);
@@ -1039,10 +1028,10 @@ pub fn in0<I: Io>(z: &mut Z80<I>) {
     z.address = addr;
     let x = z.io.input(addr);
     z.data = x;
+    set_parity(z, x);
     set_sign(z, x);
     set_zero(z, x);
     let mut f = F.get(z);
-    set_parity(&mut f, x);
     clear_bit(&mut f, HF);
     clear_bit(&mut f, NF);
     F.set(z, f);
