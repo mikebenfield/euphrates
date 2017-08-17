@@ -67,9 +67,12 @@ pub fn maskable_interrupt<I: Io>(z: &mut Z80<I>) -> bool {
 //// 8-Bit Load Group
 /////////////////////
 
-pub fn ld<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
-    z: &mut Z80<I>, arg1: T1, arg2: T2
-) {
+pub fn ld<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u8>,
+    T2: Gettable<u8>,
+{
     let val = arg2.get(z);
     arg1.set(z, val);
 }
@@ -89,9 +92,12 @@ pub fn ld8_ir<I: Io>(z: &mut Z80<I>, arg: Reg8) {
 //// 16-Bit Load Group
 //////////////////////
 
-pub fn ld16<I: Io, T1: Settable<u16>, T2: Gettable<u16>>(
-    z: &mut Z80<I>, arg1: T1, arg2: T2
-) {
+pub fn ld16<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u16>,
+    T2: Gettable<u16>,
+{
     let val = arg2.get(z);
     arg1.set(z, val);
 }
@@ -115,9 +121,11 @@ pub fn pop<I: Io>(z: &mut Z80<I>, reg: Reg16) {
 //// Exchange, Block Transfer, and Search Group
 ///////////////////////////////////////////////
 
-pub fn ex<I: Io, T1: Settable<u16>>(
-   z: &mut Z80<I>, reg1: T1, reg2: Reg16
-) {
+pub fn ex<I, T1>(z: &mut Z80<I>, reg1: T1, reg2: Reg16)
+where
+    I: Io,
+    T1: Settable<u16>,
+{
     let val1 = reg1.get(z);
     let val2 = reg2.get(z);
     reg1.set(z, val2);
@@ -310,22 +318,24 @@ fn add_impl<I: Io>(z: &mut Z80<I>, a: u8, x: u8, cf: u8) -> u8 {
     return result8;
 }
 
-pub fn add<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
-  z: &mut Z80<I>,
-  arg1: T1,
-  arg2: T2,
-) {
+pub fn add<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u8>,
+    T2: Gettable<u8>,
+{
     let a = arg1.get(z);
     let b = arg2.get(z);
     let result = add_impl(z, a, b, 0);
     arg1.set(z, result);
 }
 
-pub fn adc<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
-  z: &mut Z80<I>,
-  arg1: T1,
-  arg2: T2,
-) {
+pub fn adc<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u8>,
+    T2: Gettable<u8>,
+{
     let mut cf = 0u8;
     let f = F.get(z);
     assign_bit(&mut cf, 0, f, CF);
@@ -346,22 +356,24 @@ fn sub_impl<I: Io>(z: &mut Z80<I>, a: u8, x: u8, cf: u8) -> u8 {
     result
 }
 
-pub fn sub<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
-  z: &mut Z80<I>,
-  arg1: T1,
-  arg2: T2,
-) {
+pub fn sub<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u8>,
+    T2: Gettable<u8>,
+{
     let a = arg1.get(z);
     let x = arg2.get(z);
     let result = sub_impl(z, a, x, 0);
     arg1.set(z, result);
 }
 
-pub fn sbc<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
-  z: &mut Z80<I>,
-  arg1: T1,
-  arg2: T2,
-) {
+pub fn sbc<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u8>,
+    T2: Gettable<u8>,
+{
     let mut cf = 0u8;
     let f = F.get(z);
     assign_bit(&mut cf, 0, f, CF);
@@ -388,7 +400,11 @@ fn andor_impl<I: Io>(z: &mut Z80<I>, result: u8) {
     F.set(z, f);
 }
 
-pub fn and<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) {
+pub fn and<I, T1>(z: &mut Z80<I>, arg: T1)
+where
+    I: Io,
+    T1: Gettable<u8>,
+{
     let result = arg.get(z) & A.get(z);
     andor_impl(z, result);
     let mut f = F.get(z);
@@ -396,28 +412,48 @@ pub fn and<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) {
     F.set(z, f);
 }
 
-pub fn or<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) {
+pub fn or<I, T1>(z: &mut Z80<I>, arg: T1)
+where
+    I: Io,
+    T1: Gettable<u8>,
+{
     let result = arg.get(z) | A.get(z);
     andor_impl(z, result);
 }
 
-pub fn xor<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) {
+pub fn xor<I, T1>(z: &mut Z80<I>, arg: T1)
+where
+    I: Io,
+    T1: Gettable<u8>,
+{
     let result = arg.get(z) ^ A.get(z);
     andor_impl(z, result);
 }
 
-fn cp_impl<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) {
+fn cp_impl<I, T1>(z: &mut Z80<I>, arg: T1)
+where
+    I: Io,
+    T1: Gettable<u8>,
+{
     let x = arg.get(z);
     let a = A.get(z);
     sub_impl(z, a, x, 0);
     A.set(z, a);
 }
 
-pub fn cp<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) {
+pub fn cp<I, T1>(z: &mut Z80<I>, arg: T1)
+where
+    I: Io,
+    T1: Gettable<u8>,
+{
     cp_impl(z, arg);
 }
 
-pub fn inc<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1) {
+pub fn inc<I, T1>(z: &mut Z80<I>, arg: T1)
+where
+    I: Io,
+    T1: Settable<u8>,
+{
     let x = arg.get(z);
     let result = x.wrapping_add(1);
     arg.set(z, result);
@@ -430,15 +466,17 @@ pub fn inc<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1) {
     F.set(z, f);
 }
 
-pub fn dec<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1) {
+pub fn dec<I, T1>(z: &mut Z80<I>, arg: T1)
+where
+    I: Io,
+    T1: Settable<u8>,
+{
     let x = arg.get(z);
     let result = x.wrapping_sub(1);
     arg.set(z, result);
     set_zero(z, result);
     let mut f = F.get(z);
     assign_bit(&mut f, SF, result, SF);
-    assign_bit(&mut f, XF, result, XF);
-    assign_bit(&mut f, YF, result, YF);
     assign_bit(&mut f, HF, ((x & 0xF) == 0) as u8, 0);
     assign_bit(&mut f, PF, (x == 0x80) as u8, 0);
     set_bit(&mut f, NF);
@@ -672,8 +710,6 @@ macro_rules! rotate_shift_functions_noa {
             set_parity(z, result);
             set_sign(z, result);
             set_zero(z, result);
-            let mut f = F.get(z);
-            F.set(z, f);
         }
 
         pub fn $fn_store<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1, store: Reg8) {
@@ -841,7 +877,11 @@ pub fn rrd<I: Io>(z: &mut Z80<I>) {
 //// Bit Set, Reset, and Test Group
 ///////////////////////////////////
 
-pub fn bit<I: Io, T: Gettable<u8>>(z: &mut Z80<I>, b: u8, arg: T) {
+pub fn bit<I, T>(z: &mut Z80<I>, b: u8, arg: T)
+where
+    I: Io,
+    T: Gettable<u8>,
+{
     let x = arg.get(z);
     let mut f = F.get(z);
     assign_bit(&mut f, ZF, !x, b);
@@ -853,25 +893,41 @@ pub fn bit<I: Io, T: Gettable<u8>>(z: &mut Z80<I>, b: u8, arg: T) {
     F.set(z, f);
 }
 
-pub fn set<I: Io, T: Settable<u8>>(z: &mut Z80<I>, b: u8, arg: T) {
+pub fn set<I, T>(z: &mut Z80<I>, b: u8, arg: T)
+where
+    I: Io,
+    T: Settable<u8>,
+{
     let mut x = arg.get(z);
     set_bit(&mut x, b);
     arg.set(z, x);
 }
 
-pub fn set_store<I: Io, T: Settable<u8>>(z: &mut Z80<I>, b: u8, arg: T, reg: Reg8) {
+pub fn set_store<I, T>(z: &mut Z80<I>, b: u8, arg: T, reg: Reg8)
+where
+    I: Io,
+    T: Settable<u8>,
+{
     set(z, b, arg);
     let x = arg.get(z);
     reg.set(z, x);
 }
 
-pub fn res<I: Io, T: Settable<u8>>(z: &mut Z80<I>, b: u8, arg: T) {
+pub fn res<I, T>(z: &mut Z80<I>, b: u8, arg: T)
+where
+    I: Io,
+    T: Settable<u8>,
+{
     let mut x = arg.get(z);
     clear_bit(&mut x, b);
     arg.set(z, x);
 }
 
-pub fn res_store<I: Io, T: Settable<u8>>(z: &mut Z80<I>, b: u8, arg: T, reg: Reg8) {
+pub fn res_store<I, T>(z: &mut Z80<I>, b: u8, arg: T, reg: Reg8)
+where
+    I: Io,
+    T: Settable<u8>,
+{
     res(z, b, arg);
     let x = arg.get(z);
     reg.set(z, x);
@@ -880,7 +936,11 @@ pub fn res_store<I: Io, T: Settable<u8>>(z: &mut Z80<I>, b: u8, arg: T, reg: Reg
 //// Jump Group
 ///////////////
 
-pub fn jp<I: Io, T: Gettable<u16>>(z: &mut Z80<I>, arg: T) {
+pub fn jp<I, T>(z: &mut Z80<I>, arg: T)
+where
+    I: Io,
+    T: Gettable<u16>,
+{
     let addr = arg.get(z);
     PC.set(z, addr);
 }
@@ -979,11 +1039,12 @@ pub fn retn<I: Io>(z: &mut Z80<I>) {
 //// Input and Output Group
 ///////////////////////////
 
-pub fn in_n<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
-    z: &mut Z80<I>,
-    arg1: T1,
-    arg2: T2,
-) {
+pub fn in_n<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u8>,
+    T2: Gettable<u8>,
+{
     let address_lo = arg2.get(z);
     let address_hi = arg1.get(z);
     let address = to16(address_lo, address_hi);
@@ -993,7 +1054,11 @@ pub fn in_n<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
     arg1.set(z, x);
 }
 
-pub fn in_f<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) -> u8 {
+pub fn in_f<I, T1>(z: &mut Z80<I>, arg: T1) -> u8
+where
+    I: Io,
+    T1: Gettable<u8>,
+{
     let address_lo = arg.get(z);
     let address_hi = B.get(z);
     let address = to16(address_lo, address_hi);
@@ -1010,20 +1075,19 @@ pub fn in_f<I: Io, T1: Gettable<u8>>(z: &mut Z80<I>, arg: T1) -> u8 {
     x
 }
 
-pub fn in_c<I: Io, T1: Settable<u8>, T2: Gettable<u8>>(
-    z: &mut Z80<I>,
-    arg1: T1,
-    arg2: T2
-) {
+pub fn in_c<I, T1, T2: Gettable<u8>>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Settable<u8>,
+{
     let x = in_f(z, arg2);
+    z.data = x;
     arg1.set(z, x);
 }
 
 /// The Z80 manual lists this instruction under IN r, (C) as "undefined"
 /// It sets
 pub fn in0<I: Io>(z: &mut Z80<I>) {
-    log_minor!("Z80: op: {:?}", "IN flag, (C)");
-
     let addr = BC.get(z);
     z.address = addr;
     let x = z.io.input(addr);
@@ -1054,8 +1118,6 @@ fn inid_impl<I: Io>(z: &mut Z80<I>, inc: u16) -> u8 {
 }
 
 pub fn ini<I: Io>(z: &mut Z80<I>) {
-    log_minor!("Z80: op: INI");
-
     let new_b = inid_impl(z, 1);
     set_zero(z, new_b);
     let mut f = F.get(z);
@@ -1090,8 +1152,11 @@ pub fn indr<I: Io>(z: &mut Z80<I>) {
     while {
         z.cycles += 21;
         inid_impl(z, 0xFFFF) != 0
+    } {
+        // r was already incremented twice by `run`
+        inc_r(z);
+        inc_r(z);
     }
-    {}
 
     let mut f = F.get(z);
     set_bit(&mut f, ZF);
@@ -1101,11 +1166,12 @@ pub fn indr<I: Io>(z: &mut Z80<I>) {
     z.cycles += 16;
 }
 
-pub fn out_n<I: Io, T1: Gettable<u8>, T2: Gettable<u8>> (
-    z: &mut Z80<I>,
-    arg1: T1,
-    arg2: T2,
-) {
+pub fn out_n<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Gettable<u8>,
+    T2: Gettable<u8>,
+{
     let address_lo = arg1.get(z);
     let address_hi = A.get(z);
     let address = to16(address_lo, address_hi);
@@ -1115,11 +1181,12 @@ pub fn out_n<I: Io, T1: Gettable<u8>, T2: Gettable<u8>> (
     z.io.output(address, x);
 }
 
-pub fn out_c<I: Io, T1: Gettable<u8>, T2: Gettable<u8>> (
-    z: &mut Z80<I>,
-    arg1: T1,
-    arg2: T2,
-) {
+pub fn out_c<I, T1, T2>(z: &mut Z80<I>, arg1: T1, arg2: T2)
+where
+    I: Io,
+    T1: Gettable<u8>,
+    T2: Gettable<u8>,
+{
     let address_lo = arg1.get(z);
     let address_hi = B.get(z);
     let address = to16(address_lo, address_hi);
@@ -1160,8 +1227,11 @@ pub fn otir<I: Io>(z: &mut Z80<I>) {
         z.cycles += 21;
         outid_impl(z, 1);
         B.get(z) != 0
+    } {
+        // r was already incremented twice by `run`
+        inc_r(z);
+        inc_r(z);
     }
-    {}
 
     let mut f = F.get(z);
     set_bit(&mut f, ZF);
@@ -1186,7 +1256,11 @@ pub fn otdr<I: Io>(z: &mut Z80<I>) {
         outid_impl(z, 0xFFFF);
         B.get(z) != 0
     }
-    {}
+    } {
+        // r was already incremented twice by `run`
+        inc_r(z);
+        inc_r(z);
+    }
 
     let mut f = F.get(z);
     set_bit(&mut f, ZF);
