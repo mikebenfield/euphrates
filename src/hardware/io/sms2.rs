@@ -11,7 +11,21 @@ pub struct Sms2Io {
     ab: u8,
     b_misc: u8,
     mem: SegaMemoryMap,
-    vdp: vdp::Vdp,
+    pub vdp: vdp::Vdp,
+}
+
+impl Sms2Io {
+    pub fn new(smm: SegaMemoryMap) -> Sms2Io {
+        Sms2Io {
+            vdp: Default::default(),
+            memory_control: 0,
+            io_control: 0,
+            ab: 0,
+            b_misc: 0,
+            mem: smm,
+
+        }
+    }
 }
 
 impl Io for Sms2Io {

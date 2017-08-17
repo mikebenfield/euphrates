@@ -29,7 +29,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
         let pc = PC.get(z);
         log_minor!("Z80: PC: {:0>4X}", pc);
         let opcode: u8 = Address(pc).get(z);
-        PC.set(z, pc + 1);
+        PC.set(z, pc.wrapping_add(1));
         log_minor!("Z80: opcode: {:0>2X}", opcode);
         opcode
     }

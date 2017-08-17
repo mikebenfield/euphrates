@@ -20,8 +20,6 @@ use std;
 use std::error::Error;
 use std::fmt;
 
-use log::*;
-
 pub use self::sega_memory_map::*;
 pub use self::simple_memory_map::*;
 

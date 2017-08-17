@@ -86,6 +86,23 @@ pub struct Z80<I: Io> {
     pub registers: [u8; 26],
 }
 
+impl<I> Z80<I>
+where I: Io {
+    pub fn new(io: I) -> Z80<I> {
+        Z80 {
+            io: io,
+            halted: false,
+            cycles: 0,
+            address: 0,
+            data: 0,
+            iff1: 0,
+            iff2: false,
+            interrupt_mode: Im0,
+            registers: [0; 26],
+        }
+    }
+}
+
 impl<I: Io> std::fmt::Display for Z80<I> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(

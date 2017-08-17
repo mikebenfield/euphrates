@@ -2,7 +2,7 @@
 use ::log;
 use super::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 enum RamPagesAllocated {
     Zero, One, Two
 }
@@ -109,7 +109,8 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
         Two => smm.memory.len() - 5,
     };
 
-    debug_assert!(rom_impl_page_count % 2 == 0);
+    // debug_assert!(rom_impl_page_count % 2 == 0);
+
     // there are at most 0x100 sega-pages of ROM, so there should be at most
     // 0x200 implementation-pages
     debug_assert!(rom_impl_page_count < 0x200);
@@ -128,7 +129,11 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
     // XXX is this the right thing to do?
     // It's correct when `rom_sega_page_count` is a power of two, but who knows
     // what happens in actual hardware when it's not?
-    let sega_page = value % rom_sega_page_count;
+    let sega_page = if rom_sega_page_count == 0 {
+        0
+    } else {
+        value % rom_sega_page_count
+    };
 
     let impl_page = (sega_page as u16) * 2 + 1;
 
@@ -212,15 +217,15 @@ impl MemoryMap for SegaMemoryMap {
             // - Use 1 KiB impl-pages, and never remap the zeroth slot. (This is
             // probably the best option.)
             log_minor!("SegaMemoryMap: read: first KiB");
-            log_minor!("SegaMemoryMap: read: physical address {:0>X}", logical_address);
-            let result = self.memory[0][logical_address as usize];
+            log_minor!("SegaMemoryMap: read: physical address {:0>4X}", logical_address);
+            let result = self.memory[1][logical_address as usize];
             log_minor!("SegaMemoryMap: read: value {:0>2X}", result);
             return result;
         }
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
         log_minor!("SegaMemoryMap: read: implementation slot {:0>4X}", impl_slot);
-        log_minor!("SegaMemoryMap: read: physical address {:0>X}", physical_address);
+        log_minor!("SegaMemoryMap: read: physical address {:0>4X}", physical_address);
         let impl_page = self.pages[impl_slot as usize];
         let result = self.memory[impl_page as usize][physical_address as usize];
         log_minor!("SegaMemoryMap: read: value {:0>2X}", result);

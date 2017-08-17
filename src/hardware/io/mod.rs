@@ -1,7 +1,6 @@
 
-mod sms2;
+pub mod sms2;
 
-use ::log::*;
 use super::memory_map::*;
 
 pub trait Io {

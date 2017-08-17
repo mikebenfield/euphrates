@@ -9,4 +9,4 @@ mod bits;
 // pub mod sdl_wrap;
 #[macro_use]
 pub mod hardware;
-// pub mod emulation_manager;
+pub mod emulation_manager;

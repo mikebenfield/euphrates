@@ -32,6 +32,7 @@ impl Screen for NoScreen {
 
 #[derive(Copy)]
 pub struct Vdp {
+    pub cycles: u64,
     status_flags: u8,
     irq_counter: u8,
     h: u16,
@@ -72,6 +73,7 @@ impl std::fmt::Debug for Vdp {
 impl Default for Vdp {
     fn default() -> Vdp {
         Vdp {
+            cycles: 0,
             status_flags: 0,
             irq_counter: 0,
             h: 0,
@@ -179,6 +181,28 @@ impl Vdp {
     pub fn read_h(&self) -> u8 {
         let h = self.h;
         (h >> 1) as u8
+    }
+
+    pub fn draw_line<S>(&mut self, _: &mut S)
+    where
+        S: Screen
+    {
+        self.cycles += 342;
+        if self.v0 == 192 {
+            self.status_flags |= 1 << INT;
+        }
+        if self.v0 <= 192 {
+            if self.irq_counter == 0 {
+                self.status_flags |= 1 << LINT;
+                self.irq_counter = self.registers[10];
+            }  else {
+                self.irq_counter.wrapping_sub(1);
+            }
+        } else {
+            self.irq_counter = self.registers[10];
+        }
+
+        self.v0 = (self.v0 + 1) % 262; 
     }
 }
 
