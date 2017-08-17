@@ -1,3 +1,10 @@
+// Copyright 2017 Michael Benfield <mike.benfield@gmail.com>
+// This file is part of Attalus. You may distribute and/or modify this file
+// under the terms of the GNU General Public License, version 3, as published by
+// the Free Software Foundation. You should have received a copy of the GNU
+// General Public License along with Attalus. If not, see
+// <http://www.gnu.org/licenses/>.
+
 use std;
 
 use ::bits::*;
@@ -180,7 +187,7 @@ impl Settable<u8> for Reg8 {
     fn set<I: Io>(self, z: &mut Z80<I>, x: u8) {
         let byte_array: &mut [u8; 26] =
             unsafe {
-                std::mem::transmute(&z.registers)
+                std::mem::transmute(&mut z.registers)
             };
         byte_array[self as usize] = x
     }
@@ -202,7 +209,7 @@ impl Gettable<u16> for Address<Reg16> {
     fn get<I: Io>(self, z: &Z80<I>) -> u16 {
         let addr = self.0.get(z);
         let lo = z.io.mem().read(addr);
-        let hi = z.io.mem().read(addr + 1);
+        let hi = z.io.mem().read(addr.wrapping_add(1));
         to16(lo, hi)
     }
 }
@@ -212,7 +219,7 @@ impl Settable<u16> for Address<Reg16> {
         let addr = self.0.get(z);
         let (lo, hi) = to8(x);
         z.io.mem_mut().write(addr, lo);
-        z.io.mem_mut().write(addr + 1, hi);
+        z.io.mem_mut().write(addr.wrapping_add(1), hi);
     }
 }
 

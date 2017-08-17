@@ -1,3 +1,10 @@
+// Copyright 2017 Michael Benfield <mike.benfield@gmail.com>
+// This file is part of Attalus. You may distribute and/or modify this file
+// under the terms of the GNU General Public License, version 3, as published by
+// the Free Software Foundation. You should have received a copy of the GNU
+// General Public License along with Attalus. If not, see
+// <http://www.gnu.org/licenses/>.
+
 //! # Sega Master System Memory Mappers
 //! The SMS has two memory mappers in common use, the Sega memory mapper and the
 //! CodeMasters mapper. Both swap out pages of cartridge ROM according to memory

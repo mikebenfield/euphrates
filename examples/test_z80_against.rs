@@ -1,3 +1,10 @@
+// Copyright 2017 Michael Benfield <mike.benfield@gmail.com>
+// This file is part of Attalus. You may distribute and/or modify this file
+// under the terms of the GNU General Public License, version 3, as published by
+// the Free Software Foundation. You should have received a copy of the GNU
+// General Public License along with Attalus. If not, see
+// <http://www.gnu.org/licenses/>.
+
 //! test_z80_against: Test the z80 interpreter in `attalus` against the emulator
 //! `z80sim`. Requires that `z80sim` be in your $PATH. Will test many instruction
 //! sequences with several different starting Z80 states. `z80sim` doesn't
@@ -91,19 +98,28 @@ where
         mem[i] = rng.gen();
     }
     mem[0..mem_start.len()].copy_from_slice(mem_start);
-    Z80 {
-        io: SimpleIo {
-            mem: mem
-        },
-        halted: false,
-        cycles: 0,
-        address: 0,
-        data: 0,
-        iff1: 0,
-        iff2: false,
-        interrupt_mode: Im0,
-        registers: rng.gen(),
-    } 
+    let mut z = Z80::new(SimpleIo { mem: mem });
+    // for reg in [
+    //     B, C, D, E, A, H, L,
+    //     B0, C0, D0, E0, A0, L0, H0,
+    //     IXH, IXL, IYH, IYL,
+    // ].iter() {
+    //     reg.set(&mut z, rng.gen());
+    // }
+    z
+    // Z80 {
+    //     io: SimpleIo {
+    //         mem: mem
+    //     },
+    //     halted: false,
+    //     cycles: 0,
+    //     address: 0,
+    //     data: 0,
+    //     iff1: 0,
+    //     iff2: false,
+    //     interrupt_mode: Im0,
+    //     registers: rng.gen(),
+    // } 
 }
 
 fn write_core<P: AsRef<Path>>(
@@ -148,7 +164,7 @@ fn write_core<P: AsRef<Path>>(
 
     write_from(I.get(z80), &mut buf);
 
-    let iff1: u8 = if z80.iff1 != 0 { 1 } else { 0 };
+    let iff1: u8 = if z80.iff1 == 0xFFFFFFFFFFFFFFFF { 0 } else { 1 };
     let iff2: u8 = if z80.iff2 { 2 } else { 0 };
     write_from(iff1 | iff2, &mut buf);
 
@@ -250,7 +266,11 @@ where
 
     let mut iff: u8 = 0;
     read_into(&mut iff, &mut i, &mut buf);
-    z80.iff1 = (iff & 1) as u64;
+    z80.iff1 = if (iff & 1) == 0 {
+        0xFFFFFFFFFFFFFFFF
+    } else {
+        0
+    };
     z80.iff2 = (iff & 2) != 0;
 
     let mut rr: c_long = 0;
@@ -286,14 +306,14 @@ fn z80_same_state(lhs: &Z80<SimpleIo>, rhs: &Z80<SimpleIo>) -> bool  {
         }
     }
 
-    let f_lhs = lhs.registers[F as usize];
-    let f_rhs = rhs.registers[F as usize];
+    let f_lhs = F.get(lhs);
+    let f_rhs = F.get(rhs);
     if f_lhs & 0b11010111 != f_rhs & 0b11010111 {
         return false;
     }
 
-    let f0_lhs = lhs.registers[F0 as usize];
-    let f0_rhs = rhs.registers[F0 as usize];
+    let f0_lhs = F0.get(lhs);
+    let f0_rhs = F0.get(rhs);
     if f0_lhs & 0b11010111 != f0_rhs & 0b11010111 {
         println!("diff flags' {:b} {:b}", f0_lhs, f0_rhs);
         return false;

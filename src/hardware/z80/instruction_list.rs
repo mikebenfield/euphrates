@@ -1,3 +1,10 @@
+// Copyright 2017 Michael Benfield <mike.benfield@gmail.com>
+// This file is part of Attalus. You may distribute and/or modify this file
+// under the terms of the GNU General Public License, version 3, as published by
+// the Free Software Foundation. You should have received a copy of the GNU
+// General Public License along with Attalus. If not, see
+// <http://www.gnu.org/licenses/>.
+
 // mnemonic, changes: ld becomes ld16 for 16 bit operands. ditto inc, dec, add,
 // adc, sbc.
 // `in` is split into 3: `in_n` for the instruction taking its address from n
