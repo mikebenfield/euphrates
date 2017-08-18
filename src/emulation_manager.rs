@@ -35,8 +35,7 @@ impl EmulationManager {
             self.z80.io.vdp.draw_line(screen);
 
             let vdp_cycles = self.z80.io.vdp.cycles;
-            let z80_cycles = self.z80.cycles;
-            let z80_target_cycles = z80_cycles + 2 * vdp_cycles / 3;
+            let z80_target_cycles = 2 * vdp_cycles / 3;
             Z80Interpreter {}.run(&mut self.z80, z80_target_cycles);
 
             // if sdl_wrap::event::check_quit() {
