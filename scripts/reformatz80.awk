@@ -12,8 +12,8 @@
 # Here lineno refers to the line number in the original output file.
 
 BEGIN {
-  FS=": "
-  looking_pc = 1
+    FS=": "
+    looking_pc = 1
 }
 
 $2 == "Z80" && $3 == "PC" { 
@@ -33,10 +33,19 @@ $2 == "Z80" && $3 == "op" {
     looking_pc = 1
 }
 
-$2 == "Z80" && $3 == "status" {
+# {
+#     if doing_state >= 1 {
+#         doing_state -= 1
+#         printf("\n%s", $0)
+#     }
+# }
+
+$2 == "Z80" && $3 == "state" {
+    doing_state = 2
     printf("%s  ", $4);
     # print "  " $4
 }
+
 
 #$1 == "Z80:" && /Reset/ {
 #    $1 = "";

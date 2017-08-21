@@ -8,6 +8,7 @@
 use ::log;
 
 use super::*;
+use ::hardware::irq;
 use ::hardware::vdp;
 use ::hardware::memory_map::sega_memory_map::*;
 
@@ -31,6 +32,15 @@ impl Sms2Io {
             mem: smm,
 
         }
+    }
+}
+
+impl irq::Irq for Sms2Io {
+    fn requesting_mi(&self) -> bool { 
+        self.vdp.requesting_mi()
+    }
+    fn requesting_nmi(&self) -> bool {
+        self.vdp.requesting_nmi()
     }
 }
 
@@ -86,6 +96,7 @@ impl Io for Sms2Io {
 
     fn output(&mut self, address: u16, x: u8) {
         let masked = (address & 0b11000001) as u8;
+        log_major!("Io: output to address {:0>4X}", address);
         match masked {
             0b00000000 => {
                 log_major!("Io: output memory control: {:0>2X}", x);

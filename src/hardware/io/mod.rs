@@ -8,8 +8,9 @@
 pub mod sms2;
 
 use super::memory_map::*;
+use super::irq::*;
 
-pub trait Io {
+pub trait Io: Irq {
     type MemoryMap: MemoryMap + ?Sized;
     /// Yes, `self` does need to be mutable, because some components may change
     /// when read from; for instance, the VDP
@@ -35,6 +36,11 @@ impl Default for SimpleIo {
             mem: [0; 0x10000],
         }
     }
+}
+
+impl Irq for SimpleIo {
+    fn requesting_mi(&self) -> bool { false }
+    fn requesting_nmi(&self) -> bool { false }
 }
 
 impl Io for SimpleIo {

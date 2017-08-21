@@ -5,6 +5,8 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+#[macro_use]
+extern crate bitflags;
 extern crate rand;
 extern crate tempdir;
 extern crate sdl2;
@@ -12,7 +14,7 @@ extern crate sdl2;
 #[macro_use]
 pub mod log;
 mod bits;
-// pub mod sdl_wrap;
+pub mod sdl_wrap;
 #[macro_use]
 pub mod hardware;
 pub mod emulation_manager;

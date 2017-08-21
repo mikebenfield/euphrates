@@ -5,7 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std::os::raw::{c_int, c_void};
+// use std::os::raw::{c_int, c_void};
 
 use super::*;
 
@@ -97,7 +97,7 @@ impl std::ops::Drop for Texture {
     }
 }
 
-pub struct WindowCanvas {
+pub struct WindowScreen {
     window: Window,
     renderer: Renderer,
     texture: Texture,
@@ -105,21 +105,21 @@ pub struct WindowCanvas {
     logical_width: usize,
 }
 
-impl WindowCanvas {
-    pub fn new() -> Result<WindowCanvas, Error> {
+impl WindowScreen {
+    pub fn new() -> Result<WindowScreen, Error> {
         sdl_call!(
             sdls::sdl::SDL_Init(sdls::sdl::SDL_INIT_VIDEO)
         );
 
-        let mut window = Window::new()?;
-        let mut renderer = Renderer::new(&window)?;
+        let window = Window::new()?;
+        let renderer = Renderer::new(&window)?;
         sdl_call!(
             sdls::render::SDL_RenderSetLogicalSize(renderer.0, 1, 1)
         );
-        let mut texture = Texture::new(&renderer, 1, 1)?;
+        let texture = Texture::new(&renderer, 1, 1)?;
 
         Ok(
-            WindowCanvas {
+            WindowScreen {
                 window: window,
                 renderer: renderer,
                 texture: texture,
@@ -158,16 +158,15 @@ impl WindowCanvas {
     }
 }
 
-impl vdp::Canvas for WindowCanvas {
+impl vdp::Screen for WindowScreen {
     fn paint(&mut self, x: usize, y: usize, color: u8) {
         let blue = (0x30 & color) >> 4;
         let green = (0x0C & color) << 1;
         let red = (0x03 & color) << 6;
-        // println!("DRAWING {:b}", blue | green | red);
         self.pixels[y*self.logical_width + x] = blue | green | red;
     }
 
-    fn render(&mut self) -> Result<(), vdp::CanvasError> {
+    fn render(&mut self) -> Result<(), vdp::ScreenError> {
         sdl_call!(
             sdls::render::SDL_UpdateTexture(
                 self.texture.0,
@@ -189,6 +188,13 @@ impl vdp::Canvas for WindowCanvas {
         );
         unsafe {
             sdls::render::SDL_RenderPresent(self.renderer.0);
+        }
+        Ok(())
+    }
+
+    fn set_resolution(&mut self, width: usize, height: usize) -> Result<(), vdp::ScreenError> {
+        if self.get_logical_size() != (width, height) {
+            self.set_logical_size(width, height)?;
         }
         Ok(())
     }

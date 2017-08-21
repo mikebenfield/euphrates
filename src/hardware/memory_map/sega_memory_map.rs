@@ -126,10 +126,10 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
     if rom_sega_page_count.count_ones() != 1 {
         // XXX Since I'm not really sure what is the right thing to do in this
         // case, I'll log it as a fault
-        log_fault!(
-            "SegaMemoryMap: ROM size not a power of two: {:0>2X} sega-pages",
-            rom_sega_page_count
-        );
+        // log_fault!(
+        //     "SegaMemoryMap: ROM size not a power of two: {:0>2X} sega-pages",
+        //     rom_sega_page_count
+        // );
     }
 
     // XXX is this the right thing to do?

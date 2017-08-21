@@ -24,23 +24,38 @@ impl EmulationManager {
         }
     }
 
-    pub fn main_loop<S>(&mut self, screen: &mut S, n: usize)
+    pub fn main_loop<S>(
+        &mut self,
+        screen: &mut S,
+        palette_screen: &mut S,
+        sprite_screen: &mut S,
+        tile_screen: &mut S,
+        n: usize
+    ) -> Result<(), ScreenError>
     where
-    S: Screen
+        S: Screen
     {
+        use sdl_wrap;
+
         for i in 0usize..n {
             log_major!("EM: loop {}", i);
 
-            self.z80.io.vdp.draw_line(screen);
+            self.z80.io.vdp.draw_line(screen)?;
+
+            self.z80.io.vdp.draw_palettes(palette_screen)?;
+
+            self.z80.io.vdp.draw_sprites(sprite_screen)?;
+
+            self.z80.io.vdp.draw_tiles(tile_screen)?;
 
             let vdp_cycles = self.z80.io.vdp.cycles;
             let z80_target_cycles = 2 * vdp_cycles / 3;
             Z80Interpreter {}.run(&mut self.z80, z80_target_cycles);
 
-            // if sdl_wrap::event::check_quit() {
-            //     break;
-            // }
+            if sdl_wrap::event::check_quit() {
+                break;
+            }
         }
-
+        Ok(())
     }
 }

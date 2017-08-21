@@ -52,21 +52,23 @@ pub fn nonmaskable_interrupt<I: Io>(z: &mut Z80<I>) {
 }
 
 pub fn maskable_interrupt<I: Io>(z: &mut Z80<I>) -> bool {
-    let iff1 = z.iff1;
-    z.iff1 = 0;
-    z.iff2 = false;
+    if z.iff1 < z.cycles {
+        log_major!("Z80: Maskable interrupt allowed");
 
-    if iff1 < z.cycles {
-        log_minor!("Z80: Maskable interrupt allowed");
+        z.iff1 = 0xFFFFFFFFFFFFFFFF;
+        z.iff2 = false;
 
         let im = z.interrupt_mode;
         match im {
-            Im1 => rst(z, 0x38),
+            Im1 => {
+                rst(z, 0x38);
+                z.cycles += 13;
+            },
             _ => unimplemented!(),
         }
         true
     } else {
-        log_minor!("Z80: Maskable interrupt denied");
+        log_major!("Z80: Maskable interrupt denied");
         false
     }
 }
@@ -204,16 +206,17 @@ pub fn ldir<I: Io>(z: &mut Z80<I>) {
             return;
         }
         z.cycles += 21;
-        inc_r(z);
-        inc_r(z);
 
         // check the possibility that we have overwritten our own opcode
         let pc = PC.get(z);
-        let apc1 = Gettable::<u8>::get(Address(pc), z);
-        let apc2 = Gettable::<u8>::get(Address(pc.wrapping_add(1)), z);
+        let apc1 = Gettable::<u8>::get(Address(pc.wrapping_sub(2)), z);
+        let apc2 = Gettable::<u8>::get(Address(pc.wrapping_sub(1)), z);
         if apc1 != 0xED || apc2 != 0xB0 {
+            PC.set(z, pc.wrapping_sub(2));
             return;
         }
+        inc_r(z);
+        inc_r(z);
     }
 }
 
@@ -225,16 +228,17 @@ pub fn lddr<I: Io>(z: &mut Z80<I>) {
             return;
         }
         z.cycles += 21;
-        inc_r(z);
-        inc_r(z);
 
         // check the possibility that we have overwritten our own opcode
         let pc = PC.get(z);
-        let apc1 = Gettable::<u8>::get(Address(pc), z);
-        let apc2 = Gettable::<u8>::get(Address(pc.wrapping_add(1)), z);
+        let apc1 = Gettable::<u8>::get(Address(pc.wrapping_sub(2)), z);
+        let apc2 = Gettable::<u8>::get(Address(pc.wrapping_sub(1)), z);
         if apc1 != 0xED || apc2 != 0xB8 {
+            PC.set(z, pc.wrapping_sub(1));
             return;
         }
+        inc_r(z);
+        inc_r(z);
     }
 }
 
@@ -584,7 +588,7 @@ pub fn di<I: Io>(z: &mut Z80<I>) {
 }
 
 pub fn ei<I: Io>(z: &mut Z80<I>) {
-    z.iff1 = z.cycles;
+    z.iff1 = z.cycles + 4;
     z.iff2 = true;
 }
 
@@ -1207,10 +1211,6 @@ where
 }
 
 fn outid_impl<I: Io>(z: &mut Z80<I>, inc: u16) {
-    // let hl = HL.get(z);
-    // The Z80 manual says HL is put on the address bus, but I am skeptical
-    // about that
-    // z.set_address_bus(hl);
     let b = B.get(z);
     let new_b = b.wrapping_sub(1);
     B.set(z, new_b);

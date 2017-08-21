@@ -8,7 +8,6 @@
 //! Very simple wrapper around some SDL functions I need
 
 use std;
-use std::ffi::CString;
 use std::fmt;
 use std::error::Error as StdError;
 use std::string::FromUtf8Error;
@@ -39,7 +38,6 @@ impl StdError for Error {
 }
 
 fn cstring_to_string(s: *const c_char) -> Result<String, FromUtf8Error> {
-    let mut i = 0;
     let mut result: Vec<u8> = Vec::new();
     for i in 0.. {
         let value = unsafe {

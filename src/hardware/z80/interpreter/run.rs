@@ -74,6 +74,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
         ($mnemonic: ident, $t_states: expr $(,$arguments: tt)*) => {
             log_minor!("Z80: op: {}", stringify!($mnemonic $($arguments),*));
             apply_args!($mnemonic, $($arguments),*);
+            log_minor!("Z80: state: \n{}", z);
             z.cycles += $t_states;
             if z.cycles >= cycles {
                 return;
@@ -239,6 +240,12 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
         };
         ($($ignore: tt)*) => {
         };
+    }
+
+    if z.io.requesting_nmi() {
+        instructions::nonmaskable_interrupt(z);
+    } else if z.io.requesting_mi() {
+        instructions::maskable_interrupt(z);
     }
 
     loop {

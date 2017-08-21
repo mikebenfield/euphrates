@@ -7,10 +7,9 @@
 
 extern crate attalus;
 
-use attalus::hardware::vdp::*;
 use attalus::hardware::memory_map::*;
-// use attalus::hardware::io::sms2::*;
 use attalus::emulation_manager::*;
+use attalus::sdl_wrap::video::*;
 
 fn main() {
     let mut args: Vec<String> = Vec::new();
@@ -26,13 +25,43 @@ fn main() {
 
     let n: usize = args[2].parse().expect("Usage: exec filename n");
 
-    let mut screen = NoScreen {};
+    let mut palette_win = WindowScreen::new().unwrap();
+    palette_win.set_window_size(264, 8);
+    palette_win.set_title("palettes");
+    match palette_win.set_logical_size(32, 1) {
+        Err(_) => exit(1),
+        _ => {}
+    }
 
-    em.main_loop(&mut screen, n);
-    // let mut win = attalus::sdl_wrap::video::WindowCanvas::new().unwrap();
-    // win.set_window_size(700, 700);
-    // win.set_title("Attalus");
-    // win.set_logical_size(256, 192);
+    let mut sprite_win = WindowScreen::new().unwrap();
+    sprite_win.set_window_size(256, 256);
+    sprite_win.set_title("sprites");
+    match sprite_win.set_logical_size(256, 256) {
+        Err(_) => exit(1),
+        _ => {}
+    }
+
+    let mut tile_win = WindowScreen::new().unwrap();
+    tile_win.set_window_size(512, 448);
+    tile_win.set_title("tiles");
+    match tile_win.set_logical_size(256, 224) {
+        Err(_) => exit(1),
+        _ => {}
+    }
+
+    let mut win = WindowScreen::new().unwrap();
+    use std::process::exit;
+    win.set_window_size(1024, 768);
+    win.set_title("Attalus");
+    match win.set_logical_size(256, 192) {
+        Err(_) => exit(1),
+        _ => {}
+    }
+
+    match em.main_loop(&mut win, &mut palette_win, &mut sprite_win, &mut tile_win, n) {
+        Ok(()) => println!("Exit OK"),
+        _ => println!("Exit error"),
+    }
 
     // main_loop(&mut em, &mut win, n);
 

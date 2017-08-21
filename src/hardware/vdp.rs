@@ -8,9 +8,8 @@
 use std;
 use std::error::Error;
 
-use ::bits::*;
 use ::log;
-
+use ::bits::*;
 use super::irq::Irq;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -36,18 +35,59 @@ impl Screen for NoScreen {
     fn set_resolution(&mut self, _: usize, _: usize) -> Result<(), ScreenError> { Ok(()) }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum System {
+    NTSC, PAL,
+}
+
+impl Default for System {
+    fn default() -> System { NTSC }
+}
+
+use self::System::*;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Version {
+    SMS, SMS2, GG, MD,
+}
+
+use self::Version::*;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Resolution {
+    Low = 192, Medium = 224, High = 240,
+}
+
+use self::Resolution::*;
+
+impl Default for Version {
+    fn default() -> Version { SMS }
+}
+
+bitflags! {
+    struct StatusFlags: u8 {
+        const FRAME_INTERRUPT = 0b10000000;
+        const SPRITE_OVERFLOW = 0b01000000;
+        const SPRITE_COLLISION = 0b00100000;
+        const LINE_INTERRUPT = 0b00010000;
+        const CONTROL_FLAG = 0b00001000;
+    }
+}
+
 #[derive(Copy)]
 pub struct Vdp {
     pub cycles: u64,
-    status_flags: u8,
-    irq_counter: u8,
+    version: Version,
+    system: System,
+    status_flags: StatusFlags,
     h: u16,
-    v0: u16,
-    read: u8,
-    code_address: u16,
-    registers: [u8; 16],
+    v: u16,
+    address0: u16,
+    buffer: u8,
+    reg: [u8; 11],
     cram: [u8; 32],
     vram: [u8; 0x4000],
+    line_counter: u8,
 }
 
 impl std::fmt::Debug for Vdp {
@@ -57,19 +97,18 @@ impl std::fmt::Debug for Vdp {
             "Vdp \
             {{ \n\
                 status_flags: {:?}, \n\
-                irq_counter: {:?}, h: {:?}, \n\
-                v0: {:?}, read: {:?}, code_address: {:?}, \n\
-                registers: {:?}, \n\
+                h: {:?}, \n\
+                v: {:?}, buffer: {:?}, address0: {:?}, \n\
+                reg: {:?}, \n\
                 cram: {:?}, \n\
                 vram: {:?} (...) \n
             }}",
             self.status_flags,
-            self.irq_counter,
             self.h,
-            self.v0,
-            self.read,
-            self.code_address,
-            self.registers,
+            self.v,
+            self.buffer,
+            self.address0,
+            self.reg,
             self.cram,
             &self.vram[0..32]
         )
@@ -80,15 +119,17 @@ impl Default for Vdp {
     fn default() -> Vdp {
         Vdp {
             cycles: 0,
-            status_flags: 0,
-            irq_counter: 0,
+            version: Default::default(),
+            system: Default::default(),
+            status_flags: StatusFlags::empty(),
             h: 0,
-            v0: 0,
-            read: 0,
-            code_address: 0,
-            registers: [0; 16],
+            v: 0,
+            address0: 0,
+            buffer: 0,
+            reg: [0; 11],
             cram: [0; 32],
             vram: [0; 0x4000],
+            line_counter: 0,
         }
     }
 }
@@ -100,378 +141,449 @@ impl Clone for Vdp {
 }
 
 impl Vdp {
-    pub fn write_control(&mut self, x: u8) {
-        log_minor!("Vdp: write control: {:0>2X}", x);
-
-        if self.status_flags & (1 << CFLAG) != 0 {
-            self.code_address = (x as u16) << 8
-                | (self.code_address & 0xFF);
-            let code = self.code_address & 0xC000;
-            if code == 0 {
-                // code value 0: read vram
-                let addr = self.code_address & 0x3FFF;
-                self.read = self.vram[addr as usize];
-                if addr == 0x3FFF { // wrap
-                    self.code_address &= 0xC000
-                } else {
-                    self.code_address = code | (addr + 1);
-                }
-            } else if code == 0x8000 {
-                // code value 2: register write
-                let reg_number = (self.code_address & 0xF00) >> 8;
-                let val = self.code_address & 0xFF;
-                self.registers[reg_number as usize] = val as u8;
-            }
-        } else {
-            self.code_address = (x as u16)
-                | (self.code_address & 0xFF00);
-        }
-        self.status_flags ^= 1 << CFLAG;
+    fn code(&self) -> u8 {
+        ((self.address0 & 0xC000) >> 14) as u8
     }
-
-    pub fn read_control(&mut self) -> u8 {
-        let result = self.status_flags;
-        self.status_flags = 0;
-        log_minor!("Vdp: read control: {:0>2X}", result);
-        result
+    fn address(&self) -> u16 {
+        self.address0 & 0x3FFF
     }
-
-    pub fn write_data(&mut self, x: u8) {
-        log_minor!("Vdp: write data: {:0>2X}", x);
-
-        clear_bit(&mut self.status_flags, CFLAG);
-        let code = self.code_address & 0xC000;
-        if code == 0xC000 {
-            // CRAM
-            let addr = self.code_address & 0x1F;
-            self.cram[addr as usize] = x;
-        } else {
-            // VRAM
-            let addr = self.code_address & 0x3FFF;
-            self.vram[addr as usize] = x;
-        }
-        let addr = self.code_address & 0x3FFF;
-        if addr == 0x3FFF {
-            self.code_address = code;
-        } else {
-            self.code_address = code | (addr + 1);
+    #[allow(dead_code)]
+    fn disable_vert_scroll(&self) -> bool {
+        self.reg[0] & (1 << 7) != 0
+    }
+    #[allow(dead_code)]
+    fn disable_horiz_scroll(&self) -> bool {
+        self.reg[0] & (1 << 6) != 0
+    }
+    #[allow(dead_code)]
+    fn mask_col0(&self) -> bool {
+        self.reg[0] & (1 << 5) != 0
+    }
+    fn line_irq_enable(&self) -> bool {
+        self.reg[0] & (1 << 4) != 0
+    }
+    #[allow(dead_code)]
+    fn shift_sprites(&self) -> bool {
+        self.reg[0] & (1 << 3) != 0
+    }
+    #[allow(dead_code)]
+    fn m4(&self) -> bool {
+        self.reg[0] & (1 << 2) != 0
+    }
+    fn m2(&self) -> bool {
+        self.reg[0] & (1 << 1) != 0
+    }
+    #[allow(dead_code)]
+    fn nosync(&self) -> bool {
+        self.reg[0] & 1 != 0
+    }
+    fn total_lines(&self) -> u16 {
+        if self.system == NTSC { 262 } else { 313 }
+    }
+    fn resolution(&self) -> Resolution {
+        match (self.version, self.m1(), self.m2()) {
+            (SMS, _, _) => Low,
+            (_, true, true) => High,
+            (_, false, true) => Medium,
+            (_, _, _) => Low,
         }
     }
-
-    pub fn read_data(&mut self) -> u8 {
-        clear_bit(&mut self.status_flags, CFLAG);
-        let result = self.read;
-        let addr = self.code_address & 0x3FFF;
-        let code = self.code_address & 0xC000;
-        if addr == 0x3FFF {
-            self.code_address = code;
-        } else {
-            self.code_address = code | (addr + 1);
+    fn active_lines(&self) -> u16 {
+        match self.resolution() {
+            Low => 192,
+            Medium => 224,
+            High => 240,
         }
-        self.read = self.vram[addr as usize];
-
-        log_minor!("Vdp: read data: {:0>4X}", result);
-
-        result
+    }
+    #[allow(dead_code)]
+    fn display_visible(&self) -> bool {
+        self.reg[1] & (1 << 6) != 0
+    }
+    fn frame_irq_enable(&self) -> bool {
+        self.reg[1] & (1 << 5) != 0
+    }
+    #[allow(dead_code)]
+    fn m1(&self) -> bool {
+        self.reg[0] & (1 << 4) != 0
+    }
+    #[allow(dead_code)]
+    fn m3(&self) -> bool {
+        self.reg[0] & (1 << 3) != 0
+    }
+    #[allow(dead_code)]
+    fn tall_sprites(&self) -> bool {
+        self.reg[0] & (1 << 1) != 0
+    }
+    #[allow(dead_code)]
+    fn zoom_sprites(&self) -> bool {
+        self.reg[0] & 1 != 0
+    }
+    #[allow(dead_code)]
+    fn name_table_address(&self) -> u16 {
+        if self.version == SMS {
+            // ((self.reg[2] as u16) & 0x0F) << 10
+            ((self.reg[2] as u16) & 0x0E) << 10
+        } else if self.active_lines() == 192 {
+            ((self.reg[2] as u16) & 0x0E) << 10
+        } else {
+            (((self.reg[2] as u16) & 0x0B) << 10) | 0x0700
+        }
+    }
+    fn sprite_address(&self) -> u16 {
+        if self.version == SMS {
+            // XXX
+            // (self.reg[5] as u16 & 0x7F) << 7
+            (self.reg[5] as u16 & 0x7E) << 7
+        } else {
+            (self.reg[5] as u16 & 0x7E) << 7
+        }
+    }
+    fn sprite_pattern_addr(&self) -> u16 {
+        let reg6 = self.reg[6] as u16;
+        if self.version == SMS {
+            // XXX 
+            (reg6 & 0x04) << 11
+            // ((reg6 & 0x04) << 11) &
+            // ((reg6 & 0x02) << 7) &
+            // ((reg6 & 0x01) << 6)
+        } else {
+            (reg6 & 0x04) << 11
+        }
+    }
+    #[allow(dead_code)]
+    fn backdrop_color(&self) -> u8 {
+        self.reg[7] & 0x0F
+    }
+    #[allow(dead_code)]
+    fn x_scroll(&self) -> u8 {
+        self.reg[8]
+    }
+    #[allow(dead_code)]
+    fn y_scroll(&self) -> u8 {
+        self.reg[9]
+    }
+    fn reg_line_counter(&self) -> u8 {
+        self.reg[10]
     }
 
+    fn sprite_y(&self, i: u8) -> u8 {
+        debug_assert!(i <= 63);
+        let address = (i as usize) | (self.sprite_address() as usize);
+        self.vram[address]
+    }
+    fn sprite_x(&self, i: u8) -> u8 {
+        debug_assert!(i <= 63);
+        let address = ((2*i + 128) as usize) | (self.sprite_address() as usize);
+        self.vram[address]
+    }
+    fn sprite_n(&self, i: u8) -> u8 {
+        debug_assert!(i <= 63);
+        let address = ((2*i + 128) as usize) | (self.sprite_address() as usize) + 1;
+        self.vram[address]
+    }
+
+    fn inc_address(&mut self) {
+        let addr = self.address0;
+        self.address0 = (addr.wrapping_add(1) & 0x3FFF) | (addr & 0xC000);
+    }
     pub fn read_v(&self) -> u8 {
-        let v0 = self.v0;
-        if v0 <= 0xDA {
-            v0 as u8
-        } else {
-            (v0 - 6) as u8
-        }
+        let result = 
+            match (self.system, self.resolution(), self.v) {
+                (NTSC, Low, 0...0xDA) => self.v,
+                (NTSC, Low, _) => self.v-6,
+                (NTSC, Medium, 0...0xEA) => self.v,
+                (NTSC, Medium, _) => self.v-6,
+                (NTSC, High, 0...0xFF) => self.v,
+                (NTSC, High, _) => self.v-0x100,
+                (PAL, Low, 0...0xF2) => self.v,
+                (PAL, Low, _) => self.v-57,
+                (PAL, Medium, 0...0xFF) => self.v,
+                (PAL, Medium, 0x100...0x102) => self.v-0x100,
+                (PAL, Medium, _) => self.v-57,
+                (PAL, High, 0...0xFF) => self.v,
+                (PAL, High, 0x100...0x10A) => self.v-0x100,
+                (PAL, High, _) => self.v-57,
+            };
+        result as u8
     }
 
     pub fn read_h(&self) -> u8 {
-        let h = self.h;
-        (h >> 1) as u8
+        (self.h >> 1) as u8
     }
 
-    pub fn draw_line<S>(&mut self, _: &mut S)
-    where
-        S: Screen
-    {
-        self.cycles += 342;
-        if self.v0 == 192 {
-            self.status_flags |= 1 << INT;
-        }
-        if self.v0 <= 192 {
-            if self.irq_counter == 0 {
-                self.status_flags |= 1 << LINT;
-                self.irq_counter = self.registers[10];
-            }  else {
-                self.irq_counter.wrapping_sub(1);
+    pub fn read_data(&mut self) -> u8 {
+        let current_buffer = self.buffer;
+        self.buffer = self.cram[(self.address() % 32) as usize];
+        self.inc_address();
+        self.status_flags.remove(CONTROL_FLAG);
+        current_buffer
+    }
+
+    pub fn read_control(&mut self) -> u8 {
+        let current_status = self.status_flags.bits;
+        self.status_flags.bits = 0;
+        current_status
+    }
+
+    pub fn write_data(&mut self, x: u8) {
+        match (self.code(), self.version) {
+            // XXX - no Game Gear yet
+            (3, _) => {
+                self.cram[(self.address() % 32) as usize] = x;
+            },
+            _      => {
+                self.vram[self.address() as usize] = x;
             }
+        }
+        self.inc_address();
+        self.status_flags.remove(CONTROL_FLAG);
+    }
+
+    pub fn write_control(&mut self, x: u8) {
+        if self.status_flags.contains(CONTROL_FLAG) {
+            self.address0 = self.address0 & 0x00FF | (x as u16) << 8;
+            if self.code() == 0 {
+                self.buffer = self.vram[self.address() as usize];
+                self.address0 = (self.address0.wrapping_add(1)) & 0x3FFF | (self.code() as u16) << 13;
+            } else if self.code() == 2 && (x & 0x0F) <= 10 {
+                self.reg[(x & 0x0F) as usize] = self.address0 as u8;
+            }
+            self.status_flags.remove(CONTROL_FLAG);
         } else {
-            self.irq_counter = self.registers[10];
+            self.address0 = (self.address0 & 0xFF00) | x as u16;
+            self.status_flags.insert(CONTROL_FLAG);
+        }
+    }
+
+    pub fn draw_line<S: Screen>(&mut self, screen: &mut S) -> Result<(), ScreenError> {
+
+        fn done<S: Screen>(vdp: &mut Vdp, screen: &mut S) -> Result<(), ScreenError> {
+            match (vdp.active_lines(), vdp.v) {
+                (192, 0xC1) => vdp.status_flags.insert(FRAME_INTERRUPT),
+                (224, 0xE1) => vdp.status_flags.insert(FRAME_INTERRUPT),
+                (240, 0xF1) => vdp.status_flags.insert(FRAME_INTERRUPT),
+                _ => {}
+            }
+            if vdp.v <= vdp.active_lines() {
+                vdp.line_counter.wrapping_sub(1);
+                if vdp.line_counter == 0xFF {
+                    vdp.line_counter = vdp.reg_line_counter();
+                    vdp.status_flags.insert(LINE_INTERRUPT);
+                }
+            } else {
+                vdp.line_counter = vdp.reg_line_counter();
+            }
+            vdp.v = (vdp.v + 1) % vdp.total_lines();
+            if vdp.v == 0 {
+                screen.render()?;
+            }
+            vdp.cycles += 342;
+            Ok(())
         }
 
-        self.v0 = (self.v0 + 1) % 262; 
+        if self.v >= self.active_lines() {
+            return done(self, screen);
+        }
+
+        screen.set_resolution(
+            256,
+            self.active_lines() as usize
+        )?;
+
+        let mut line_buffer = [0x80u8; 256];
+
+        let v = self.v as usize;
+
+        // draw sprites
+        let sprites_rendered = 0u8;
+        for i in 0..64 {
+            let sprite_y = self.sprite_y(i) as usize;
+            let sprite_line = v.wrapping_sub(sprite_y);
+            if sprite_line > 7 {
+                continue;
+            }
+            if sprites_rendered == 8 {
+                self.status_flags.insert(SPRITE_OVERFLOW);
+                break;
+            }
+            let base_pattern_addr = self.sprite_pattern_addr() as usize;
+            let sprite_n = self.sprite_n(i) as usize;
+            let pattern_addr = base_pattern_addr | (32 * sprite_n);
+            let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(
+                pattern_addr,
+                sprite_line
+            );
+            let sprite_x = self.sprite_x(i) as usize;
+            for i in 0 .. 8 {
+                let render_x = sprite_x + i;
+                if render_x > 255 {
+                    break;
+                }
+                if line_buffer[render_x] != 0x80 {
+                    self.status_flags.insert(SPRITE_COLLISION);
+                    continue;
+                }
+                if palette_indices[i] != 0 {
+                    line_buffer[render_x] = self.cram[palette_indices[i] + 16];
+                }
+            }
+        }
+
+        // draw tiles
+        let tile_index_base = (v / 8) * 32;
+        let tile_line = v % 8;
+        let nt_address = self.name_table_address() as usize;
+        for tile in 0..32 {
+            let current_tile_address = nt_address + 2 * (tile + tile_index_base);
+            let low_byte = self.vram[current_tile_address as u16 as usize];
+            let high_byte = self.vram[current_tile_address.wrapping_add(1) as u16 as usize];
+            let vert_flip = 4 & high_byte != 0;
+            let horiz_flip = 2 & high_byte != 0;
+            let priority = 0x10 & high_byte != 0;
+            let palette = 16 * ((high_byte & 8) >> 3) as usize;
+            let pattern_index = to16(low_byte, high_byte & 1) as usize;
+            let tile_line_really = if vert_flip {
+                7 - tile_line
+            } else {
+                tile_line
+            };
+            let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(
+                pattern_index * 32,
+                tile_line_really
+            );
+            for j in 0 .. 8 {
+                let x = if horiz_flip {
+                    tile * 8 + (7 - j)
+                } else {
+                    tile * 8 + j
+                };
+                if priority || line_buffer[x] == 0x80 {
+                    line_buffer[x] = self.cram[palette_indices[j] + palette];
+                }
+            }
+        }
+
+        for x in 0..256 {
+            screen.paint(x, v, line_buffer[x]);
+        }
+
+        done(self, screen)
+    }
+
+    pub fn draw_palettes<S: Screen>(&self, screen: &mut S) -> Result<(), ScreenError> {
+        if self.v != 0 {
+            return Ok(());
+        }
+        screen.set_resolution(33, 1)?;
+        for i in 0..16 {
+            screen.paint(i, 0, self.cram[i]);
+        }
+        screen.paint(16, 0, 0xFF);
+        for i in 17..32 {
+            screen.paint(i, 0, self.cram[i - 1]);
+        }
+        screen.render()?;
+        Ok(())
+    }
+
+    pub fn draw_sprites<S: Screen>(&self, screen: &mut S) -> Result<(), ScreenError> {
+        if self.v != 0 {
+            return Ok(());
+        }
+        screen.set_resolution(64, 64)?;
+        for i in 0..64 {
+            let sprite_n = self.sprite_n(i) as usize;
+            let base_pattern_addr = self.sprite_pattern_addr() as usize;
+            let pattern_addr = base_pattern_addr | (32 * sprite_n);
+            for sprite_line in 0 .. 8 {
+                let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(
+                    pattern_addr,
+                    sprite_line
+                );
+                for j in 0 .. 8 {
+                    let x = (i as usize % 8) * 8 + j;
+                    let y = (i as usize / 8) * 8 + sprite_line;
+                    if palette_indices[j] != 0 {
+                        screen.paint(x as usize, y as usize, self.cram[palette_indices[j] + 16]);
+                    }
+                }
+            }
+        }
+        screen.render()?;
+        Ok(())
+    }
+
+    pub fn draw_tiles<S: Screen>(&self, screen: &mut S) -> Result<(), ScreenError> {
+        if self.v != 0 {
+            return Ok(())
+        }
+        let tile_count = if self.resolution() == Low { 32*28 } else { 32*32 };
+        screen.set_resolution(
+            256,
+            tile_count / 4, // tile_count * 64 pixels / (256 pixels/line) gives how many lines
+        )?;
+        let nt_address = self.name_table_address() as usize;
+        for i in 0 .. tile_count {
+            let current_tile_address = nt_address + 2 * i;
+            let low_byte = self.vram[current_tile_address as u16 as usize];
+            let high_byte = self.vram[current_tile_address.wrapping_add(1) as u16 as usize];
+            let vert_flip = 4 & high_byte != 0;
+            let horiz_flip = 2 & high_byte != 0;
+            let palette = 16 * ((high_byte & 3) >> 3) as usize;
+            let pattern_index = to16(low_byte, high_byte & 1) as usize;
+            for tile_line in 0 .. 8 {
+                let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(
+                    pattern_index * 32,
+                    tile_line
+                );
+                let y = if vert_flip {
+                    (i / 32) * 8 + (7 - tile_line)
+                } else {
+                    (i / 32) * 8 + tile_line
+                };
+                for j in 0 .. 8 {
+                    let x = if horiz_flip {
+                        (i % 32) * 8 + (7 - j)
+                    } else {
+                        (i % 32) * 8 + j
+                    };
+                    screen.paint(x as usize, y as usize, self.cram[palette_indices[j] + palette]);
+                }
+            }
+        }
+        screen.render()?;
+        Ok(())
+    }
+
+    fn pattern_address_to_palette_indices(&self, address: usize, line: usize) -> [usize; 8] {
+        debug_assert!(line < 8);
+        let bitplanes_address = address + 4 * line;
+        debug_assert!(bitplanes_address + 3 < self.vram.len());
+        let mut bitplane0 = self.vram[bitplanes_address] as usize;
+        let mut bitplane1 = self.vram[bitplanes_address + 1] as usize;
+        let mut bitplane2 = self.vram[bitplanes_address + 2] as usize;
+        let mut bitplane3 = self.vram[bitplanes_address + 3] as usize;
+        let mut result = [0usize; 8];
+        for i in 0 .. 8 {
+            result[i] |= (bitplane0 & 0x80) >> 7;
+            result[i] |= (bitplane1 & 0x80) >> 6;
+            result[i] |= (bitplane2 & 0x80) >> 5;
+            result[i] |= (bitplane3 & 0x80) >> 4;
+            bitplane0 <<= 1;
+            bitplane1 <<= 1;
+            bitplane2 <<= 1;
+            bitplane3 <<= 1;
+        }
+        result
     }
 }
 
 impl Irq for Vdp {
     fn requesting_mi(&self) -> bool {
-        let frame_irq =
-            (self.registers[1] & 0x20) != 0 && self.status_flags & (1 << INT) != 0;
-        let line_irq =
-            (self.registers[0] & 0x10) != 0 && self.status_flags & (1 << LINT) != 0;
-        frame_irq || line_irq
+        (self.status_flags.contains(FRAME_INTERRUPT) && self.frame_irq_enable()) ||
+            (self.status_flags.contains(LINE_INTERRUPT) && self.line_irq_enable())
     }
-
     fn requesting_nmi(&self) -> bool {
         false
     }
 }
-
-// bits in status_flags
-// note that only INT, OVR, and COL are part of the VDP hardware. The rest are
-// garbage bits on the SMS VDP. We're using them for other purposes.
-const INT: u8 = 7; // Frame interrupt pending
-const OVR: u8 = 6; // Sprite overflow
-const COL: u8 = 5; // Sprite collision
-const LINT: u8 = 4; // Line interrupt pending
-const CFLAG: u8 = 3; // Control flag - set after first write to control port
-
-// pub fn draw_frame<C: Canvas, V: Vdp>(
-//     v: &mut V,
-//     canvas: &mut C,
-// ) -> Result<u64, CanvasError> {
-//     log_minor!(v, "Vdp: drawing frame");
-//     v.request_maskable_interrupt();
-//     let vdp = v.get_mut_vdp_hardware();
-//     let nt_address = ((vdp.registers[2] & 0x0E) as usize) << 10;
-//     let sat_address = ((vdp.registers[5] & 0x7E) as usize) << 7;
-//     let overscan_color: u16 = (vdp.registers[7] & 0x0F) as u16;
-//     let x_starting_column: u16 = 32 - ((vdp.registers[8] & 0xF8) as u16 >> 3);
-//     let x_scroll: u16 = (vdp.registers[8] & 0x07) as u16;
-//     let y_starting_column: u16 = (vdp.registers[9] & 0xF8) as u16 >> 3;
-//     let y_scroll: u16 = (vdp.registers[9] & 0x07) as u16;
-
-//     vdp.v0 = 0;
-
-//     let bit8 = ((vdp.registers[6] & 0x04) as usize) << 6;
-//     for sprite_index in 0..64 {
-//         let y = vdp.vram[sat_address + sprite_index] as usize + 1;
-//         let x = (vdp.vram[sat_address + 0x80 + 2*sprite_index] as usize) -
-//             if 0 != vdp.registers[0] & 0x08 {
-//                 8
-//             } else {
-//                 0
-//             };
-//         let n = vdp.vram[sat_address + 0x81 + 2*sprite_index] as usize;
-//         let pattern_address = 32*n | bit8;
-//         for pixel_y in 0..8 {
-//             let pattern_byte0 = vdp.vram[pattern_address + 8*pixel_y];
-//             let pattern_byte1 = vdp.vram[pattern_address + 8*pixel_y + 1];
-//             let pattern_byte2 = vdp.vram[pattern_address + 8*pixel_y + 2];
-//             let pattern_byte3 = vdp.vram[pattern_address + 8*pixel_y + 3];
-//             for pixel_x in 0..8 {
-//                 let mut palette_index = 0u8;
-
-//                 assign_bit(&mut palette_index, 0, pattern_byte0, 7 - pixel_x);
-//                 assign_bit(&mut palette_index, 1, pattern_byte1, 7 - pixel_x);
-//                 assign_bit(&mut palette_index, 2, pattern_byte2, 7 - pixel_x);
-//                 assign_bit(&mut palette_index, 3, pattern_byte3, 7 - pixel_x);
-
-//                 if palette_index == 0 {
-//                     continue;
-//                 }
-
-//                 let color = vdp.cram[0x10 + palette_index as usize];
-//                 canvas.paint(x + pixel_x as usize, y + pixel_y as usize, color);
-//             }
-//         }
-//     }
-//     vdp.status_flags |= 1 << INT;
-//     Ok(684*262)
-// }
-
-// #[allow(unused_variables)]
-// pub fn draw_line<C: Canvas, V: Vdp>(
-//     v: &mut V,
-//     canvas: &mut C,
-// ) -> Result<u64, CanvasError> {
-//     let line = v.get_vdp_hardware().v0;
-//     log_minor!(v, "Vdp: draw line {}", line);
-//     v.get_mut_vdp_hardware().registers[2] = 0xFF; // XXX
-//     // let ntaddr = ((v.get_vdp_hardware().registers[2] & 0x0E) as usize) << 10;
-//     // log_major!(v, "Vdp: ntaddr {}", ntaddr);
-//     // let sat_address = ((v.get_vdp_hardware().registers[5] & 0x7E) as usize) << 7;
-//     // log_major!(v, "Vdp: sataddr {}", sat_address);
-
-//     fn draw_line0<C: Canvas>(vdp: &mut VdpHardware, canvas: &mut C) {
-//         let nt_address = ((vdp.registers[2] & 0x0E) as usize) << 10;
-//         let sat_address = ((vdp.registers[5] & 0x7E) as usize) << 7;
-//         let overscan_color: u16 = (vdp.registers[7] & 0x0F) as u16;
-//         let x_starting_column: u16 = 32 - ((vdp.registers[8] & 0xF8) as u16 >> 3);
-//         let x_scroll: u16 = (vdp.registers[8] & 0x07) as u16;
-//         let y_starting_column: u16 = (vdp.registers[9] & 0xF8) as u16 >> 3;
-//         let y_scroll: u16 = (vdp.registers[9] & 0x07) as u16;
-
-//         let line = vdp.v0 as usize;
-
-//         if vdp.v0 <= 192 { // yes, 192 (one past active display region) is right
-//             if vdp.irq_counter == 0 {
-//                 // line interrupt
-//                 vdp.status_flags |= 1 << LINT;
-//                 vdp.irq_counter = vdp.registers[10];
-//             } else {
-//                 vdp.irq_counter -= 1;
-//             }
-//         } else {
-//             vdp.irq_counter = vdp.registers[10];
-//         }
-//         if vdp.v0 == 0xC1 {
-//             // frame interrupt
-//             vdp.status_flags |= 1 << INT;
-//         }
-//         vdp.v0 += 1;
-//         if vdp.v0 == 262 {
-//             vdp.v0 = 0;
-//         }
-
-//         if line >= 192 {
-//             // we are out of the active display region
-//             return;
-//         }
-
-//         let mut line_colors = [0x80u8; 256];
-
-//         //// first, draw sprites to line_colors
-//         let mut sprites_drawn = 0;
-//         let bit8 = ((vdp.registers[6] & 0x04) as usize) << 6;
-//         for sprite_index in 0..64 {
-//             let y = vdp.vram[sat_address + sprite_index] as usize + 1;
-//             let x = (vdp.vram[sat_address + 0x80 + 2*sprite_index] as isize) -
-//                 if 0 != vdp.registers[0] & 0x08 {
-//                     8
-//                 } else {
-//                     0
-//                 };
-
-//             let n = vdp.vram[sat_address + 0x81 + 2*sprite_index] as usize;
-//             let pattern_index = n | bit8;
-//             if y == 0xD1 {
-//                 // such a y coordinate has a special meaning in 192-line mode: don't
-//                 // render any more sprites this line
-//                 break;
-//             }
-//             if line < y || line >= y + 8 {
-//                 continue;
-//             }
-//             if sprites_drawn == 8 {
-//                 // only draw 8 sprites per line, and if more are scheduled to be
-//                 // drawn, set the overflow flag
-//                 vdp.status_flags |= 1 << OVR;
-//                 break;
-//             }
-
-//             sprites_drawn += 1;
-
-//             // the index of the line within the pattern we need to draw
-//             let sprite_line = line - y;
-
-//             // we have 8 pixels, each of which needs a byte of color
-//             let pattern_byte0 = vdp.vram[32*pattern_index + sprite_line];
-//             let pattern_byte1 = vdp.vram[32*pattern_index + sprite_line + 1];
-//             let pattern_byte2 = vdp.vram[32*pattern_index + sprite_line + 2];
-//             let pattern_byte3 = vdp.vram[32*pattern_index + sprite_line + 3];
-//             for pixel in 0..8u8 {
-//                 let mut palette_index = 0u8;
-//                 // pixel 0 will be the leftmost pixel to draw... but that is
-//                 // found in the most significant bit of each byte
-//                 assign_bit(&mut palette_index, 0, pattern_byte0, 7 - pixel);
-//                 assign_bit(&mut palette_index, 1, pattern_byte1, 7 - pixel);
-//                 assign_bit(&mut palette_index, 2, pattern_byte2, 7 - pixel);
-//                 assign_bit(&mut palette_index, 3, pattern_byte3, 7 - pixel);
-
-//                 if palette_index == 0 {
-//                     // for sprites, this means transparency
-//                     continue;
-//                 }
-
-//                 // sprites use the second palette
-//                 let color = vdp.cram[0x10 + palette_index as usize];
-
-//                 // the x coordinate of the canvas where this pixel will be drawn
-//                 let x0 = x + 7 - (pixel as isize);
-
-//                 if x0 < 0 || x0 > 255 {
-//                     // I *think* pixels outside this range don't count for sprite
-//                     // collision
-//                     continue;
-//                 }
-
-//                 if line_colors[x0 as usize] != 0x80 {
-//                     // sprite collision
-//                     // also, the earlier sprite gets priority
-//                     set_bit(&mut vdp.status_flags, COL);
-//                 } else {
-//                     line_colors[x0 as usize] = color;
-//                 }
-//             }
-//         }
-
-//         // 256 width, 192 height
-//         // 28 rows of tiles
-//         // Now draw background tiles - no scrolling yet
-//         let tile_row = line / 28;
-//         let tile_line = line % 28;
-//         for tile_index in 0..32 {
-//             let tile_address = nt_address + tile_index * tile_row * 2;
-//             let low_byte = vdp.vram[tile_address];
-//             let high_byte = vdp.vram[tile_address + 1];
-//             let pattern_index = (low_byte as usize) | ((high_byte & 1) as usize) << 8;
-//             let horiz_flip = 0 != high_byte & 0x02;
-//             let vert_flip = 0 != high_byte & 0x04;
-//             let palette_index0 = (high_byte & 0x08) << 1;
-//             let priority = 0 != high_byte & 0x10;
-
-//             let pattern_byte0 = vdp.vram[32*pattern_index + tile_line];
-//             let pattern_byte1 = vdp.vram[32*pattern_index + tile_line + 1];
-//             let pattern_byte2 = vdp.vram[32*pattern_index + tile_line + 2];
-//             let pattern_byte3 = vdp.vram[32*pattern_index + tile_line + 3];
-
-//             for pixel in 0..8u8 {
-//                 let mut palette_index = palette_index0;
-//                 // pixel 0 will be the leftmost pixel to draw... but that is
-//                 // found in the most significant bit of each byte
-//                 assign_bit(&mut palette_index, 0, pattern_byte0, 7 - pixel);
-//                 assign_bit(&mut palette_index, 1, pattern_byte1, 7 - pixel);
-//                 assign_bit(&mut palette_index, 2, pattern_byte2, 7 - pixel);
-//                 assign_bit(&mut palette_index, 3, pattern_byte3, 7 - pixel);
-
-//                 let color = vdp.cram[palette_index as usize];
-
-//                 // the x coordinate of the canvas where this pixel will be drawn
-//                 // let x0 = (tile_index*8 + 7) as isize - (pixel as isize);
-//                 let x0 = tile_index*8 + pixel as usize;
-
-//                 if priority || line_colors[x0 as usize] == 0x80 {
-//                     line_colors[x0 as usize] = color;
-//                 }
-//             }
-
-//             // Now we can actually draw
-//             for i in 0..256usize {
-//                 canvas.paint(i, line, line_colors[i]);
-//             }
-//         }
-//     }
-
-//     draw_line0(v.get_mut_vdp_hardware(), canvas);
-
-//     if line == 261 {
-//         log_major!(v, "Vdp: rendering frame");
-//         canvas.render()?;
-//     }
-
-//     if v.is_requesting_interrupt() {
-//         v.request_maskable_interrupt();
-//     }
-
-//     Ok(684)
-// }
