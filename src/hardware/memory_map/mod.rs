@@ -9,7 +9,7 @@
 //! The SMS has two memory mappers in common use, the Sega memory mapper and the
 //! CodeMasters mapper. Both swap out pages of cartridge ROM according to memory
 //! writes in special locations.
-//! 
+//!
 //! At the moment only the Sega Memory mapper is implemented (see
 //! [`SegaMemoryMapperHardware`]), and it consists of Rust code manually
 //! translating logical memory addresses to physical memory. Future plans include

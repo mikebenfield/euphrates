@@ -8,7 +8,6 @@
 use std;
 use std::error::Error;
 
-use ::log;
 use ::bits::*;
 use super::irq::Irq;
 
@@ -241,7 +240,7 @@ impl Vdp {
     fn sprite_pattern_addr(&self) -> u16 {
         let reg6 = self.reg[6] as u16;
         if self.version == SMS {
-            // XXX 
+            // XXX
             (reg6 & 0x04) << 11
             // ((reg6 & 0x04) << 11) &
             // ((reg6 & 0x02) << 7) &
@@ -287,7 +286,7 @@ impl Vdp {
         self.address0 = (addr.wrapping_add(1) & 0x3FFF) | (addr & 0xC000);
     }
     pub fn read_v(&self) -> u8 {
-        let result = 
+        let result =
             match (self.system, self.resolution(), self.v) {
                 (NTSC, Low, 0...0xDA) => self.v,
                 (NTSC, Low, _) => self.v-6,

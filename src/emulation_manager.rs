@@ -5,6 +5,8 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std;
+
 use ::log;
 use ::hardware::z80::*;
 use ::hardware::vdp::*;
@@ -37,6 +39,8 @@ impl EmulationManager {
     {
         use sdl_wrap;
 
+        let mut milliseconds = 0u64;
+
         for i in 0usize..n {
             log_major!("EM: loop {}", i);
 
@@ -54,6 +58,14 @@ impl EmulationManager {
 
             if sdl_wrap::event::check_quit() {
                 break;
+            }
+
+            if self.z80.io.vdp.read_v() == 0 {
+                let new_milliseconds = self.z80.cycles / 5000;
+                let diff = new_milliseconds - milliseconds;
+                let duration = std::time::Duration::from_millis(diff);
+                std::thread::sleep(duration);
+                milliseconds = new_milliseconds;
             }
         }
         Ok(())

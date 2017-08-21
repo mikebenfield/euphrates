@@ -36,7 +36,7 @@ impl Sms2Io {
 }
 
 impl irq::Irq for Sms2Io {
-    fn requesting_mi(&self) -> bool { 
+    fn requesting_mi(&self) -> bool {
         self.vdp.requesting_mi()
     }
     fn requesting_nmi(&self) -> bool {
@@ -79,10 +79,11 @@ impl Io for Sms2Io {
                 }
                 0b11000000 => {
                     // IO port A/B register
-                    self.ab
+                    ::sdl_wrap::event::joypada()
                 }
                 0b11000001 => {
-                    self.b_misc
+                    // IO port B register
+                    ::sdl_wrap::event::joypadb()
                 }
                 _ => {
                     panic!("Missing IO address in input");

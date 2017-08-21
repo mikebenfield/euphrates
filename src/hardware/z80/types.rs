@@ -175,7 +175,7 @@ impl Gettable<u16> for u16 {
 
 impl Gettable<u8> for Reg8 {
     fn get<I: Io>(self, z: &Z80<I>) -> u8 {
-        let byte_array: &[u8; 26] = 
+        let byte_array: &[u8; 26] =
             unsafe {
                 std::mem::transmute(&z.registers)
             };

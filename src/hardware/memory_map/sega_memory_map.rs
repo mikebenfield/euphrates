@@ -25,7 +25,7 @@ pub struct SegaMemoryMap {
     // sega-pages of cartridge RAM. If there are two sega-pages
     // of cartridge RAM, the first page is at the very end of the sequence,
     // and the second page comes just before it.
-    // 
+    //
     // We don't allocate the cartridge RAM until/unless we need it, which we
     // detect by observing writes to the memory control register at logical
     // address 0xFFFC.
@@ -54,7 +54,7 @@ pub struct SegaMemoryMap {
     reg_fffd: u8,
     reg_fffe: u8,
     reg_ffff: u8,
-    
+
     // the indices of this array correspond to implementation-slots (8 KiB pages of
     // logical memory), and the members of the array indicate which
     // implementation-page (8 KiB pages of physical memory) that slot should be
