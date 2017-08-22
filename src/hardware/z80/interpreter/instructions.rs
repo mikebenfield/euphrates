@@ -1029,10 +1029,8 @@ pub fn retcc<I: Io>(z: &mut Z80<I>, cc: ConditionCode) {
     }
 }
 
-pub fn reti<I: Io>(_: &mut Z80<I>) {
-    // XXX implement
-
-    unimplemented!();
+pub fn reti<I: Io>(z: &mut Z80<I>) {
+    retn(z);
 }
 
 pub fn retn<I: Io>(z: &mut Z80<I>) {
