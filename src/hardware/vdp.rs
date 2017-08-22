@@ -364,7 +364,7 @@ impl Vdp {
                 _ => {}
             }
             if vdp.v <= vdp.active_lines() {
-                vdp.line_counter.wrapping_sub(1);
+                vdp.line_counter = vdp.line_counter.wrapping_sub(1);
                 if vdp.line_counter == 0xFF {
                     vdp.line_counter = vdp.reg_line_counter();
                     vdp.status_flags.insert(LINE_INTERRUPT);
