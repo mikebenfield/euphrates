@@ -47,7 +47,8 @@ GameBoy Color are likely targets, since they use a CPU related to the Z80).
 Attalus is Copyright 2017, Michael Benfield.
 
 You may distribute and/or modify Attalus under the terms of the GNU General
-Public License, version 3, as published by the Free Software Foundation.
+Public License as published by the Free Sofware Foundation, either version 3
+of the license or (at your option) any later version. 
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
