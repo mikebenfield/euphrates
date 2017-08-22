@@ -255,6 +255,7 @@ impl Vdp {
     }
     #[allow(dead_code)]
     fn x_scroll(&self) -> u8 {
+        // self.reg[8].wrapping_sub(8)
         self.reg[8]
     }
     #[allow(dead_code)]
@@ -397,6 +398,9 @@ impl Vdp {
         let sprites_rendered = 0u8;
         for i in 0..64 {
             let sprite_y = self.sprite_y(i) as usize;
+            if sprite_y == 0xD0 && self.resolution() == Low {
+                break;
+            }
             let sprite_line = v.wrapping_sub(sprite_y);
             if sprite_line > 7 {
                 continue;
@@ -413,8 +417,9 @@ impl Vdp {
                 sprite_line
             );
             let sprite_x = self.sprite_x(i) as usize;
+            let shift_x = if self.shift_sprites() { 8 } else { 0 };
             for i in 0 .. 8 {
-                let render_x = sprite_x + i;
+                let render_x = sprite_x.wrapping_add(i).wrapping_sub(shift_x);
                 if render_x > 255 {
                     break;
                 }
@@ -429,8 +434,11 @@ impl Vdp {
         }
 
         // draw tiles
-        let tile_index_base = (v / 8) * 32;
-        let tile_line = v % 8;
+        let scrolled_v = (v + self.y_scroll() as usize) % if self.resolution() == Low { 28*8 } else { 32*8 };
+        let tile_index_base = (scrolled_v / 8) * 32;
+        let tile_line = scrolled_v % 8;
+        // let tile_index_base = (v / 8) * 32;
+        // let tile_line = v % 8;
         let nt_address = self.name_table_address() as usize;
         for tile in 0..32 {
             let current_tile_address = nt_address + 2 * (tile + tile_index_base);
@@ -455,9 +463,10 @@ impl Vdp {
                     tile * 8 + (7 - j)
                 } else {
                     tile * 8 + j
-                };
-                if priority || line_buffer[x] == 0x80 {
-                    line_buffer[x] = self.cram[palette_indices[j] + palette];
+                } as u8;
+                let scrolled_x = x.wrapping_add(self.x_scroll()) as usize;
+                if priority || line_buffer[scrolled_x] == 0x80 {
+                    line_buffer[scrolled_x] = self.cram[palette_indices[j] + palette];
                 }
             }
         }
@@ -549,6 +558,14 @@ impl Vdp {
                     screen.paint(x as usize, y as usize, self.cram[palette_indices[j] + palette]);
                 }
             }
+        }
+        let x_scroll = self.x_scroll() as usize;
+        for y in 0..tile_count / 4 {
+            screen.paint(x_scroll, y as usize, 0x0F);
+        }
+        let y_scroll = self.y_scroll() as usize;
+        for x in 0..256 {
+            screen.paint(x, y_scroll, 0xF3);
         }
         screen.render()?;
         Ok(())
