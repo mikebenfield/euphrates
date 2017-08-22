@@ -155,7 +155,7 @@ impl Vdp {
         self.reg[0] & (1 << 6) != 0
     }
     #[allow(dead_code)]
-    fn mask_col0(&self) -> bool {
+    fn left_column_blank(&self) -> bool {
         self.reg[0] & (1 << 5) != 0
     }
     fn line_irq_enable(&self) -> bool {
@@ -255,7 +255,6 @@ impl Vdp {
     }
     #[allow(dead_code)]
     fn x_scroll(&self) -> u8 {
-        // self.reg[8].wrapping_sub(8)
         self.reg[8]
     }
     #[allow(dead_code)]
@@ -437,8 +436,6 @@ impl Vdp {
         let scrolled_v = (v + self.y_scroll() as usize) % if self.resolution() == Low { 28*8 } else { 32*8 };
         let tile_index_base = (scrolled_v / 8) * 32;
         let tile_line = scrolled_v % 8;
-        // let tile_index_base = (v / 8) * 32;
-        // let tile_line = v % 8;
         let nt_address = self.name_table_address() as usize;
         for tile in 0..32 {
             let current_tile_address = nt_address + 2 * (tile + tile_index_base);
@@ -464,10 +461,18 @@ impl Vdp {
                 } else {
                     tile * 8 + j
                 } as u8;
+
                 let scrolled_x = x.wrapping_add(self.x_scroll()) as usize;
                 if priority || line_buffer[scrolled_x] == 0x80 {
                     line_buffer[scrolled_x] = self.cram[palette_indices[j] + palette];
                 }
+            }
+        }
+
+        if self.left_column_blank() {
+            let color = self.cram[16 + self.backdrop_color() as usize];
+            for i in 0..8 {
+                line_buffer[i] = color;
             }
         }
 
@@ -561,7 +566,7 @@ impl Vdp {
         }
         let x_scroll = self.x_scroll() as usize;
         for y in 0..tile_count / 4 {
-            screen.paint(x_scroll, y as usize, 0x0F);
+            screen.paint(0xFF - x_scroll, y as usize, 0x0F);
         }
         let y_scroll = self.y_scroll() as usize;
         for x in 0..256 {
