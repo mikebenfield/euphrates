@@ -99,27 +99,14 @@ where
     }
     mem[0..mem_start.len()].copy_from_slice(mem_start);
     let mut z = Z80::new(SimpleIo { mem: mem });
-    // for reg in [
-    //     B, C, D, E, A, H, L,
-    //     B0, C0, D0, E0, A0, L0, H0,
-    //     IXH, IXL, IYH, IYL,
-    // ].iter() {
-    //     reg.set(&mut z, rng.gen());
-    // }
+    for reg in [
+        B, C, D, E, A, H, L,
+        B0, C0, D0, E0, A0, L0, H0,
+        IXH, IXL, IYH, IYL,
+    ].iter() {
+        reg.set(&mut z, rng.gen());
+    }
     z
-    // Z80 {
-    //     io: SimpleIo {
-    //         mem: mem
-    //     },
-    //     halted: false,
-    //     cycles: 0,
-    //     address: 0,
-    //     data: 0,
-    //     iff1: 0,
-    //     iff2: false,
-    //     interrupt_mode: Im0,
-    //     registers: rng.gen(),
-    // } 
 }
 
 fn write_core<P: AsRef<Path>>(
