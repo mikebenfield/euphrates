@@ -13,22 +13,16 @@ use ::hardware::z80::types::*;
 use ::hardware::io::Io;
 
 fn set_sign<I: Io>(z80: &mut Z80<I>, x: u8) {
-    let mut f = F.get(z80);
-    assign_bit(&mut f, SF, x, SF);
-    F.set(z80, f);
+    z80.set_flags(SF, x & 0x80 != 0);
 }
 
 fn set_zero<I: Io>(z80: &mut Z80<I>, x: u8) {
-    let mut f = F.get(z80);
-    assign_bit(&mut f, ZF, (x == 0) as u8, 0);
-    F.set(z80, f);
+    z80.set_flags(ZF, x == 0);
 }
 
 fn set_parity<I: Io>(z80: &mut Z80<I>, x: u8) {
-    let parity = x.count_ones() %2 == 0;
-    let mut f = F.get(z80);
-    assign_bit(&mut f, PF, parity as u8, 0);
-    F.set(z80, f);
+    let parity = x.count_ones() % 2 == 0;
+    z80.set_flags(PF, parity);
 }
 
 //// Interrupts
@@ -87,15 +81,14 @@ where
 }
 
 // XXX text about interrupts in manual
-pub fn ld8_ir<I: Io>(z: &mut Z80<I>, arg: Reg8) {
-    let val = arg.get(z);
+pub fn ld_ir<I: Io>(z: &mut Z80<I>, arg1: Reg8, arg2: Reg8) {
+    let val = arg2.get(z);
+    arg1.set(z, val);
     set_sign(z, val);
     set_zero(z, val);
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    assign_bit(&mut f, PF, z.iff2 as u8, 0);
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    z.remove_flags(NF | HF);
+    let iff2 = z.iff2;
+    z.set_flags(PF, iff2);
 }
 
 //// 16-Bit Load Group
@@ -161,15 +154,6 @@ fn ld_id_impl<I: Io>(z: &mut Z80<I>, inc: i8) {
     BC.set(z, bc.wrapping_sub(1));
 }
 
-fn ld_id_flag_impl<I: Io>(z: &mut Z80<I>) {
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    let b = (BC.get(z) != 0) as u8;
-    assign_bit(&mut f, PF, b, 0);
-    F.set(z, f);
-}
-
 pub fn ldid<I: Io>(z: &mut Z80<I>, inc: u16) {
     let hl = HL.get(z);
     let de = DE.get(z);
@@ -182,12 +166,8 @@ pub fn ldid<I: Io>(z: &mut Z80<I>, inc: u16) {
     DE.set(z, de.wrapping_add(inc));
     BC.set(z, bc.wrapping_sub(1));
 
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    let b = bc != 1;
-    assign_bit(&mut f, PF, b as u8, 0);
-    F.set(z, f);
+    z.remove_flags(HF | NF);
+    z.set_flags(PF, bc != 1);
 }
 
 pub fn ldi<I: Io>(z: &mut Z80<I>) {
@@ -252,11 +232,9 @@ fn cpid<I: Io>(z: &mut Z80<I>, inc: u16) {
 
     set_sign(z, result);
     set_zero(z, result);
-    let mut f = F.get(z);
-    assign_bit(&mut f, HF, (phl & 0xF > a & 0xF) as u8, 0);
-    assign_bit(&mut f, PF, (bc != 1) as u8, 0);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.set_flags(HF, phl & 0xF > a & 0xF);
+    z.set_flags(PF, bc != 1);
+    z.insert_flags(NF);
     HL.set(z, hl.wrapping_add(inc));
     BC.set(z, bc.wrapping_sub(1));
 }
@@ -269,7 +247,7 @@ pub fn cpir<I: Io>(z: &mut Z80<I>) {
     while {
         cpi(z);
         z.cycles += 21;
-        BC.get(z) != 0 && F.get(z) & (1 << ZF) == 0
+        BC.get(z) != 0 && !z.contains_flags(ZF)
     } {
         // r was already incremented twice by `run`
         inc_r(z);
@@ -287,7 +265,7 @@ pub fn cpdr<I: Io>(z: &mut Z80<I>) {
     while {
         cpd(z);
         z.cycles += 21;
-        BC.get(z) != 0 && F.get(z) & (1 << ZF) == 0
+        BC.get(z) != 0 && !z.contains_flags(ZF)
     } {
         // r was already incremented twice by `run`
         inc_r(z);
@@ -308,23 +286,23 @@ fn add_impl<I: Io>(z: &mut Z80<I>, a: u8, x: u8, cf: u8) -> u8 {
     set_zero(z, result8);
     set_sign(z, result8);
 
-    let mut f = F.get(z);
-
-    assign_bit(&mut f, CF, (result16 >> 8) as u8, 0);
+    z.set_flags(CF, result16 & (1 << 8) != 0);
 
     // carry from bit 3 happened if:
     // x and a have same bit 4 AND result is set OR
     // x and a have different bit 4 AND result is clear
-    assign_bit(&mut f, HF, (x ^ a ^ result8), 4);
+    let hf = (x ^ a ^ result8) & (1 << 4) != 0;
+    z.set_flags(HF, hf);
 
     // overflow happened if:
     // x and a both have bit 7 AND result does not OR
     // x and a have clear bit 7 AND result is set
-    assign_bit(&mut f, PF, !(x ^ a) & (x ^ result8), 7);
+    // in other words, x and y have the same bit 7 and
+    // result is different
+    let overflow = !(x ^ a) & (x ^ result8) & (1 << 7) != 0;
+    z.set_flags(PF, overflow);
 
-
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    z.remove_flags(NF);
 
     return result8;
 }
@@ -347,9 +325,7 @@ where
     T1: Settable<u8>,
     T2: Gettable<u8>,
 {
-    let mut cf = 0u8;
-    let f = F.get(z);
-    assign_bit(&mut cf, 0, f, CF);
+    let cf = if z.contains_flags(CF) { 1u8 } else { 0u8 };
     let a = arg1.get(z);
     let x = arg2.get(z);
     let result = add_impl(z, a, x, cf);
@@ -357,13 +333,9 @@ where
 }
 
 fn sub_impl<I: Io>(z: &mut Z80<I>, a: u8, x: u8, cf: u8) -> u8 {
-    // XXX check that flags are set correctly
     let result = add_impl(z, a, !x, 1 ^ cf);
-    let mut f = F.get(z);
-    f ^= 1 << CF;
-    f ^= 1 << HF;
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.toggle_flags(CF | HF);
+    z.insert_flags(NF);
     result
 }
 
@@ -385,9 +357,7 @@ where
     T1: Settable<u8>,
     T2: Gettable<u8>,
 {
-    let mut cf = 0u8;
-    let f = F.get(z);
-    assign_bit(&mut cf, 0, f, CF);
+    let cf = if z.contains_flags(CF) { 1u8 } else { 0u8 };
     let a = arg1.get(z);
     let x = arg2.get(z);
     let result = sub_impl(z, a, x, cf);
@@ -402,13 +372,7 @@ fn andor_impl<I: Io>(z: &mut Z80<I>, result: u8) {
     set_parity(z, result);
     set_sign(z, result);
     set_zero(z, result);
-    let mut f = F.get(z);
-
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    clear_bit(&mut f, CF);
-
-    F.set(z, f);
+    z.remove_flags(HF | NF | CF);
 }
 
 pub fn and<I, T1>(z: &mut Z80<I>, arg: T1)
@@ -418,9 +382,7 @@ where
 {
     let result = arg.get(z) & A.get(z);
     andor_impl(z, result);
-    let mut f = F.get(z);
-    set_bit(&mut f, HF);
-    F.set(z, f);
+    z.insert_flags(HF);
 }
 
 pub fn or<I, T1>(z: &mut Z80<I>, arg: T1)
@@ -441,7 +403,7 @@ where
     andor_impl(z, result);
 }
 
-fn cp_impl<I, T1>(z: &mut Z80<I>, arg: T1)
+pub fn cp<I, T1>(z: &mut Z80<I>, arg: T1)
 where
     I: Io,
     T1: Gettable<u8>,
@@ -450,14 +412,6 @@ where
     let a = A.get(z);
     sub_impl(z, a, x, 0);
     A.set(z, a);
-}
-
-pub fn cp<I, T1>(z: &mut Z80<I>, arg: T1)
-where
-    I: Io,
-    T1: Gettable<u8>,
-{
-    cp_impl(z, arg);
 }
 
 pub fn inc<I, T1>(z: &mut Z80<I>, arg: T1)
@@ -470,11 +424,9 @@ where
     arg.set(z, result);
     set_zero(z, result);
     set_sign(z, result);
-    let mut f = F.get(z);
-    clear_bit(&mut f, NF);
-    assign_bit(&mut f, HF, ((x & 0xF) == 0xF) as u8, 0);
-    assign_bit(&mut f, PF, (x == 0x7F) as u8, 0);
-    F.set(z, f);
+    z.set_flags(HF, x & 0xF == 0xF);
+    z.set_flags(PF, x == 0x7F);
+    z.remove_flags(NF);
 }
 
 pub fn dec<I, T1>(z: &mut Z80<I>, arg: T1)
@@ -486,12 +438,10 @@ where
     let result = x.wrapping_sub(1);
     arg.set(z, result);
     set_zero(z, result);
-    let mut f = F.get(z);
-    assign_bit(&mut f, SF, result, SF);
-    assign_bit(&mut f, HF, ((x & 0xF) == 0) as u8, 0);
-    assign_bit(&mut f, PF, (x == 0x80) as u8, 0);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    set_sign(z, result);
+    z.set_flags(HF, x & 0xF == 0);
+    z.set_flags(PF, x == 0x80);
+    z.insert_flags(NF);
 }
 
 //// General-Purpose Arithmetic and CPU Control Groups
@@ -500,9 +450,9 @@ where
 pub fn daa<I: Io>(z: &mut Z80<I>) {
     // see the table in Young
     let a = A.get(z);
-    let cf = F.get(z) & (1 << CF) != 0;
-    let hf = F.get(z) & (1 << HF) != 0;
-    let nf = F.get(z) & (1 << NF) != 0;
+    let cf = z.contains_flags(CF);
+    let hf = z.contains_flags(HF);
+    let nf = z.contains_flags(NF);
     let diff = match (cf, a >> 4, hf, a & 0xF) {
         (false, 0...9, false, 0...9) => 0,
         (false, 0...9, true, 0...9) => 0x6,
@@ -533,46 +483,35 @@ pub fn daa<I: Io>(z: &mut Z80<I>) {
     set_parity(z, new_a);
     set_zero(z, new_a);
     set_sign(z, new_a);
-    let mut f = F.get(z);
-    assign_bit(&mut f, CF, new_cf, 0);
-    assign_bit(&mut f, HF, new_hf, 0);
-    F.set(z, f);
+    z.set_flags(CF, new_cf != 0);
+    z.set_flags(HF, new_hf != 0);
 }
 
 pub fn cpl<I: Io>(z: &mut Z80<I>) {
     let a = A.get(z);
     A.set(z, !a);
-    let mut f = F.get(z);
-    set_bit(&mut f, HF);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(HF | NF);
 }
 
 pub fn neg<I: Io>(z: &mut Z80<I>) {
     // subtracts A from 0
     let a = A.get(z);
     let result = sub_impl(z, 0, a, 0);
-    let mut f = F.get(z);
-    assign_bit(&mut f, PF, (a == 0x80) as u8, 0);
-    assign_bit(&mut f, CF, (a != 0) as u8, 0);
-    F.set(z, f);
     A.set(z, result);
+    z.set_flags(PF, a == 0x80);
+    z.set_flags(CF, a != 0);
 }
 
 pub fn ccf<I: Io>(z: &mut Z80<I>) {
-    let mut f = F.get(z);
-    assign_bit(&mut f, HF, F.get(z), CF);
-    f ^= 1 << CF;
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    let cf = z.contains_flags(CF);
+    z.set_flags(HF, cf);
+    z.toggle_flags(CF);
+    z.remove_flags(NF);
 }
 
 pub fn scf<I: Io>(z: &mut Z80<I>) {
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    set_bit(&mut f, CF);
-    F.set(z, f);
+    z.remove_flags(HF | NF);
+    z.insert_flags(CF);
 }
 
 pub fn nop<I: Io>(_: &mut Z80<I>) {
@@ -616,17 +555,16 @@ fn add16_impl<I: Io>(z: &mut Z80<I>, x: u16, y: u16, cf: u16) -> u16 {
     // XXX optimize?
     let result32 = (x as u32).wrapping_add(y as u32).wrapping_add(cf as u32);
     let result16 = result32 as u16;
-    let mut f = F.get(z);
 
-    assign_bit(&mut f, CF, (result32 >> 16) as u8, 0);
+    z.set_flags(CF, result32 & (1 << 16) != 0);
 
     // carry from bit 11 happened if:
     // x and y have same bit 12 AND result is set OR
     // x and y have different bit 12 AND result is clear
-    assign_bit(&mut f, HF, ((x ^ y ^ result16) >> 12) as u8, 0);
+    let hf = (x ^ y ^ result16) & (1 << 12) != 0;
+    z.set_flags(HF, hf);
 
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    z.remove_flags(NF);
 
     return result16;
 }
@@ -643,47 +581,40 @@ fn adc16_impl<I: Io>(z: &mut Z80<I>, x: u16, y: u16, cf: u16) -> u16 {
     set_sign(z, (result >> 8) as u8);
     set_zero(z, (result as u8) | (result >> 8) as u8);
 
-    let mut f = F.get(z);
     // overflow happened if:
     // x and y both have bit 15 AND result does not OR
     // x and y have clear bit 15 AND result is set
-    assign_bit(&mut f, PF, ((!(x ^ y) & (x ^ result)) >> 15) as u8, 0);
-    F.set(z, f);
+    // in other words, x and y have the same bit 15, which is different from bit
+    // 15 of result
+    let overflow = !(x ^ y) & (x ^ result) & (1 << 15) != 0;
+    z.set_flags(PF, overflow);
 
-    return result;
+    result
 }
 
 pub fn adc16<I: Io>(z: &mut Z80<I>, arg1: Reg16, arg2: Reg16) {
     let x = arg1.get(z);
     let y = arg2.get(z);
-    let mut cf = 0u8;
-    assign_bit(&mut cf, 0, F.get(z), CF);
+    let cf = if z.contains_flags(CF) { 1u8 } else { 0u8 };
     let result = adc16_impl(z, x, y, cf as u16);
     arg1.set(z, result);
 }
 
 fn sub16_impl<I: Io>(z: &mut Z80<I>, x: u16, y: u16, cf: u16) -> u16 {
     let result = add16_impl(z, x, !y, (1 ^ cf) as u16);
-    let mut f = F.get(z);
-    f ^= 1 << CF;
-    f ^= 1 << HF;
-    set_bit(&mut f, NF);
-    F.set(z, f);
-    return result;
+    z.toggle_flags(CF | HF);
+    z.insert_flags(NF);
+    result
 }
 
 pub fn sbc16<I: Io>(z: &mut Z80<I>, arg1: Reg16, arg2: Reg16) {
     let x = arg1.get(z);
     let y = arg2.get(z);
-    let mut cf = 0u8;
-    assign_bit(&mut cf, 0, F.get(z), CF);
+    let cf = if z.contains_flags(CF) { 1u8 } else { 0u8 };
     let result = adc16_impl(z, x, !y, (1 ^ cf) as u16);
-    let mut f = F.get(z);
-    f ^= 1 << CF;
-    f ^= 1 << HF;
-    set_bit(&mut f, NF);
-    F.set(z, f);
     arg1.set(z, result);
+    z.toggle_flags(CF | HF);
+    z.insert_flags(NF);
 }
 
 pub fn inc16<I: Io>(z: &mut Z80<I>, arg: Reg16) {
@@ -705,27 +636,25 @@ pub fn dec16<I: Io>(z: &mut Z80<I>, arg: Reg16) {
 macro_rules! rotate_shift_functions_noa {
     ($fn_impl: ident $fn_impl2: ident
     $fn_general: ident $fn_store: ident) => {
-        fn $fn_impl2<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1) {
+        fn $fn_impl2<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1) -> u8 {
             let a = arg.get(z);
             let result = $fn_impl(z, a);
             arg.set(z, result);
-            let mut f = F.get(z);
-            clear_bit(&mut f, HF);
-            clear_bit(&mut f, NF);
-            F.set(z, f);
+            z.remove_flags(HF | NF);
+            result
         }
-
         pub fn $fn_general<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1) {
-            $fn_impl2(z, arg);
-            let result = arg.get(z);
+            let result = $fn_impl2(z, arg);
             set_parity(z, result);
             set_sign(z, result);
             set_zero(z, result);
         }
 
         pub fn $fn_store<I: Io, T1: Settable<u8>>(z: &mut Z80<I>, arg: T1, store: Reg8) {
-            $fn_general(z, arg);
-            let result = arg.get(z);
+            let result = $fn_impl2(z, arg);
+            set_parity(z, result);
+            set_sign(z, result);
+            set_zero(z, result);
             store.set(z, result);
         }
     }
@@ -742,111 +671,90 @@ $fn_store: ident $fn_a: ident) => {
 }
 
 fn rlc_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
-    let mut f = F.get(z);
-    assign_bit(&mut f, CF, x, 7);
-    F.set(z, f);
+    z.set_flags(CF, x & 0x80 != 0);
     x.rotate_left(1)
 }
 
 rotate_shift_functions!{
-    rlc_impl rlc_impl2
-    rlc rlc_store rlca
+    rlc_impl rlc_impl2 rlc rlc_store rlca
 }
 
 fn rl_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
-    let mut f = F.get(z);
     let mut result = x << 1;
-    assign_bit(&mut result, 0, f, CF);
-    assign_bit(&mut f, CF, x, 7);
-    F.set(z, f);
+    if z.contains_flags(CF) {
+        result |= 1;
+    } else {
+        result &= !1;
+    }
+    z.set_flags(CF, x & 0x80 != 0);
     result
 }
 
 rotate_shift_functions!{
-    rl_impl rl_impl2
-    rl rl_store rla
+    rl_impl rl_impl2 rl rl_store rla
 }
 
 fn rrc_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
-    let mut f = F.get(z);
-    assign_bit(&mut f, CF, x, 0);
-    F.set(z, f);
-    let result = x.rotate_right(1);
-    result
+    z.set_flags(CF, x & 1 != 0);
+    x.rotate_right(1)
 }
 
 rotate_shift_functions!{
-    rrc_impl rrc_impl2
-    rrc rrc_store rrca
+    rrc_impl rrc_impl2 rrc rrc_store rrca
 }
 
 fn rr_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
     let mut result = x >> 1;
-    let f0 = F.get(z);
-    assign_bit(&mut result, 7, f0, CF);
-    let mut f = F.get(z);
-    assign_bit(&mut f, CF, x, 0);
-    F.set(z, f);
+    if z.contains_flags(CF) {
+        result |= 0x80;
+    } else {
+        result &= !0x80;
+    }
+    z.set_flags(CF, x & 1 != 0);
     result
 }
 
 rotate_shift_functions!{
-    rr_impl rr_impl2
-    rr rr_store rra
+    rr_impl rr_impl2 rr rr_store rra
 }
 
 fn sla_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
-    let mut f = F.get(z);
-    let result = x << 1;
-    assign_bit(&mut f, CF, x, 7);
-    F.set(z, f);
-    result
+    z.set_flags(CF, x & 0x80 != 0);
+    x << 1
 }
 
 rotate_shift_functions_noa!{
-    sla_impl sla_impl2
-    sla sla_store
+    sla_impl sla_impl2 sla sla_store
 }
 
 // SLL is undocumented; see Young
 fn sll_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
-    let mut f = F.get(z);
+    z.set_flags(CF, x & 0x80 != 0);
     let mut result = x << 1;
-    set_bit(&mut result, 0);
-    assign_bit(&mut f, CF, x, 7);
-    F.set(z, f);
+    result |= 1;
     result
 }
 
 rotate_shift_functions_noa!{
-    sll_impl sll_impl2
-    sll sll_store
+    sll_impl sll_impl2 sll sll_store
 }
 
 fn sra_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
-    let mut f = F.get(z);
-    let result = ((x as i8) >> 1) as u8;
-    assign_bit(&mut f, CF, x, 0);
-    F.set(z, f);
-    result
+    z.set_flags(CF, x & 1 != 0);
+    ((x as i8) >> 1) as u8
 }
 
 rotate_shift_functions_noa!{
-    sra_impl sra_impl2
-    sra sra_store
+    sra_impl sra_impl2 sra sra_store
 }
 
 fn srl_impl<I: Io>(z: &mut Z80<I>, x: u8) -> u8 {
-    let mut f = F.get(z);
-    let result = x >> 1;
-    assign_bit(&mut f, CF, x, 0);
-    F.set(z, f);
-    result
+    z.set_flags(CF, x & 1 != 0);
+    x >> 1
 }
 
 rotate_shift_functions_noa!{
-    srl_impl srl_impl2
-    srl srl_store
+    srl_impl srl_impl2 srl srl_store
 }
 
 pub fn rld<I: Io>(z: &mut Z80<I>) {
@@ -861,10 +769,7 @@ pub fn rld<I: Io>(z: &mut Z80<I>) {
     set_parity(z, a);
     set_sign(z, a);
     set_zero(z, a);
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    z.remove_flags(HF | NF);
 }
 
 pub fn rrd<I: Io>(z: &mut Z80<I>) {
@@ -879,10 +784,7 @@ pub fn rrd<I: Io>(z: &mut Z80<I>) {
     set_parity(z, a);
     set_zero(z, a);
     set_sign(z, a);
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    z.remove_flags(HF | NF);
 }
 
 //// Bit Set, Reset, and Test Group
@@ -894,14 +796,12 @@ where
     T: Gettable<u8>,
 {
     let x = arg.get(z);
-    let mut f = F.get(z);
-    assign_bit(&mut f, ZF, !x, b);
-    assign_bit(&mut f, PF, !x, b);
-    set_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    let need_sf = b == 7 && (f & ZF) == 0;
-    assign_bit(&mut f, SF, need_sf as u8, 0);
-    F.set(z, f);
+    let bitflag = 1 << b;
+    let x_contains = x & bitflag != 0;
+    z.set_flags(ZF | PF, !x_contains);
+    z.insert_flags(HF);
+    z.remove_flags(NF);
+    z.set_flags(SF, b == 7 && x_contains);
 }
 
 pub fn set<I, T>(z: &mut Z80<I>, b: u8, arg: T)
@@ -1077,10 +977,7 @@ where
     set_parity(z, x);
     set_sign(z, x);
     set_zero(z, x);
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    z.remove_flags(HF | NF);
     x
 }
 
@@ -1104,10 +1001,7 @@ pub fn in0<I: Io>(z: &mut Z80<I>) {
     set_parity(z, x);
     set_sign(z, x);
     set_zero(z, x);
-    let mut f = F.get(z);
-    clear_bit(&mut f, HF);
-    clear_bit(&mut f, NF);
-    F.set(z, f);
+    z.remove_flags(HF | NF);
 }
 
 fn inid_impl<I: Io>(z: &mut Z80<I>, inc: u16) -> u8 {
@@ -1117,9 +1011,6 @@ fn inid_impl<I: Io>(z: &mut Z80<I>, inc: u16) -> u8 {
     z.address = addr;
     let x = z.io.input(addr);
     z.data = x;
-    // XXX - the Z80 manual says HL is put on the address bus, but I am
-    // skeptical about that
-    // z.set_address_bus(hl);
     Address(hl).set(z, x);
     B.set(z, b.wrapping_sub(1));
     HL.set(z, hl.wrapping_add(inc));
@@ -1129,9 +1020,7 @@ fn inid_impl<I: Io>(z: &mut Z80<I>, inc: u16) -> u8 {
 pub fn ini<I: Io>(z: &mut Z80<I>) {
     let new_b = inid_impl(z, 1);
     set_zero(z, new_b);
-    let mut f = F.get(z);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(NF);
 }
 
 pub fn inir<I: Io>(z: &mut Z80<I>) {
@@ -1144,10 +1033,7 @@ pub fn inir<I: Io>(z: &mut Z80<I>) {
         inc_r(z);
     }
 
-    let mut f = F.get(z);
-    set_bit(&mut f, ZF);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(ZF | NF);
 
     z.cycles += 16;
 }
@@ -1155,9 +1041,7 @@ pub fn inir<I: Io>(z: &mut Z80<I>) {
 pub fn ind<I: Io>(z: &mut Z80<I>) {
     let new_b = inid_impl(z, 0xFFFF);
     set_zero(z, new_b);
-    let mut f = F.get(z);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(NF);
 }
 
 pub fn indr<I: Io>(z: &mut Z80<I>) {
@@ -1170,10 +1054,7 @@ pub fn indr<I: Io>(z: &mut Z80<I>) {
         inc_r(z);
     }
 
-    let mut f = F.get(z);
-    set_bit(&mut f, ZF);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(ZF | NF);
 
     z.cycles += 16;
 }
@@ -1225,9 +1106,7 @@ pub fn outi<I: Io>(z: &mut Z80<I>) {
     outid_impl(z, 1);
     let new_b = B.get(z);
     set_zero(z, new_b);
-    let mut f = F.get(z);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(NF);
 }
 
 pub fn otir<I: Io>(z: &mut Z80<I>) {
@@ -1241,10 +1120,7 @@ pub fn otir<I: Io>(z: &mut Z80<I>) {
         inc_r(z);
     }
 
-    let mut f = F.get(z);
-    set_bit(&mut f, ZF);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(ZF | NF);
 
     z.cycles += 16;
 }
@@ -1253,9 +1129,7 @@ pub fn outd<I: Io>(z: &mut Z80<I>) {
     outid_impl(z, 0xFFFF);
     let new_b = B.get(z);
     set_zero(z, new_b);
-    let mut f = F.get(z);
-    set_bit(&mut f, NF);
-    F.set(z, f);
+    z.insert_flags(NF);
 }
 
 pub fn otdr<I: Io>(z: &mut Z80<I>) {
@@ -1269,9 +1143,7 @@ pub fn otdr<I: Io>(z: &mut Z80<I>) {
         inc_r(z);
     }
 
-    let mut f = F.get(z);
-    set_bit(&mut f, ZF);
-    set_bit(&mut f, NF);
+    z.insert_flags(ZF | NF);
 
     z.cycles += 16;
 }

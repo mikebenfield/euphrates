@@ -49,19 +49,18 @@ pub enum ConditionCode {
 
 pub use self::ConditionCode::*;
 
-// #[derive(Clone, Copy, Debug, Default)]
-// pub enum Flag {
-//     C, N, P, X, H, Y, Z80, S
-// }
-
-pub const CF: u8 = 0;
-pub const NF: u8 = 1;
-pub const PF: u8 = 2;
-pub const XF: u8 = 3;
-pub const HF: u8 = 4;
-pub const YF: u8 = 5;
-pub const ZF: u8 = 6;
-pub const SF: u8 = 7;
+bitflags! {
+    pub struct Flags: u8 {
+        const CF = 1 << 0;
+        const NF = 1 << 1;
+        const PF = 1 << 2;
+        const XF = 1 << 3;
+        const HF = 1 << 4;
+        const YF = 1 << 5;
+        const ZF = 1 << 6;
+        const SF = 1 << 7;
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum InterruptMode {
@@ -121,6 +120,35 @@ where I: Io {
             interrupt_mode: Im0,
             registers: registers,
         }
+    }
+
+    pub fn insert_flags(&mut self, flags: Flags) {
+        let mut f = Flags::from_bits_truncate(F.get(self));
+        f.insert(flags);
+        F.set(self, f.bits());
+    }
+
+    pub fn remove_flags(&mut self, flags: Flags) {
+        let mut f = Flags::from_bits_truncate(F.get(self));
+        f.remove(flags);
+        F.set(self, f.bits());
+    }
+
+    pub fn set_flags(&mut self, flags: Flags, value: bool) {
+        let mut f = Flags::from_bits_truncate(F.get(self));
+        f.set(flags, value);
+        F.set(self, f.bits());
+    }
+
+    pub fn contains_flags(&self, flags: Flags) -> bool {
+        let f = Flags::from_bits_truncate(F.get(self));
+        f.contains(flags)
+    }
+
+    pub fn toggle_flags(&mut self, flags: Flags) {
+        let mut f = Flags::from_bits_truncate(F.get(self));
+        f.toggle(flags);
+        F.set(self, f.bits());
     }
 }
 
@@ -241,7 +269,7 @@ impl Gettable<u16> for Address<u16> {
     fn get<I: Io>(self, z: &Z80<I>) -> u16 {
         let addr = self.0;
         let lo = z.io.mem().read(addr);
-        let hi = z.io.mem().read(addr + 1);
+        let hi = z.io.mem().read(addr.wrapping_add(1));
         to16(lo, hi)
     }
 }
@@ -251,7 +279,7 @@ impl Settable<u16> for Address<u16> {
         let addr = self.0;
         let (lo, hi) = to8(x);
         z.io.mem_mut().write(addr, lo);
-        z.io.mem_mut().write(addr + 1, hi);
+        z.io.mem_mut().write(addr.wrapping_add(1), hi);
     }
 }
 
@@ -283,16 +311,15 @@ impl Settable<u8> for Shift {
 
 impl Gettable<bool> for ConditionCode {
     fn get<I: Io>(self, z: &Z80<I>) -> bool {
-        let f = F.get(z);
         match self {
-            NZcc => f & (1 << ZF) == 0,
-            Zcc  => f & (1 << ZF) != 0,
-            NCcc => f & (1 << CF) == 0,
-            Ccc => f & (1 << CF) != 0,
-            POcc => f & (1 << PF) == 0,
-            PEcc => f & (1 << PF) != 0,
-            Pcc => f & (1 << SF) == 0,
-            Mcc => f & (1 << SF) != 0,
+            NZcc => !z.contains_flags(ZF),
+            Zcc => z.contains_flags(ZF),
+            NCcc => !z.contains_flags(CF),
+            Ccc => z.contains_flags(CF),
+            POcc => !z.contains_flags(PF),
+            PEcc => z.contains_flags(PF),
+            Pcc => !z.contains_flags(SF),
+            Mcc => z.contains_flags(SF),
         }
     }
 }

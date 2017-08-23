@@ -367,6 +367,9 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
         ($codes: tt; lddr ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
         ($codes: tt; ldir ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
 
+        // z80pack doesn't seem to increment r correctly
+        ($codes: tt; ld_ir ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
+
         ($codes: tt; im ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
         ($codes: tt; ld ; [A, R] ; $t_states: expr ; $is_undoc: expr) => {};
         ($codes: tt; ld ; [R, A] ; $t_states: expr ; $is_undoc: expr) => {};
