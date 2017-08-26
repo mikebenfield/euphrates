@@ -211,7 +211,7 @@ impl Vdp {
     }
     #[allow(dead_code)]
     fn tall_sprites(&self) -> bool {
-        self.reg[0] & (1 << 1) != 0
+        self.reg[1] & 2 != 0
     }
     #[allow(dead_code)]
     fn zoom_sprites(&self) -> bool {
@@ -394,6 +394,7 @@ impl Vdp {
         let v = self.v as usize;
 
         // draw sprites
+        let sprite_height = if self.tall_sprites() { 16 } else { 8 };
         let sprites_rendered = 0u8;
         for i in 0..64 {
             let sprite_y = self.sprite_y(i) as usize;
@@ -401,7 +402,7 @@ impl Vdp {
                 break;
             }
             let sprite_line = v.wrapping_sub(sprite_y);
-            if sprite_line > 7 {
+            if sprite_line >= sprite_height {
                 continue;
             }
             if sprites_rendered == 8 {
@@ -463,7 +464,8 @@ impl Vdp {
                 } as u8;
 
                 let scrolled_x = x.wrapping_add(self.x_scroll()) as usize;
-                if priority || line_buffer[scrolled_x] == 0x80 {
+                if line_buffer[scrolled_x] == 0x80 || (priority && palette_indices[j] > 0) {
+                // if priority || line_buffer[scrolled_x] == 0x80 {
                     line_buffer[scrolled_x] = self.cram[palette_indices[j] + palette];
                 }
             }
@@ -503,19 +505,20 @@ impl Vdp {
         if self.v != 0 {
             return Ok(());
         }
-        screen.set_resolution(64, 64)?;
+        let sprite_height = if self.tall_sprites() { 16 } else { 8 };
+        screen.set_resolution(64, 8 * sprite_height)?;
         for i in 0..64 {
             let sprite_n = self.sprite_n(i) as usize;
             let base_pattern_addr = self.sprite_pattern_addr() as usize;
             let pattern_addr = base_pattern_addr | (32 * sprite_n);
-            for sprite_line in 0 .. 8 {
+            for sprite_line in 0 .. sprite_height {
                 let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(
                     pattern_addr,
                     sprite_line
                 );
                 for j in 0 .. 8 {
                     let x = (i as usize % 8) * 8 + j;
-                    let y = (i as usize / 8) * 8 + sprite_line;
+                    let y = (i as usize / 8) * sprite_height + sprite_line;
                     if palette_indices[j] != 0 {
                         screen.paint(x as usize, y as usize, self.cram[palette_indices[j] + 16]);
                     }
