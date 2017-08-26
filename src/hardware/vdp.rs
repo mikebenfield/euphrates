@@ -389,6 +389,13 @@ impl Vdp {
             self.active_lines() as usize
         )?;
 
+        if !self.display_visible() {
+            for x in 0 .. 256 {
+                screen.paint(x, self.v as usize, 0);
+            }
+            return done(self, screen);
+        }
+
         let mut line_buffer = [0x80u8; 256];
 
         let v = self.v as usize;
