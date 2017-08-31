@@ -76,8 +76,8 @@ bitflags! {
 #[derive(Copy)]
 pub struct Vdp {
     pub cycles: u64,
-    version: Version,
-    system: System,
+    pub version: Version,
+    pub system: System,
     status_flags: StatusFlags,
     h: u16,
     v: u16,
@@ -180,11 +180,11 @@ impl Vdp {
         if self.system == NTSC { 262 } else { 313 }
     }
     fn resolution(&self) -> Resolution {
-        match (self.version, self.m1(), self.m2()) {
-            (SMS, _, _) => Low,
-            (_, true, true) => High,
-            (_, false, true) => Medium,
-            (_, _, _) => Low,
+        match (self.version, self.m1(), self.m2(), self.m3()) {
+            (SMS, _, _, _) => Low,
+            (_, true, true, false) => Medium,
+            (_, false, true, true) => High,
+            (_, _, _, _) => Low,
         }
     }
     fn active_lines(&self) -> u16 {
@@ -220,34 +220,37 @@ impl Vdp {
     #[allow(dead_code)]
     fn name_table_address(&self) -> u16 {
         if self.version == SMS {
-            // ((self.reg[2] as u16) & 0x0F) << 10
-            ((self.reg[2] as u16) & 0x0E) << 10
-        } else if self.active_lines() == 192 {
+            ((self.reg[2] as u16) & 0x0F) << 10
+        } else if self.resolution() == Low {
             ((self.reg[2] as u16) & 0x0E) << 10
         } else {
-            (((self.reg[2] as u16) & 0x0B) << 10) | 0x0700
+            (((self.reg[2] as u16) & 0x0C) << 10) | 0x0700
+        }
+    }
+    fn tile_address(&self, tile_offset: u16) -> u16 {
+        if self.version == SMS {
+            (self.name_table_address() | 0x03FF) & (tile_offset | 0xF800)
+        } else {
+            self.name_table_address() + tile_offset
         }
     }
     fn sprite_address(&self) -> u16 {
         if self.version == SMS {
-            // XXX
-            // (self.reg[5] as u16 & 0x7F) << 7
-            (self.reg[5] as u16 & 0x7E) << 7
+            (self.reg[5] as u16 & 0x7F) << 7
         } else {
             (self.reg[5] as u16 & 0x7E) << 7
         }
     }
-    fn sprite_pattern_addr(&self) -> u16 {
-        let reg6 = self.reg[6] as u16;
-        if self.version == SMS {
-            // XXX
-            (reg6 & 0x04) << 11
-            // ((reg6 & 0x04) << 11) &
-            // ((reg6 & 0x02) << 7) &
-            // ((reg6 & 0x01) << 6)
-        } else {
-            (reg6 & 0x04) << 11
-        }
+    fn sprite_pattern_base_address(&self) -> u16 {
+        // MacDonald's VDP documentation says the SMS Vdp does something
+        // strange, but that doesn't appear to be true. At least, the games
+        // I've tested so far clear reg 6, which, if I implement MacDonald's
+        // scheme, causes the sprite patterns to be fetched from the wrong
+        // portion of vram
+        (self.reg[6] as u16 & 0x04) << 11
+    }
+    fn sprite_pattern_address(&self, pattern_index: u8) -> u16 {
+        self.sprite_pattern_base_address() | (pattern_index as u16 * 32)
     }
     #[allow(dead_code)]
     fn backdrop_color(&self) -> u8 {
@@ -267,17 +270,25 @@ impl Vdp {
 
     fn sprite_y(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
-        let address = (i as usize) | (self.sprite_address() as usize);
+        let address = (i as usize) | ((self.sprite_address() & 0xFF00) as usize);
         self.vram[address]
     }
     fn sprite_x(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
-        let address = ((2*i + 128) as usize) | (self.sprite_address() as usize);
+        let address = if self.version == SMS {
+            (2*i) as usize | (self.sprite_address() as usize)
+        } else {
+            ((2*i + 128) as usize) | (self.sprite_address() as usize)
+        };
         self.vram[address]
     }
     fn sprite_n(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
-        let address = ((2*i + 128) as usize) | (self.sprite_address() as usize) + 1;
+        let address = if self.version == SMS {
+            (2*i) as usize | (self.sprite_address() as usize)
+        } else {
+            ((2*i + 128) as usize) | (self.sprite_address() as usize)
+        } + 1;
         self.vram[address]
     }
 
@@ -357,10 +368,10 @@ impl Vdp {
     pub fn draw_line<S: Screen>(&mut self, screen: &mut S) -> Result<(), ScreenError> {
 
         fn done<S: Screen>(vdp: &mut Vdp, screen: &mut S) -> Result<(), ScreenError> {
-            match (vdp.active_lines(), vdp.v) {
-                (192, 0xC1) => vdp.status_flags.insert(FRAME_INTERRUPT),
-                (224, 0xE1) => vdp.status_flags.insert(FRAME_INTERRUPT),
-                (240, 0xF1) => vdp.status_flags.insert(FRAME_INTERRUPT),
+            match (vdp.resolution(), vdp.v) {
+                (Low, 0xC1) => vdp.status_flags.insert(FRAME_INTERRUPT),
+                (Medium, 0xE1) => vdp.status_flags.insert(FRAME_INTERRUPT),
+                (High, 0xF1) => vdp.status_flags.insert(FRAME_INTERRUPT),
                 _ => {}
             }
             if vdp.v <= vdp.active_lines() {
@@ -416,9 +427,9 @@ impl Vdp {
                 self.status_flags.insert(SPRITE_OVERFLOW);
                 break;
             }
-            let base_pattern_addr = self.sprite_pattern_addr() as usize;
-            let sprite_n = self.sprite_n(i) as usize;
-            let pattern_addr = base_pattern_addr | (32 * sprite_n);
+            let sprite_n = self.sprite_n(i);
+            let pattern_addr = self.sprite_pattern_address(sprite_n) as usize;
+
             let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(
                 pattern_addr,
                 sprite_line
@@ -444,9 +455,9 @@ impl Vdp {
         let scrolled_v = (v + self.y_scroll() as usize) % if self.resolution() == Low { 28*8 } else { 32*8 };
         let tile_index_base = (scrolled_v / 8) * 32;
         let tile_line = scrolled_v % 8;
-        let nt_address = self.name_table_address() as usize;
-        for tile in 0..32 {
-            let current_tile_address = nt_address + 2 * (tile + tile_index_base);
+        for tile in 0..32u16 {
+            let current_tile_address =
+                self.tile_address(2 * (tile + tile_index_base as u16)) as usize;
             let low_byte = self.vram[current_tile_address as u16 as usize];
             let high_byte = self.vram[current_tile_address.wrapping_add(1) as u16 as usize];
             let vert_flip = 4 & high_byte != 0;
@@ -465,14 +476,13 @@ impl Vdp {
             );
             for j in 0 .. 8 {
                 let x = if horiz_flip {
-                    tile * 8 + (7 - j)
+                    tile as usize * 8 + (7 - j)
                 } else {
-                    tile * 8 + j
+                    tile as usize * 8 + j
                 } as u8;
 
                 let scrolled_x = x.wrapping_add(self.x_scroll()) as usize;
                 if line_buffer[scrolled_x] == 0x80 || (priority && palette_indices[j] > 0) {
-                // if priority || line_buffer[scrolled_x] == 0x80 {
                     line_buffer[scrolled_x] = self.cram[palette_indices[j] + palette];
                 }
             }
@@ -515,9 +525,8 @@ impl Vdp {
         let sprite_height = if self.tall_sprites() { 16 } else { 8 };
         screen.set_resolution(64, 8 * sprite_height)?;
         for i in 0..64 {
-            let sprite_n = self.sprite_n(i) as usize;
-            let base_pattern_addr = self.sprite_pattern_addr() as usize;
-            let pattern_addr = base_pattern_addr | (32 * sprite_n);
+            let sprite_n = self.sprite_n(i);
+            let pattern_addr = self.sprite_pattern_address(sprite_n) as usize;
             for sprite_line in 0 .. sprite_height {
                 let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(
                     pattern_addr,
@@ -545,14 +554,14 @@ impl Vdp {
             256,
             tile_count / 4, // tile_count * 64 pixels / (256 pixels/line) gives how many lines
         )?;
-        let nt_address = self.name_table_address() as usize;
         for i in 0 .. tile_count {
-            let current_tile_address = nt_address + 2 * i;
+            let current_tile_address =
+                self.tile_address((2 * i) as u16) as usize;
             let low_byte = self.vram[current_tile_address as u16 as usize];
             let high_byte = self.vram[current_tile_address.wrapping_add(1) as u16 as usize];
             let vert_flip = 4 & high_byte != 0;
             let horiz_flip = 2 & high_byte != 0;
-            let palette = 16 * ((high_byte & 3) >> 3) as usize;
+            let palette = 16 * ((high_byte & 8) >> 3) as usize;
             let pattern_index = to16(low_byte, high_byte & 1) as usize;
             for tile_line in 0 .. 8 {
                 let palette_indices: [usize; 8] = self.pattern_address_to_palette_indices(

@@ -23,8 +23,10 @@ pub struct Sms2Io {
 
 impl Sms2Io {
     pub fn new(smm: SegaMemoryMap) -> Sms2Io {
+        let mut vdp: vdp::Vdp = Default::default();
+        vdp.version = vdp::Version::SMS2;
         Sms2Io {
-            vdp: Default::default(),
+            vdp: vdp,
             memory_control: 0,
             io_control: 0,
             ab: 0,
