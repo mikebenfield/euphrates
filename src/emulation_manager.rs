@@ -8,19 +8,20 @@
 use std;
 
 use ::log;
+use ::hardware::memory_map::MemoryMap;
+use ::hardware::io::sms2::Sms2Io;
 use ::hardware::z80::*;
 use ::hardware::vdp::*;
-use ::hardware::io::sms2::*;
-use ::hardware::memory_map::*;
+use ::hardware::io::Io;
 
-pub struct EmulationManager
+pub struct EmulationManager<M: MemoryMap>
 {
-    z80: Z80<Sms2Io>,
+    z80: Z80<Sms2Io<M>>,
 }
 
-impl EmulationManager {
-    pub fn new(smm: SegaMemoryMap) -> EmulationManager {
-        let io = Sms2Io::new(smm);
+impl<M: MemoryMap> EmulationManager<M> {
+    pub fn new(mm: M) -> EmulationManager<M> {
+        let io = Sms2Io::new(mm);
         EmulationManager {
             z80: Z80::new(io),
         }
@@ -32,7 +33,7 @@ impl EmulationManager {
         palette_screen: &mut S,
         sprite_screen: &mut S,
         tile_screen: &mut S,
-        n: usize
+        n: u64
     ) -> Result<(), ScreenError>
     where
         S: Screen
@@ -41,7 +42,7 @@ impl EmulationManager {
 
         let mut milliseconds = 0u64;
 
-        for i in 0usize..n {
+        for i in 0..n {
             log_major!("EM: loop {}", i);
 
             self.z80.io.vdp.draw_line(screen)?;

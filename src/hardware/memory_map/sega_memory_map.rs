@@ -66,7 +66,9 @@ pub struct SegaMemoryMap {
     // of cartridge ROM, and we would then need more implementation-pages than that.
     pages: [u16; 8],
 
-    page_writable: u8,
+    // bitmask, with each bit indicating whether the corresponding slot in the pages field
+    // can be written to
+    slot_writable: u8,
 }
 
 /// If the `logical_address` being written to corresponds to one of the memory
@@ -151,22 +153,22 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
                 0b1000 => {
                     // sega-slot 2 mapped to sega-page 0 of cartridge RAM
                     ensure_one_page_allocated!();
-                    smm.page_writable |= 1 << 4;
-                    smm.page_writable |= 1 << 5;
+                    smm.slot_writable |= 1 << 4;
+                    smm.slot_writable |= 1 << 5;
                     (smm.memory.len() - 2) as u16
                 },
                 0b1100 => {
                     // sega-slot 2 mapped to sega-page 1 of cartridge RAM
                     ensure_two_pages_allocated!();
-                    smm.page_writable |= 1 << 4;
-                    smm.page_writable |= 1 << 5;
+                    smm.slot_writable |= 1 << 4;
+                    smm.slot_writable |= 1 << 5;
                     (smm.memory.len() - 4) as u16
                 },
                 _ => {
                     // sega-slot 2 mapped to page of ROM indicated by register
                     // 0xFFFF
-                    smm.page_writable &= !(1 << 4);
-                    smm.page_writable &= !(1 << 5);
+                    smm.slot_writable &= !(1 << 4);
+                    smm.slot_writable &= !(1 << 5);
                     (smm.reg_ffff as u16) * 2 + 1
                 }
             };
@@ -179,8 +181,8 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
             log_major!("SegaMemoryMap: selecting page {:0>2X} for slot 0", sega_page);
             smm.pages[0] = impl_page;
             smm.pages[1] = impl_page + 1;
-            smm.page_writable &= !(1 << 0);
-            smm.page_writable &= !(1 << 1);
+            smm.slot_writable &= !(1 << 0);
+            smm.slot_writable &= !(1 << 1);
             smm.reg_fffd = sega_page;
         }
         0xFFFE => {
@@ -188,8 +190,8 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
             log_major!("SegaMemoryMap: selecting page {:0>2X} for slot 1", sega_page);
             smm.pages[2] = impl_page;
             smm.pages[3] = impl_page + 1;
-            smm.page_writable &= !(1 << 2);
-            smm.page_writable &= !(1 << 3);
+            smm.slot_writable &= !(1 << 2);
+            smm.slot_writable &= !(1 << 3);
             smm.reg_fffe = sega_page;
         }
         0xFFFF => {
@@ -246,7 +248,7 @@ impl MemoryMap for SegaMemoryMap {
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
         log_minor!("SegaMemoryMap: write: implementation slot {:0>4X}", impl_slot);
         log_minor!("SegaMemoryMap: write: physical address {:0>4X}", physical_address);
-        if self.page_writable & (1 << impl_slot) != 0 {
+        if self.slot_writable & (1 << impl_slot) != 0 {
             let impl_page = self.pages[impl_slot as usize];
             self.memory[impl_page as usize][physical_address as usize] = value;
         } else {
@@ -293,13 +295,13 @@ impl SegaMemoryMap {
                 // which means these are the implementation-pages we map to
                 pages: [1, 2, 3, 4, 5, 6, 0, 0],
                 // only the system RAM is writable
-                page_writable: 0b11000000,
+                slot_writable: 0b11000000,
             }
         )
     }
 
     pub fn new_from_file(
-        filename: String,
+        filename: &str,
     ) -> Result<SegaMemoryMap, MemoryMapError> {
         use std::fs::File;
         use std::io::Read;
@@ -332,34 +334,34 @@ mod tests {
     fn read() {
         let smm = &mut build_mmap();
 
-        // read impl-page 0
+        // read impl-slot 0
         assert!(smm.read(0) == 0);
 
-        // read impl-page 1
+        // read impl-slot 1
         assert!(smm.read(0x2000) == 1);
 
-        // read impl-page 2
+        // read impl-slot 2
         assert!(smm.read(0x4000) == 2);
 
-        // read impl-page 3
+        // read impl-slot 3
         assert!(smm.read(0x6000) == 3);
 
-        // read impl-page 4
+        // read impl-slot 4
         assert!(smm.read(0x8000) == 4);
 
-        // read impl-page 5
+        // read impl-slot 5
         assert!(smm.read(0xA000) == 5);
 
-        // read impl-page 6 (should be system memory)
+        // read impl-slot 6 (should be system memory)
         assert!(smm.read(0xC000) == 0);
 
-        // read impl-page 7 (should be system memory)
-        assert!(smm.read(0xC000) == 0);
+        // read impl-slot 7 (should be system memory)
+        assert!(smm.read(0xE000) == 0);
     }
 
     #[test]
     fn reg_ffff() {
-        let smmx = &mut build_mmap();
+        let smm = &mut build_mmap();
         smm.write(0xFFFF, 3); // sega-slot 2 should now map to sega-page 3
         assert!(smm.read(0x8000) == 6);
         assert!(smm.read(0xA000) == 7);
@@ -383,7 +385,6 @@ mod tests {
     fn reg_fffd() {
         let smm = &mut build_mmap();
         smm.write(0xFFFD, 1); // sega-slot 0 should now map to sega-page 1
-        println!("{}", MemoryMap::read(smmx, 0x0000));
         assert!(smm.read(0x0000) == 0); // except the first KiB
         assert!(smm.read(0x2000) == 3);
         smm.write(0xFFFD, 0); // sega-slot 0 should now map to sega-page 0

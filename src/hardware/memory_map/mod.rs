@@ -21,6 +21,7 @@
 //! [`SegaMemoryMapperHardware`]: implementation/struct.SegaMemoryMapperHardware.html
 
 pub mod sega_memory_map;
+pub mod codemasters_memory_map;
 pub mod simple_memory_map;
 
 use std;
@@ -28,6 +29,7 @@ use std::error::Error;
 use std::fmt;
 
 pub use self::sega_memory_map::*;
+pub use self::codemasters_memory_map::*;
 pub use self::simple_memory_map::*;
 
 #[derive(Clone, Debug)]

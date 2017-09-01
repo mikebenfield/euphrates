@@ -10,34 +10,29 @@ use ::log;
 use super::*;
 use ::hardware::irq;
 use ::hardware::vdp;
-use ::hardware::memory_map::sega_memory_map::*;
+use ::hardware::memory_map::{MemoryMap};
 
-pub struct Sms2Io {
+pub struct Sms2Io<M: MemoryMap> {
     memory_control: u8,
     io_control: u8,
-    ab: u8,
-    b_misc: u8,
-    mem: SegaMemoryMap,
+    mem: M,
     pub vdp: vdp::Vdp,
 }
 
-impl Sms2Io {
-    pub fn new(smm: SegaMemoryMap) -> Sms2Io {
+impl<M: MemoryMap> Sms2Io<M> {
+    pub fn new(mm: M) -> Sms2Io<M> {
         let mut vdp: vdp::Vdp = Default::default();
         vdp.version = vdp::Version::SMS2;
         Sms2Io {
             vdp: vdp,
             memory_control: 0,
             io_control: 0,
-            ab: 0,
-            b_misc: 0,
-            mem: smm,
-
+            mem: mm,
         }
     }
 }
 
-impl irq::Irq for Sms2Io {
+impl<M: MemoryMap> irq::Irq for Sms2Io<M> {
     fn requesting_mi(&self) -> bool {
         self.vdp.requesting_mi()
     }
@@ -46,8 +41,8 @@ impl irq::Irq for Sms2Io {
     }
 }
 
-impl Io for Sms2Io {
-    type MemoryMap = SegaMemoryMap;
+impl<M: MemoryMap> Io for Sms2Io<M> {
+    type MemoryMap = M;
 
     fn input(&mut self, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
@@ -133,11 +128,11 @@ impl Io for Sms2Io {
         log_minor!("Io: output: address {:0>4X}, value 0x{:0>2X}", address, x);
     }
 
-    fn mem(&self) -> &SegaMemoryMap {
+    fn mem(&self) -> &M {
         &self.mem
     }
 
-    fn mem_mut(&mut self) -> &mut SegaMemoryMap {
+    fn mem_mut(&mut self) -> &mut M {
         &mut self.mem
     }
 }

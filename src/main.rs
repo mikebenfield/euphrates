@@ -7,23 +7,13 @@
 
 extern crate attalus;
 
+use attalus::hardware::io::sms2::Sms2Io;
 use attalus::hardware::memory_map::*;
 use attalus::emulation_manager::*;
 use attalus::sdl_wrap::video::*;
 
-fn main() {
-    let mut args: Vec<String> = Vec::new();
-    args.extend(std::env::args());
-    if args.len() < 3 {
-        eprintln!("Usage: exec filename n");
-        return;
-    }
-    let filename = &args[1];
-    let smm = SegaMemoryMap::new_from_file(filename.clone()).unwrap();
-
-    let mut em = EmulationManager::new(smm);
-
-    let n: usize = args[2].parse().expect("Usage: exec filename n");
+fn start_loop<M: MemoryMap>(mm: M, n: u64) {
+    let mut em = EmulationManager::new(mm);
 
     let mut palette_win = WindowScreen::new().unwrap();
     palette_win.set_window_size(264, 8);
@@ -61,6 +51,31 @@ fn main() {
     match em.main_loop(&mut win, &mut palette_win, &mut sprite_win, &mut tile_win, n) {
         Ok(()) => println!("Exit OK"),
         _ => println!("Exit error"),
+    }
+
+
+}
+
+fn main() {
+    let mut args: Vec<String> = Vec::new();
+    args.extend(std::env::args());
+    if args.len() < 4 {
+        eprintln!("Usage: exec [sega|codemasters] filename n");
+        return;
+    }
+    let filename = &args[2];
+    let n: u64 = args[3].parse().expect("Usage: exec [sega|codemasters] filename n");
+    match args[1].as_ref() {
+        "sega" => {
+            start_loop(SegaMemoryMap::new_from_file(filename.as_ref()).unwrap(), n);
+        }
+        "codemasters" => {
+            start_loop(CodemastersMemoryMap::new_from_file(filename.as_ref()).unwrap(), n);
+        }
+        _ => {
+            eprintln!("Usage: exec [sega|codemasters] filename n");
+            return;
+        }
     }
 
     // main_loop(&mut em, &mut win, n);
