@@ -463,7 +463,7 @@ impl Vdp {
             let vert_flip = 4 & high_byte != 0;
             let horiz_flip = 2 & high_byte != 0;
             let priority = 0x10 & high_byte != 0;
-            let palette = 16 * ((high_byte & 8) >> 3) as usize;
+            let palette = ((high_byte & 8) << 1) as usize;
             let pattern_index = to16(low_byte, high_byte & 1) as usize;
             let tile_line_really = if vert_flip {
                 7 - tile_line
