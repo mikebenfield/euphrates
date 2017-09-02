@@ -271,7 +271,7 @@ impl Vdp {
     fn sprite_y(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
         let address = (i as usize) | ((self.sprite_address() & 0xFF00) as usize);
-        self.vram[address]
+        self.vram[address].wrapping_add(1)
     }
     fn sprite_x(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
@@ -416,7 +416,7 @@ impl Vdp {
         let sprites_rendered = 0u8;
         for i in 0..64 {
             let sprite_y = self.sprite_y(i) as usize;
-            if sprite_y == 0xD0 && self.resolution() == Low {
+            if sprite_y == 0xD1 && self.resolution() == Low {
                 break;
             }
             let sprite_line = v.wrapping_sub(sprite_y);
