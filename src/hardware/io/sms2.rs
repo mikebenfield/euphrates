@@ -8,6 +8,7 @@
 use ::log;
 
 use super::*;
+use ::sdl_wrap::event::HostIo;
 use ::hardware::irq;
 use ::hardware::vdp;
 use ::hardware::memory_map::{MemoryMap};
@@ -16,14 +17,16 @@ pub struct Sms2Io<M: MemoryMap> {
     memory_control: u8,
     io_control: u8,
     mem: M,
+    host_io: HostIo,
     pub vdp: vdp::Vdp,
 }
 
 impl<M: MemoryMap> Sms2Io<M> {
-    pub fn new(mm: M) -> Sms2Io<M> {
+    pub fn new(mm: M, host_io: HostIo) -> Sms2Io<M> {
         let mut vdp: vdp::Vdp = Default::default();
         vdp.version = vdp::Version::SMS2;
         Sms2Io {
+            host_io: host_io,
             vdp: vdp,
             memory_control: 0,
             io_control: 0,
@@ -76,11 +79,11 @@ impl<M: MemoryMap> Io for Sms2Io<M> {
                 }
                 0b11000000 => {
                     // IO port A/B register
-                    ::sdl_wrap::event::joypada()
+                    self.host_io.joypada()
                 }
                 0b11000001 => {
                     // IO port B register
-                    ::sdl_wrap::event::joypadb()
+                    self.host_io.joypadb()
                 }
                 _ => {
                     panic!("Missing IO address in input");

@@ -5,9 +5,12 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use sdl2;
+
 use super::*;
 
 pub fn check_quit() -> bool {
+    use sdl2::sys as sdls;
     unsafe {
         sdls::event::SDL_PumpEvents();
         let has_event = 0 != sdls::event::SDL_HasEvent(sdls::event::SDL_QUIT);
@@ -39,57 +42,74 @@ bitflags! {
     }
 }
 
-pub fn joypada() -> u8 {
-    let mut jp_input = JoypadPortA::all();
-    unsafe {
-        let key_state: *const u8 = sdls::SDL_GetKeyboardState(std::ptr::null_mut());
-        if *key_state.offset(sdls::SDL_SCANCODE_W as isize) != 0 {
-            jp_input.remove(JOYPAD1_UP);
-        }
-        if *key_state.offset(sdls::SDL_SCANCODE_A as isize) != 0 {
-            jp_input.remove(JOYPAD1_LEFT);
-        }
-        if *key_state.offset(sdls::SDL_SCANCODE_S as isize) != 0 {
-            jp_input.remove(JOYPAD1_DOWN);
-        }
-        if *key_state.offset(sdls::SDL_SCANCODE_D as isize) != 0 {
-            jp_input.remove(JOYPAD1_RIGHT);
-        }
-        if *key_state.offset(sdls::SDL_SCANCODE_F as isize) != 0 {
-            jp_input.remove(JOYPAD1_A);
-        }
-        if *key_state.offset(sdls::SDL_SCANCODE_G as isize) != 0 {
-            jp_input.remove(JOYPAD1_B);
-        }
-        if *key_state.offset(sdls::SDL_SCANCODE_I as isize) != 0 {
-            jp_input.remove(JOYPAD2_UP);
-        }
-        if *key_state.offset(sdls::SDL_SCANCODE_K as isize) != 0 {
-            jp_input.remove(JOYPAD2_DOWN);
-        }
-    }
-    jp_input.bits
+pub struct HostIo {
+    event_pump: sdl2::EventPump
 }
 
-pub fn joypadb() -> u8 {
-    let mut jp_input = JoypadPortB::all();
-    unsafe {
-        let key_state: *const u8 = sdls::SDL_GetKeyboardState(std::ptr::null_mut());
-        if *key_state.offset(sdls::SDL_SCANCODE_J as isize) != 0 {
+impl HostIo {
+    pub fn new(sdl: &sdl2::Sdl) -> Result<HostIo, Error> {
+        match sdl.event() {
+            Err(s) => return Err(Error(s)),
+            _ => {}
+        };
+        let event_pump = match sdl.event_pump() {
+            Err(s) => return Err(Error(s)),
+            Ok(e) => e,
+        };
+        Ok(
+            HostIo {
+                event_pump: event_pump
+            }
+        )
+    }
+    pub fn joypada(&mut self) -> u8 {
+        let keyboard_state = self.event_pump.keyboard_state();
+        let mut jp_input = JoypadPortA::all();
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::W) {
+            jp_input.remove(JOYPAD1_UP);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::A) {
+            jp_input.remove(JOYPAD1_LEFT);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::S) {
+            jp_input.remove(JOYPAD1_DOWN);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::D) {
+            jp_input.remove(JOYPAD1_RIGHT);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::F) {
+            jp_input.remove(JOYPAD1_A);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::G) {
+            jp_input.remove(JOYPAD1_B);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
+            jp_input.remove(JOYPAD2_UP);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::K) {
+            jp_input.remove(JOYPAD2_DOWN);
+        }
+        jp_input.bits
+    }
+
+    pub fn joypadb(&mut self) -> u8 {
+        let keyboard_state = self.event_pump.keyboard_state();
+        let mut jp_input = JoypadPortB::all();
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::J) {
             jp_input.remove(JOYPAD2_LEFT);
         }
-        if *key_state.offset(sdls::SDL_SCANCODE_L as isize) != 0 {
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::L) {
             jp_input.remove(JOYPAD2_RIGHT);
         }
-        if *key_state.offset(sdls::SDL_SCANCODE_SEMICOLON as isize) != 0 {
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Semicolon) {
             jp_input.remove(JOYPAD2_A);
         }
-        if *key_state.offset(sdls::SDL_SCANCODE_APOSTROPHE as isize) != 0 {
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Apostrophe) {
             jp_input.remove(JOYPAD2_B);
         }
-        if *key_state.offset(sdls::SDL_SCANCODE_SPACE as isize) != 0 {
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Space) {
             jp_input.remove(RESET);
         }
+        jp_input.bits
     }
-    jp_input.bits
 }

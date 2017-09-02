@@ -5,197 +5,153 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-// use std::os::raw::{c_int, c_void};
+use sdl2;
 
 use super::*;
+use ::hardware::vdp;
 
-use hardware::vdp;
+const DEFAULT_SIZE: usize = 256;
 
-struct Window(*mut sdls::video::SDL_Window);
+pub struct Window {
+    // Fields are dropped in the same order they are declared, so the order of
+    // the first three fields here shouldn't change.
+    // Also, I have been unable to figure out how the hell rust_sdl2 expects
+    // users to use the `Texture` class due to lifetime issues. I just
+    // circumvent the problem by transmuting to get a 'static lifetime, which
+    // I'm fairly sure is the only reasonable solution.
+    texture: sdl2::render::Texture<'static>,
+    texture_creator: sdl2::render::TextureCreator<sdl2::video::WindowContext>,
+    canvas: sdl2::render::WindowCanvas,
+    pixels: Box<[u8]>,
+    width: usize,
+    height: usize,
+    texture_width: usize,
+    texture_height: usize,
+}
 
 impl Window {
-    fn new() -> Result<Window, Error> {
-        let v: Vec<i8> = vec![0; 1];
+    pub fn new(sdl: &sdl2::Sdl) -> Result<Window, Error> {
+        let vid = sdl.video()?;
+        let win = vid.window(&"", DEFAULT_SIZE as u32, DEFAULT_SIZE as u32)
+            .build()?;
+        let canvas = win.into_canvas()
+            .accelerated()
+            .build()?;
+        let texture_creator = canvas.texture_creator();
+        let texture = {
+            let texture_tmp = texture_creator.create_texture_static(
+                Some(sdl2::pixels::PixelFormatEnum::RGB332),
+                DEFAULT_SIZE as u32,
+                DEFAULT_SIZE as u32,
+            )?;
+            unsafe {
+                std::mem::transmute(texture_tmp)
+            }
+        };
+        let pixels = vec![0; DEFAULT_SIZE * DEFAULT_SIZE].into_boxed_slice();
         Ok(
-            Window(
-                sdl_call_ptr!(
-                    // XXX - use SDL_WINDOW_ALLOW_HIGHDPI?
-                    sdls::video::SDL_CreateWindow(
-                        v.as_ptr(),
-                        5,
-                        5,
-                        5,
-                        5,
-                        0,
-                    )
-                )
-            )
-        )
-    }
-}
-
-impl std::ops::Drop for Window {
-    fn drop(&mut self) {
-        unsafe {
-            sdls::video::SDL_DestroyWindow(self.0)
-        }
-    }
-}
-
-struct Renderer(*mut sdls::render::SDL_Renderer);
-
-impl Renderer {
-    fn new(win: &Window) -> Result<Renderer, Error> {
-        Ok(
-            Renderer(
-                sdl_call_ptr!(
-                    sdls::render::SDL_CreateRenderer(
-                        win.0,
-                        0,
-                        sdls::render::SDL_RENDERER_TARGETTEXTURE |
-                        sdls::render::SDL_RENDERER_ACCELERATED
-                    )
-                )
-            )
-        )
-    }
-}
-
-impl std::ops::Drop for Renderer {
-    fn drop(&mut self) {
-        unsafe {
-            sdls::render::SDL_DestroyRenderer(self.0)
-        }
-    }
-}
-
-struct Texture(*mut sdls::render::SDL_Texture);
-
-impl Texture {
-    fn new(renderer: &Renderer, width: usize, height: usize) -> Result<Texture, Error> {
-        Ok(
-            Texture(
-                sdl_call_ptr!(
-                    sdls::render::SDL_CreateTexture(
-                        renderer.0,
-                        sdls::pixels::SDL_PIXELFORMAT_RGB332,
-                        sdls::render::SDL_TEXTUREACCESS_STREAMING as c_int,
-                        width as c_int,
-                        height as c_int,
-                    )
-                )
-            )
-        )
-    }
-}
-
-impl std::ops::Drop for Texture {
-    fn drop(&mut self) {
-        unsafe {
-            sdls::render::SDL_DestroyTexture(self.0)
-        }
-    }
-}
-
-pub struct WindowScreen {
-    window: Window,
-    renderer: Renderer,
-    texture: Texture,
-    pixels: Box<[u8]>,
-    logical_width: usize,
-}
-
-impl WindowScreen {
-    pub fn new() -> Result<WindowScreen, Error> {
-        sdl_call!(
-            sdls::sdl::SDL_Init(sdls::sdl::SDL_INIT_VIDEO)
-        );
-
-        let window = Window::new()?;
-        let renderer = Renderer::new(&window)?;
-        sdl_call!(
-            sdls::render::SDL_RenderSetLogicalSize(renderer.0, 1, 1)
-        );
-        let texture = Texture::new(&renderer, 1, 1)?;
-
-        Ok(
-            WindowScreen {
-                window: window,
-                renderer: renderer,
+            Window {
+                canvas: canvas,
+                texture_creator: texture_creator,
                 texture: texture,
-                pixels: vec![0; 1].into_boxed_slice(),
-                logical_width: 1,
+                pixels: pixels,
+                width: DEFAULT_SIZE,
+                height: DEFAULT_SIZE,
+                texture_width: DEFAULT_SIZE,
+                texture_height: DEFAULT_SIZE,
             }
         )
     }
 
-    pub fn set_window_size(&mut self, w: usize, h: usize) {
-        unsafe {
-            sdls::video::SDL_SetWindowSize(self.window.0, w as c_int, h as c_int);
+    pub fn set_title(&mut self, title: &str) {
+        // rust_sdl2's set_title gives an error if the string has a null
+        // character in it. Rather than propagate that error, let's just
+        // circumvent it.
+        let len = title.find('\0').unwrap_or(title.len());
+        let result = self.canvas.window_mut().set_title(&title[0..len]);
+        debug_assert!(result.is_ok());
+    }
+
+    pub fn title(&mut self) -> &str {
+        self.canvas.window().title()
+    }
+
+    pub fn size(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+
+    pub fn set_size(&mut self, width: usize, height: usize) {
+        if width == self.width && height == self.height {
+            return;
         }
+
+        // rust_sdl2 gives an error, or sometimes even a segfault, if the width
+        // or height are too big. How about, instead, we just clamp them.
+        let max_size = 20000;
+        let use_width = if width > max_size { max_size } else { width };
+        let use_height = if height > max_size { max_size } else { height };
+        let result = self.canvas.window_mut().set_size(use_width as u32, use_height as u32);
+        debug_assert!(result.is_ok());
+
+        self.width = use_width;
+        self.height = use_height;
     }
 
-    pub fn set_logical_size(&mut self, w: usize, h: usize) -> Result<(), Error> {
-        self.pixels = vec![0; w*h].into_boxed_slice();
-        self.logical_width = w;
-        sdl_call!(
-            sdls::render::SDL_RenderSetLogicalSize(self.renderer.0, w as c_int, h as c_int)
-        );
-        self.texture = Texture::new(&self.renderer, w, h)?;
-        Ok(())
+    pub fn texture_size(&self) -> (usize, usize) {
+        (self.texture_width, self.texture_height)
     }
 
-    pub fn get_logical_size(&mut self) -> (usize, usize) {
-        (self.logical_width, self.pixels.len() / self.logical_width)
-    }
-
-    pub fn set_title(&mut self, s: &str) {
-        let mut v = s.as_bytes().to_vec();
-        v.push(0);
-        unsafe {
-            sdls::video::SDL_SetWindowTitle(self.window.0, v.as_ptr() as *const c_char);
+    pub fn set_texture_size(&mut self, texture_width: usize, texture_height: usize) {
+        if self.texture_size() == (texture_width, texture_height) {
+            return;
         }
+        let texture = {
+            let texture_tmp = self.texture_creator.create_texture_static(
+                Some(sdl2::pixels::PixelFormatEnum::RGB332),
+                texture_width as u32,
+                texture_height as u32,
+            ).expect("Unable to create a texture");
+            unsafe {
+                std::mem::transmute(texture_tmp)
+            }
+        };
+
+        self.texture = texture;
+
+        let pixels = vec![0; texture_width * texture_height].into_boxed_slice();
+        self.pixels = pixels;
+
+        self.texture_width = texture_width;
+        self.texture_height = texture_height;
     }
 }
 
-impl vdp::Screen for WindowScreen {
+impl vdp::Screen for Window {
     fn paint(&mut self, x: usize, y: usize, color: u8) {
         let blue = (0x30 & color) >> 4;
         let green = (0x0C & color) << 1;
         let red = (0x03 & color) << 6;
-        self.pixels[y*self.logical_width + x] = blue | green | red;
+        self.pixels[y * self.texture_width + x] = blue | green | red;
     }
 
     fn render(&mut self) -> Result<(), vdp::ScreenError> {
-        sdl_call!(
-            sdls::render::SDL_UpdateTexture(
-                self.texture.0,
-                std::ptr::null(),
-                std::mem::transmute(self.pixels.as_ptr()), // XXX
-                self.logical_width as c_int,
-            )
-        );
-        sdl_call!(
-            sdls::render::SDL_RenderClear(self.renderer.0)
-        );
-        sdl_call!(
-            sdls::render::SDL_RenderCopy(
-                self.renderer.0,
-                self.texture.0,
-                std::ptr::null(),
-                std::ptr::null(),
-            )
-        );
-        unsafe {
-            sdls::render::SDL_RenderPresent(self.renderer.0);
+        self.canvas.clear();
+        self.texture.update(
+            None,
+            &self.pixels,
+            self.texture_width,
+        )?;
+        match self.canvas.copy(&self.texture, None, None) {
+            // why the hell does rust_sdl2 use String for some errors?
+            Err(s) => return Err(vdp::ScreenError(s)),
+            _ => {}
         }
+        self.canvas.present();
         Ok(())
     }
 
     fn set_resolution(&mut self, width: usize, height: usize) -> Result<(), vdp::ScreenError> {
-        if self.get_logical_size() != (width, height) {
-            self.set_logical_size(width, height)?;
-        }
+        self.set_texture_size(width, height);
         Ok(())
     }
 }

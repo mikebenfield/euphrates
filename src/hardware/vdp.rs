@@ -12,7 +12,7 @@ use ::bits::*;
 use super::irq::Irq;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ScreenError(String);
+pub struct ScreenError(pub String);
 
 impl<T: Error> From<T> for ScreenError {
     fn from(t: T) -> ScreenError {
@@ -524,7 +524,7 @@ impl Vdp {
         }
         let sprite_height = if self.tall_sprites() { 16 } else { 8 };
         screen.set_resolution(64, 8 * sprite_height)?;
-        for i in 0..64 {
+        for i in 0 .. 64 {
             let sprite_n = self.sprite_n(i);
             let pattern_addr = self.sprite_pattern_address(sprite_n) as usize;
             for sprite_line in 0 .. sprite_height {

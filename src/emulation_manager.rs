@@ -8,11 +8,11 @@
 use std;
 
 use ::log;
+use ::sdl_wrap::event::HostIo;
 use ::hardware::memory_map::MemoryMap;
 use ::hardware::io::sms2::Sms2Io;
 use ::hardware::z80::*;
 use ::hardware::vdp::*;
-use ::hardware::io::Io;
 
 pub struct EmulationManager<M: MemoryMap>
 {
@@ -20,8 +20,8 @@ pub struct EmulationManager<M: MemoryMap>
 }
 
 impl<M: MemoryMap> EmulationManager<M> {
-    pub fn new(mm: M) -> EmulationManager<M> {
-        let io = Sms2Io::new(mm);
+    pub fn new(mm: M, host_io: HostIo) -> EmulationManager<M> {
+        let io = Sms2Io::new(mm, host_io);
         EmulationManager {
             z80: Z80::new(io),
         }

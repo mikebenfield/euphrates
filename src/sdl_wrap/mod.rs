@@ -11,9 +11,11 @@ use std;
 use std::fmt;
 use std::error::Error as StdError;
 use std::string::FromUtf8Error;
-use std::os::raw::{c_char, c_int};
 
-use sdl2::sys as sdls;
+use sdl2;
+
+pub mod video;
+pub mod event;
 
 #[derive(Clone, Debug)]
 pub struct Error(String);
@@ -24,68 +26,30 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<FromUtf8Error> for Error {
-    fn from(x: FromUtf8Error) -> Error {
-        let msg = format!("While trying to convert an SDL message: {}", x.description());
-        Error(msg)
+macro_rules! impl_from {
+    ($my_type: ident, $their_type: path) => {
+        impl From<$their_type> for $my_type {
+            fn from(x: $their_type) -> $my_type {
+                Error(x.description().to_string())
+            }
+        }
     }
 }
 
-impl StdError for Error {
+impl From<String> for Error {
+    fn from(x: String) -> Error {
+        Error(x)
+    }
+}
+
+impl_from!{Error, sdl2::IntegerOrSdlError}
+impl_from!{Error, sdl2::video::WindowBuildError}
+impl_from!{Error, sdl2::render::TextureValueError}
+impl_from!{Error, sdl2::render::UpdateTextureError}
+impl_from!{Error, FromUtf8Error}
+
+impl std::error::Error for Error {
     fn description(&self) -> &str {
         &self.0
     }
 }
-
-fn cstring_to_string(s: *const c_char) -> Result<String, FromUtf8Error> {
-    let mut result: Vec<u8> = Vec::new();
-    for i in 0.. {
-        let value = unsafe {
-            *s.offset(i)
-        };
-        if value == 0 {
-            break;
-        }
-        result.push(value as u8);
-    }
-    String::from_utf8(result)
-}
-
-macro_rules! sdl_call {
-    ($($args: tt)*) => {
-        {
-            let result = unsafe {
-                $($args)*
-            };
-            if 0 != (result as isize) {
-                let cs = unsafe {
-                    sdls::sdl::SDL_GetError()
-                };
-                let s = cstring_to_string(cs)?;
-                Err(Error(s))?;
-            }
-        }
-    }
-}
-
-macro_rules! sdl_call_ptr {
-    ($($args: tt)*) => {
-        {
-            let result = unsafe {
-                $($args)*
-            };
-            if result.is_null() {
-                let cs = unsafe {
-                    sdls::sdl::SDL_GetError()
-                };
-                let s = cstring_to_string(cs)?;
-                Err(Error(s))?;
-            }
-            result
-        }
-    }
-}
-
-// Put these down here so they will have access to macros
-pub mod video;
-pub mod event;
