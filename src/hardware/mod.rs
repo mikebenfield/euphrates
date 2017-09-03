@@ -27,6 +27,7 @@
 //! [`MemoryMapper`]: memory_mapper/trait.MemoryMapper.html
 
 pub mod io;
+pub mod sn76489;
 pub mod irq;
 pub mod memory_map;
 pub mod vdp;

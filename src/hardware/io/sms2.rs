@@ -11,13 +11,15 @@ use super::*;
 use ::sdl_wrap::event::HostIo;
 use ::hardware::irq;
 use ::hardware::vdp;
-use ::hardware::memory_map::{MemoryMap};
+use ::hardware::sn76489;
+use ::hardware::memory_map::MemoryMap;
 
 pub struct Sms2Io<M: MemoryMap> {
     memory_control: u8,
     io_control: u8,
     mem: M,
-    host_io: HostIo,
+    pub host_io: HostIo,
+    pub sn76489: sn76489::Sn76489,
     pub vdp: vdp::Vdp,
 }
 
@@ -25,8 +27,10 @@ impl<M: MemoryMap> Sms2Io<M> {
     pub fn new(mm: M, host_io: HostIo) -> Sms2Io<M> {
         let mut vdp: vdp::Vdp = Default::default();
         vdp.version = vdp::Version::SMS2;
+        let sn76489: sn76489::Sn76489 = Default::default();
         Sms2Io {
             host_io: host_io,
+            sn76489: sn76489,
             vdp: vdp,
             memory_control: 0,
             io_control: 0,
@@ -110,10 +114,12 @@ impl<M: MemoryMap> Io for Sms2Io<M> {
             0b01000000 => {
                 // SN76489 PSG - XXX not implemented
                 log_major!("Io: Attempted to output to SN76489 PSG");
+                self.sn76489.write(x);
             }
             0b01000001 => {
                 // SN76489 PSG - XXX not implemented
                 log_major!("Io: Attempted to output to SN76489 PSG");
+                self.sn76489.write(x);
             }
             0b10000000 => {
                 // VDP data

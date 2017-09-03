@@ -596,7 +596,7 @@ impl Vdp {
     }
 
     fn pattern_address_to_palette_indices(&self, address: usize, line: usize) -> [usize; 8] {
-        debug_assert!(line < 8);
+        debug_assert!(line < 16);
         let bitplanes_address = address + 4 * line;
         debug_assert!(bitplanes_address + 3 < self.vram.len());
         let mut bitplane0 = self.vram[bitplanes_address] as usize;

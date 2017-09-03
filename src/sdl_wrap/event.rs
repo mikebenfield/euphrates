@@ -43,7 +43,7 @@ bitflags! {
 }
 
 pub struct HostIo {
-    event_pump: sdl2::EventPump
+    event_pump: sdl2::EventPump,
 }
 
 impl HostIo {
@@ -58,7 +58,7 @@ impl HostIo {
         };
         Ok(
             HostIo {
-                event_pump: event_pump
+                event_pump: event_pump,
             }
         )
     }

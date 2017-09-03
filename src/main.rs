@@ -15,6 +15,7 @@ use attalus::sdl_wrap::video::Window;
 
 fn start_loop<M: MemoryMap>(mm: M, n: u64) {
     let sdl = sdl2::init().unwrap();
+    let audio = sdl.audio().unwrap();
     let host_io = HostIo::new(&sdl).unwrap();
 
     let mut em = EmulationManager::new(mm, host_io);
@@ -39,7 +40,7 @@ fn start_loop<M: MemoryMap>(mm: M, n: u64) {
     win.set_texture_size(256, 192);
     win.set_title("Attalus");
 
-    match em.main_loop(&mut win, &mut palette_win, &mut sprite_win, &mut tile_win, n) {
+    match em.main_loop(&mut win, &mut palette_win, &mut sprite_win, &mut tile_win, audio, n) {
         Ok(()) => println!("Exit OK"),
         _ => println!("Exit error"),
     }
