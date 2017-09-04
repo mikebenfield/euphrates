@@ -79,7 +79,7 @@ pub struct Address<T>(pub T);
 #[derive(Clone, Copy, Debug)]
 pub struct Shift(pub Reg16, pub i8);
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct Z80<I: Io> {
     pub io: I,
     pub halted: bool,
@@ -95,11 +95,18 @@ pub struct Z80<I: Io> {
     /// instruction. To emulate this, my `ei` implementation sets the `iff1`
     /// field to the current value of `cycles`. Then when an interrupt is
     /// desired, the function `maskable_interrupt` first checks to see if
-    /// `cycles` is larger than `iff1`.
+    /// `cycles` is larger than `iff1`. `di` sets `iff1` to 0xFFFFFFFFFFFFFFFF.
     pub iff1: u64,
     pub iff2: bool,
     pub interrupt_mode: InterruptMode,
     registers: [u16; 13],
+}
+
+impl<I: Io + Default> Default for Z80<I> {
+    fn default() -> Z80<I> {
+        let io: I = I::default();
+        Z80::new(io)
+    }
 }
 
 impl<I> Z80<I>

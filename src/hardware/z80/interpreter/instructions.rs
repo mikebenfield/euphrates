@@ -28,29 +28,43 @@ fn set_parity<I: Io>(z80: &mut Z80<I>, x: u8) {
 //// Interrupts
 ///////////////
 
-pub fn rst<I: Io>(z: &mut Z80<I>, p: u8) {
+pub fn rst<I: Io>(z: &mut Z80<I>, p: u16) {
     let sp = SP.get(z);
     let pch = PCH.get(z);
     let pcl = PCL.get(z);
     Address(sp.wrapping_sub(1)).set(z, pch);
     Address(sp.wrapping_sub(2)).set(z, pcl);
     SP.set(z, sp.wrapping_sub(2));
-    PCH.set(z, 0);
-    PCL.set(z, p);
+    PC.set(z, p);
 }
 
 pub fn nonmaskable_interrupt<I: Io>(z: &mut Z80<I>) {
-    let iff1 = z.iff1;
-    z.iff2 = iff1 != 0;
+    // The Z80 manual implies that IFF2 is set to IFF1, but this
+    // is false (see Young 5.3)
+    inc_r(z);
+    z.iff1 = 0xFFFFFFFFFFFFFFFF;
+    z.io.clear_nmi();
+    z.cycles += 11;
+    if z.halted {
+        let pc = PC.get(z);
+        PC.set(z, pc.wrapping_add(1));
+    }
     rst(z, 0x66);
 }
 
-pub fn maskable_interrupt<I: Io>(z: &mut Z80<I>) -> bool {
+pub fn maskable_interrupt<I: Io>(z: &mut Z80<I>, x: u8) -> bool {
     if z.iff1 < z.cycles {
         log_major!("Z80: Maskable interrupt allowed");
 
+        inc_r(z);
+
         z.iff1 = 0xFFFFFFFFFFFFFFFF;
         z.iff2 = false;
+
+        if z.halted {
+            let pc = PC.get(z);
+            PC.set(z, pc.wrapping_add(1));
+        }
 
         let im = z.interrupt_mode;
         match im {
@@ -58,6 +72,12 @@ pub fn maskable_interrupt<I: Io>(z: &mut Z80<I>) -> bool {
                 rst(z, 0x38);
                 z.cycles += 13;
             },
+            Im2 => {
+                let i = I.get(z);
+                let new_pc = to16(x, i);
+                rst(z, new_pc);
+                z.cycles += 19;
+            }
             _ => unimplemented!(),
         }
         true
@@ -935,7 +955,7 @@ pub fn reti<I: Io>(z: &mut Z80<I>) {
 
 pub fn retn<I: Io>(z: &mut Z80<I>) {
     let iff2 = z.iff2;
-    z.iff1 = iff2 as u64;
+    z.iff1 = if iff2 { 0 } else { 0xFFFFFFFFFFFFFFFF };
 
     let sp = SP.get(z);
     let pcl = Address(sp).get(z);

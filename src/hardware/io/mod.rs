@@ -39,8 +39,9 @@ impl Default for SimpleIo {
 }
 
 impl Irq for SimpleIo {
-    fn requesting_mi(&self) -> bool { false }
+    fn requesting_mi(&self) -> Option<u8> { None }
     fn requesting_nmi(&self) -> bool { false }
+    fn clear_nmi(&self) {}
 }
 
 impl Io for SimpleIo {

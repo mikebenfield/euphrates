@@ -244,8 +244,13 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
 
     if z.io.requesting_nmi() {
         instructions::nonmaskable_interrupt(z);
-    } else if z.io.requesting_mi() {
-        instructions::maskable_interrupt(z);
+    } else {
+        match z.io.requesting_mi() {
+            Some(x) => {
+                instructions::maskable_interrupt(z, x);
+            }
+            _ => {}
+        };
     }
 
     loop {
@@ -332,6 +337,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
                 }
                 z.cycles += 4;
                 if z.cycles >= cycles {
+                    z.iff1 = z.cycles;
                     return;
                 }
                 prefix = Prefix::NoPrefix;
@@ -361,6 +367,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
                 }
                 z.cycles += 4;
                 if z.cycles >= cycles {
+                    z.iff1 = z.cycles;
                     return;
                 }
                 prefix = Prefix::NoPrefix;

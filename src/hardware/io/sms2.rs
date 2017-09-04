@@ -40,11 +40,14 @@ impl<M: MemoryMap> Sms2Io<M> {
 }
 
 impl<M: MemoryMap> irq::Irq for Sms2Io<M> {
-    fn requesting_mi(&self) -> bool {
+    fn requesting_mi(&self) -> Option<u8> {
         self.vdp.requesting_mi()
     }
     fn requesting_nmi(&self) -> bool {
         self.vdp.requesting_nmi()
+    }
+    fn clear_nmi(&self) {
+        self.vdp.clear_nmi();
     }
 }
 

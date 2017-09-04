@@ -619,11 +619,16 @@ impl Vdp {
 }
 
 impl Irq for Vdp {
-    fn requesting_mi(&self) -> bool {
-        (self.status_flags.contains(FRAME_INTERRUPT) && self.frame_irq_enable()) ||
-            (self.status_flags.contains(LINE_INTERRUPT) && self.line_irq_enable())
+    fn requesting_mi(&self) -> Option<u8> {
+        if (self.status_flags.contains(FRAME_INTERRUPT) && self.frame_irq_enable()) ||
+            (self.status_flags.contains(LINE_INTERRUPT) && self.line_irq_enable()) {
+                Some(0xFF)
+        } else {
+            None
+        }
     }
     fn requesting_nmi(&self) -> bool {
         false
     }
+    fn clear_nmi(&self) {}
 }
