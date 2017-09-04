@@ -37,9 +37,6 @@ impl<M: MemoryMap> EmulationManager<M> {
     pub fn main_loop<S>(
         &mut self,
         screen: &mut S,
-        palette_screen: &mut S,
-        sprite_screen: &mut S,
-        tile_screen: &mut S,
         audio: sdl2::AudioSubsystem,
         n: u64
     ) -> Result<(), ScreenError>
@@ -71,23 +68,18 @@ impl<M: MemoryMap> EmulationManager<M> {
 
             self.z80.io.vdp.draw_line(screen)?;
 
-            self.z80.io.vdp.draw_palettes(palette_screen)?;
-
-            self.z80.io.vdp.draw_sprites(sprite_screen)?;
-
-            self.z80.io.vdp.draw_tiles(tile_screen)?;
-
             let vdp_cycles = self.z80.io.vdp.cycles;
             let z80_target_cycles = 2 * vdp_cycles / 3;
             Z80Interpreter {}.run(&mut self.z80, z80_target_cycles);
 
             let sound_target_cycles = z80_target_cycles / 16;
 
-            if sdl_wrap::event::check_quit() {
-                break;
-            }
-
             if self.z80.io.vdp.read_v() == 0 {
+
+                if sdl_wrap::event::check_quit() {
+                    break;
+                }
+
                 self.z80.io.sn76489.queue(
                     sound_target_cycles,
                     &mut audio_buffer,
@@ -112,13 +104,9 @@ impl<M: MemoryMap> EmulationManager<M> {
                 match desired_duration.checked_sub(total_duration) {
                     None => {}
                     Some(diff) => {
-                        // println!("worked");
                         std::thread::sleep(diff);
                     }
                 }
-                // println!("old time {:?}, new time {:?}", total_duration, desired_duration);
-                // std::process::exit(1);
-                // std::thread::sleep(diff);
             }
         }
         Ok(())

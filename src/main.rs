@@ -20,27 +20,12 @@ fn start_loop<M: MemoryMap>(mm: M, n: u64) {
 
     let mut em = EmulationManager::new(mm, host_io);
 
-    let mut palette_win = Window::new(&sdl).unwrap();
-    palette_win.set_size(96, 3);
-    palette_win.set_texture_size(32, 1);
-    palette_win.set_title("palettes");
-
-    let mut sprite_win = Window::new(&sdl).unwrap();
-    sprite_win.set_size(256, 256);
-    sprite_win.set_texture_size(256, 256);
-    sprite_win.set_title("sprites");
-
-    let mut tile_win = Window::new(&sdl).unwrap();
-    tile_win.set_size(256, 224);
-    sprite_win.set_texture_size(256, 224);
-    tile_win.set_title("tiles");
-
     let mut win = Window::new(&sdl).unwrap();
     win.set_size(768, 576);
     win.set_texture_size(256, 192);
     win.set_title("Attalus");
 
-    match em.main_loop(&mut win, &mut palette_win, &mut sprite_win, &mut tile_win, audio, n) {
+    match em.main_loop(&mut win, audio, n) {
         Ok(()) => println!("Exit OK"),
         _ => println!("Exit error"),
     }

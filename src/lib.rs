@@ -5,6 +5,8 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+#![inline(never)]
+
 #[macro_use]
 extern crate bitflags;
 extern crate rand;

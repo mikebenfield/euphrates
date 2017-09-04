@@ -40,7 +40,7 @@ impl Window {
         let texture_creator = canvas.texture_creator();
         let texture = {
             let texture_tmp = texture_creator.create_texture_static(
-                Some(sdl2::pixels::PixelFormatEnum::RGB332),
+                Some(sdl2::pixels::PixelFormatEnum::ARGB8888),
                 DEFAULT_SIZE as u32,
                 DEFAULT_SIZE as u32,
             )?;
@@ -48,7 +48,7 @@ impl Window {
                 std::mem::transmute(texture_tmp)
             }
         };
-        let pixels = vec![0; DEFAULT_SIZE * DEFAULT_SIZE].into_boxed_slice();
+        let pixels = vec![0; 4 * DEFAULT_SIZE * DEFAULT_SIZE].into_boxed_slice();
         Ok(
             Window {
                 canvas: canvas,
@@ -107,7 +107,7 @@ impl Window {
         }
         let texture = {
             let texture_tmp = self.texture_creator.create_texture_static(
-                Some(sdl2::pixels::PixelFormatEnum::RGB332),
+                Some(sdl2::pixels::PixelFormatEnum::ARGB8888),
                 texture_width as u32,
                 texture_height as u32,
             ).expect("Unable to create a texture");
@@ -118,7 +118,7 @@ impl Window {
 
         self.texture = texture;
 
-        let pixels = vec![0; texture_width * texture_height].into_boxed_slice();
+        let pixels = vec![0; 4 * texture_width * texture_height].into_boxed_slice();
         self.pixels = pixels;
 
         self.texture_width = texture_width;
@@ -128,10 +128,14 @@ impl Window {
 
 impl vdp::Screen for Window {
     fn paint(&mut self, x: usize, y: usize, color: u8) {
-        let blue = (0x30 & color) >> 4;
-        let green = (0x0C & color) << 1;
+        let blue = (0x30 & color) << 2;
+        let green = (0x0C & color) << 4;
         let red = (0x03 & color) << 6;
-        self.pixels[y * self.texture_width + x] = blue | green | red;
+        let idx = 4 * (y * self.texture_width + x);
+        self.pixels[idx] = blue;
+        self.pixels[idx + 1] = green;
+        self.pixels[idx + 2] = red;
+        self.pixels[idx + 3] = 0;
     }
 
     fn render(&mut self) -> Result<(), vdp::ScreenError> {
@@ -139,7 +143,7 @@ impl vdp::Screen for Window {
         self.texture.update(
             None,
             &self.pixels,
-            self.texture_width,
+            self.texture_width * 4,
         )?;
         match self.canvas.copy(&self.texture, None, None) {
             // why the hell does rust_sdl2 use String for some errors?
