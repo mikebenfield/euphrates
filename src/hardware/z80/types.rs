@@ -25,7 +25,7 @@ pub enum Reg8 {
 #[derive(Clone, Copy, Debug)]
 pub enum Reg8 {
     B, C, D, E, A, F, H, L,
-    B0, C0, D0, E0, A0, F0, L0, H0,
+    B0, C0, D0, E0, A0, F0, H0, L0,
     IXH, IXL, IYH, IYL,
     SPH, SPL, PCH, PCL, I, R
 }
