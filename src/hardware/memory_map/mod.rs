@@ -28,6 +28,7 @@ use std;
 use std::error::Error;
 use std::fmt;
 
+use ::message::{Receiver, Sender};
 pub use self::sega_memory_map::*;
 pub use self::codemasters_memory_map::*;
 pub use self::simple_memory_map::*;
@@ -57,7 +58,16 @@ impl Error for MemoryMapError {
     }
 }
 
-pub trait MemoryMap {
-    fn read(&self, logical_address: u16) -> u8;
-    fn write(&mut self, logical_address: u16, value: u8);
+pub trait MemoryMap: Sender {
+    fn read<R>(&self, receiver: &mut R, logical_address: u16) -> u8
+    where
+        R: Receiver<<Self as Sender>::Message>;
+    fn write<R>(&mut self, receiver: &mut R, logical_address: u16, value: u8)
+    where
+        R: Receiver<<Self as Sender>::Message>;
+}
+
+pub trait SliceMemoryMap: MemoryMap {
+    fn slice(&self) -> &[u8];
+    fn slice_mut(&mut self) -> &mut [u8];
 }

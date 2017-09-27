@@ -5,14 +5,18 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::log;
 use ::bits::*;
 
-use super::instructions;
+use ::message::{Receiver, Sender};
+
 use hardware::z80::types::*;
 use hardware::io::Io;
 
-pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
+pub fn run<I, R>(receiver: &mut R, z: &mut Z80<I>, cycles: u64)
+where
+    I: Io<R>,
+    R: Receiver<Z80Message> + Receiver<<I::MemoryMap as Sender>::Message>,
+{
     let mut opcode: u8;
     let mut n: u8;
     let mut nn: u16;
@@ -31,12 +35,14 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
 
     let mut prefix = Prefix::NoPrefix;
 
-    fn read_pc<I: Io>(z: &mut Z80<I>) -> u8 {
-        let pc = PC.get(z);
-        log_minor!("Z80: PC: {:0>4X}", pc);
-        let opcode: u8 = Address(pc).get(z);
-        PC.set(z, pc.wrapping_add(1));
-        log_minor!("Z80: opcode: {:0>2X}", opcode);
+    fn read_pc<I, R>(receiver: &mut R, z: &mut Z80<I>) -> u8
+    where
+        I: Io<R>,
+        R: Receiver<Z80Message> + Receiver<<I::MemoryMap as Sender>::Message>,
+    {
+        let pc = PC.get(receiver, z);
+        let opcode: u8 = Address(pc).get(receiver, z);
+        PC.set(receiver, z, pc.wrapping_add(1));
         opcode
     }
 
@@ -51,9 +57,9 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
             $x
         };
         ($mnemonic: ident, $($args: tt),*) => {
-            instructions::$mnemonic
+            z.$mnemonic
             (
-                z,
+                receiver,
                 $(
                     apply_args!(@ $args)
                 ),*
@@ -64,17 +70,14 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     macro_rules! do_instruction {
         (halt, $t_states: expr $(,$arguments: tt)*) => {
             use std;
-            log_minor!("Z80: op: halt");
             apply_args!(halt, $($arguments),*);
             z.cycles = std::cmp::max(z.cycles, cycles);
-            let pc = PC.get(z);
-            PC.set(z, pc.wrapping_sub(1));
+            let pc = PC.get(receiver, z);
+            PC.set(receiver, z, pc.wrapping_sub(1));
             return;
         };
         ($mnemonic: ident, $t_states: expr $(,$arguments: tt)*) => {
-            log_minor!("Z80: op: {}", stringify!($mnemonic $($arguments),*));
             apply_args!($mnemonic, $($arguments),*);
-            log_minor!("Z80: state: \n{}", z);
             z.cycles += $t_states;
             if z.cycles >= cycles {
                 return;
@@ -84,34 +87,86 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
         };
     }
 
+    macro_rules! send_instruction {
+        ([$code0: expr]) => {
+            let pc_op = PC.get(receiver, z).wrapping_sub(1);
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionAtPc(pc_op),
+            );
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionOpcode(Opcode::OneByte([$code0])),
+            );
+        };
+        ([$code0: expr, $code1: expr]) => {
+            let pc_op = PC.get(receiver, z).wrapping_sub(2);
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionAtPc(pc_op),
+            );
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionOpcode(Opcode::TwoBytes([$code0, $code1])),
+            );
+        };
+        ([$code0: expr, $code1: expr, $code2: expr]) => {
+            let pc_op = PC.get(receiver, z).wrapping_sub(3);
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionAtPc(pc_op),
+            );
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionOpcode(Opcode::ThreeBytes([$code0, $code1, $code2])),
+            );
+        };
+        ([$code0: expr, $code1: expr, $code2: expr, $code3: expr]) => {
+            let pc_op = PC.get(receiver, z).wrapping_sub(4);
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionAtPc(pc_op),
+            );
+            receiver.receive(
+                z.id(),
+                Z80Message::InstructionOpcode(Opcode::FourBytes([$code0, $code1, $code2, $code3])),
+            );
+        };
+    }
+
     macro_rules! instruction_noprefix {
         ([$code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
+                send_instruction!([$code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([$code: expr, e] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                e = read_pc(z) as i8;
+                e = read_pc(receiver, z) as i8;
+                send_instruction!([$code, e as u8]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([$code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                d = read_pc(z) as i8;
+                d = read_pc(receiver, z) as i8;
+                send_instruction!([$code, d as u8]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([$code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                n = read_pc(z);
+                n = read_pc(receiver, z);
+                send_instruction!([$code, n]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([$code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                let n1: u8 = read_pc(z);
-                let n2: u8 = read_pc(z);
+                let n1: u8 = read_pc(receiver, z);
+                let n2: u8 = read_pc(receiver, z);
+                send_instruction!([$code, n1, n2]);
                 nn = to16(n1, n2);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
@@ -123,14 +178,16 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     macro_rules! instruction_ed {
         ([0xED, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
+                send_instruction!([0xED, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xED, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                let n1: u8 = read_pc(z);
-                let n2: u8 = read_pc(z);
+                let n1: u8 = read_pc(receiver, z);
+                let n2: u8 = read_pc(receiver, z);
                 nn = to16(n1, n2);
+                send_instruction!([0xED, $code, n1, n2]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
@@ -141,6 +198,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     macro_rules! instruction_cb {
         ([0xCB, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
+                send_instruction!([0xCB, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
@@ -151,6 +209,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     macro_rules! instruction_ddcb {
         ([0xDD, 0xCB, d, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
+                send_instruction!([0xDD, 0xCB, d as u8, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
@@ -161,6 +220,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     macro_rules! instruction_fdcb {
         ([0xFD, 0xCB, d, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
+                send_instruction!([0xFD, 0xCB, d as u8, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
@@ -171,33 +231,38 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     macro_rules! instruction_dd {
         ([0xDD, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                let n1: u8 = read_pc(z);
-                let n2: u8 = read_pc(z);
+                let n1: u8 = read_pc(receiver, z);
+                let n2: u8 = read_pc(receiver, z);
                 nn = to16(n1, n2);
+                send_instruction!([0xDD, $code, n1, n2]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xDD, $code: expr, d, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                d = read_pc(z) as i8;
-                n = read_pc(z);
+                d = read_pc(receiver, z) as i8;
+                n = read_pc(receiver, z);
+                send_instruction!([0xDD, $code, d as u8, n]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xDD, $code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                d = read_pc(z) as i8;
+                d = read_pc(receiver, z) as i8;
+                send_instruction!([0xDD, $code, d as u8]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xDD, $code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                n = read_pc(z);
+                n = read_pc(receiver, z);
+                send_instruction!([0xDD, $code, n]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xDD, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
+                send_instruction!([0xDD, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
@@ -208,33 +273,38 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     macro_rules! instruction_fd {
         ([0xFD, $code: expr, n, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                let n1: u8 = read_pc(z);
-                let n2: u8 = read_pc(z);
+                let n1: u8 = read_pc(receiver, z);
+                let n2: u8 = read_pc(receiver, z);
                 nn = to16(n1, n2);
+                send_instruction!([0xFD, $code, n1, n2]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xFD, $code: expr, d, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                d = read_pc(z) as i8;
-                n = read_pc(z);
+                d = read_pc(receiver, z) as i8;
+                n = read_pc(receiver, z);
+                send_instruction!([0xFD, $code, d as u8, n]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xFD, $code: expr, d] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                d = read_pc(z) as i8;
+                d = read_pc(receiver, z) as i8;
+                send_instruction!([0xFD, $code, d as u8]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xFD, $code: expr, n] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
-                n = read_pc(z);
+                n = read_pc(receiver, z);
+                send_instruction!([0xFD, $code, n]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
         ([0xFD, $code: expr] ; $mnemonic: ident ; [$($arguments: tt),*] ; $t_states: expr ; $is_undoc: expr ) => {
             if opcode == $code {
+                send_instruction!([0xFD, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
         };
@@ -243,11 +313,11 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     }
 
     if z.io.requesting_nmi() {
-        instructions::nonmaskable_interrupt(z);
+        z.nonmaskable_interrupt(receiver);
     } else {
         match z.io.requesting_mi() {
             Some(x) => {
-                instructions::maskable_interrupt(z, x);
+                z.maskable_interrupt(receiver, x);
             }
             _ => {}
         };
@@ -256,7 +326,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
     loop {
         match prefix {
             Prefix::NoPrefix => {
-                opcode = read_pc(z);
+                opcode = read_pc(receiver, z);
                 inc_r(z);
                 process_instructions!(instruction_noprefix, d, e, n, nn);
                 if opcode == 0xED {
@@ -278,7 +348,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
                 panic!("Z80: can't happen: missing opcode {:0>2X}", opcode);
             },
             Prefix::Ed => {
-                opcode = read_pc(z);
+                opcode = read_pc(receiver, z);
                 inc_r(z);
                 process_instructions!(instruction_ed, d, e, n, nn);
                 z.cycles += 8;
@@ -289,7 +359,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
                 continue;
             },
             Prefix::Cb => {
-                opcode = read_pc(z);
+                opcode = read_pc(receiver, z);
                 inc_r(z);
                 process_instructions!(instruction_cb, d, e, n, nn);
                 z.cycles += 8;
@@ -300,21 +370,21 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
                 continue;
             },
             Prefix::Ddcb => {
-                d = read_pc(z) as i8;
-                opcode = read_pc(z);
+                d = read_pc(receiver, z) as i8;
+                opcode = read_pc(receiver, z);
                 // inc_r(z);
                 process_instructions!(instruction_ddcb, d, e, n, nn);
                 panic!("Z80: can't happen: missing opcode DD CB {:0>2X} {:0>2X}", d as u8, opcode);
             },
             Prefix::Fdcb => {
-                d = read_pc(z) as i8;
-                opcode = read_pc(z);
+                d = read_pc(receiver, z) as i8;
+                opcode = read_pc(receiver, z);
                 // inc_r(z);
                 process_instructions!(instruction_fdcb, d, e, n, nn);
                 panic!("Z80: can't happen: missing opcode FD CB {:0>2X} {:0>2X}", d as u8, opcode);
             },
             Prefix::Dd => {
-                opcode = read_pc(z);
+                opcode = read_pc(receiver, z);
                 inc_r(z);
                 process_instructions!(instruction_dd, d, e, n, nn);
                 if opcode == 0xED {
@@ -344,7 +414,7 @@ pub fn run<I: Io>(z: &mut Z80<I>, cycles: u64) {
                 continue;
             },
             Prefix::Fd => {
-                opcode = read_pc(z);
+                opcode = read_pc(receiver, z);
                 inc_r(z);
                 process_instructions!(instruction_fd, d, e, n, nn);
                 if opcode == 0xED {

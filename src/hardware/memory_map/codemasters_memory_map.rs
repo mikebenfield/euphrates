@@ -5,7 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::log;
+use message::{Receiver, Sender};
 use super::*;
 
 pub struct CodemastersMemoryMap {
@@ -22,13 +22,48 @@ pub struct CodemastersMemoryMap {
     // SegaMemoryMap
     pages: [u16; 8],
 
+    reg_0000: u8,
+    reg_4000: u8,
+    reg_8000: u8,
+
     slot_writable: u8,
+
+    id: u32,
 }
 
-fn write_check_register(cmm: &mut CodemastersMemoryMap, logical_address: u16, value: u8) {
-    fn swap_slot(cmm: &mut CodemastersMemoryMap, sega_slot: usize, value: u8) {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum CodemastersMemoryMapRegister {
+    R0000,
+    R4000,
+    R8000,
+}
+
+impl Sender for CodemastersMemoryMap {
+    type Message = SegaMemoryMapMessage<CodemastersMemoryMapRegister>;
+
+    fn id(&self) -> u32 {
+        self.id
+    }
+
+    fn set_id(&mut self, id: u32) {
+        self.id = id;
+    }
+}
+
+fn write_check_register<R>(
+    cmm: &mut CodemastersMemoryMap,
+    receiver: &mut R,
+    logical_address: u16,
+    value: u8,
+) where
+    R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+{
+    fn swap_slot<R>(cmm: &mut CodemastersMemoryMap, receiver: &mut R, sega_slot: usize, value: u8)
+    where
+        R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+    {
         debug_assert!(sega_slot <= 3);
-        let (upper_bit_set, lower_bits) = ((0x80 & value) != 0, 0xEF & value);
+        let (upper_bit_set, lower_bits) = ((0x80 & value) != 0, 0x7F & value);
         let impl_slot0 = 2 * sega_slot;
         let impl_slot1 = impl_slot0 + 1;
         let rom_impl_page_count = if cmm.cartridge_ram_allocated {
@@ -42,13 +77,31 @@ fn write_check_register(cmm: &mut CodemastersMemoryMap, logical_address: u16, va
         } else {
             lower_bits % rom_sega_page_count
         };
+        receiver.receive(
+            cmm.id(),
+            SegaMemoryMapMessage::MapRom {
+                slot: sega_slot as u8,
+                page: sega_page,
+            },
+        );
         let impl_page = (sega_page as u16) * 2 + 1;
         if upper_bit_set {
             // RAM goes into the second implementation-slot
             if !cmm.cartridge_ram_allocated {
+                receiver.receive(
+                    cmm.id(),
+                    SegaMemoryMapMessage::AllocateFirstPage,
+                );
                 cmm.memory.push([0; 0x2000]);
                 cmm.memory.shrink_to_fit();
             }
+            receiver.receive(
+                cmm.id(),
+                SegaMemoryMapMessage::MapCartridgeRam {
+                    slot: sega_slot as u8,
+                    page: sega_page,
+                },
+            );
             cmm.pages[impl_slot1] = (cmm.memory.len() - 1) as u16;
             cmm.slot_writable |= 1 << impl_slot1;
         } else {
@@ -58,52 +111,52 @@ fn write_check_register(cmm: &mut CodemastersMemoryMap, logical_address: u16, va
         cmm.pages[impl_slot0] = impl_page;
         // even impl_slots will never be marked as writable anyway
     }
-    match logical_address {
+
+    let slot = match logical_address {
         0 => {
-            log_major!("Selecting page {:0>2X} for slot {}", value, 0);
-            swap_slot(cmm, 0, value);
-        }
+            cmm.reg_0000 = value;
+            0
+        },
         0x4000 => {
-            log_major!("Selecting page {:0>2X} for slot {}", value, 1);
-            swap_slot(cmm, 1, value);
-        }
+            cmm.reg_4000 = value;
+            1
+        },
         0x8000 => {
-            log_major!("Selecting page {:0>2X} for slot {}", value, 2);
-            swap_slot(cmm, 2, value);
-        }
-        _ => {}
-    }
+            cmm.reg_8000 = value;
+            2
+        },
+        _ => unreachable!(),
+    };
+
+    swap_slot(cmm, receiver, slot as usize, value);
 }
 
 impl MemoryMap for CodemastersMemoryMap {
-    fn read(&self, logical_address: u16) -> u8 {
-        log_minor!("CodemastersMemoryMap: read: logical address {:0>4X}", logical_address);
+    fn read<R>(&self, _receiver: &mut R, logical_address: u16) -> u8
+    where
+        R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+    {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        log_minor!("CodemastersMemoryMap: read: implementation slot {:0>4X}", impl_slot);
-        log_minor!("CodemastersMemoryMap: read: physical address {:0>4X}", physical_address);
         let impl_page = self.pages[impl_slot as usize];
         let result = self.memory[impl_page as usize][physical_address as usize];
-        log_minor!("CodemastersMemoryMap: read: value {:0>2X}", result);
         result
     }
 
-    fn write(&mut self, logical_address: u16, value: u8) {
-        write_check_register(self, logical_address, value);
+    fn write<R>(&mut self, receiver: &mut R, logical_address: u16, value: u8)
+    where
+        R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+    {
+        write_check_register(self, receiver, logical_address, value);
         if logical_address == 0 || logical_address == 0x4000 || logical_address == 0x8000 {
             return;
         }
-        log_minor!("CodemastersMemoryMap: write: logical address {:0>4X}", logical_address);
-        log_minor!("CodemastersMemoryMap: write: value {:0>2X}", value);
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        log_minor!("CodemastersMemoryMap: write: implementation slot {:0>4X}", impl_slot);
-        log_minor!("CodemastersMemoryMap: write: physical address {:0>4X}", physical_address);
         if self.slot_writable & (1 << impl_slot) != 0 {
             let impl_page = self.pages[impl_slot as usize];
             self.memory[impl_page as usize][physical_address as usize] = value;
         } else {
-            log_fault!("CodemastersMemoryMap: write: nonwritable memory {:0>4X}", logical_address);
         }
     }
 }
@@ -129,27 +182,27 @@ impl CodemastersMemoryMap {
         // push the ROM
         for i in 0..rom_impl_page_count {
             let mut impl_page = [0u8; 0x2000];
-            impl_page.copy_from_slice(&rom[0x2000*i .. 0x2000*(i+1)]);
+            impl_page.copy_from_slice(&rom[0x2000 * i..0x2000 * (i + 1)]);
             memory.push(impl_page);
         }
 
-        Ok(
-            CodemastersMemoryMap {
-                memory: memory,
-                cartridge_ram_allocated: false,
-                // according to smspower.org, the mapper is initialized with
-                // sega_slot 0 mapped to sega_page 0, slot 1 mapped to 1, and
-                // slot 2 mapped to 0
-                pages: [1, 2, 3, 4, 1, 2, 0, 0],
-                // only the system RAM is writable
-                slot_writable: 0b11000000,
-            }
-        )
+        Ok(CodemastersMemoryMap {
+            memory: memory,
+            cartridge_ram_allocated: false,
+            // according to smspower.org, the mapper is initialized with
+            // sega_slot 0 mapped to sega_page 0, slot 1 mapped to 1, and
+            // slot 2 mapped to 0
+            pages: [1, 2, 3, 4, 1, 2, 0, 0],
+            reg_0000: 0,
+            reg_4000: 1,
+            reg_8000: 0,
+            // only the system RAM is writable
+            slot_writable: 0b11000000,
+            id: 0,
+        })
     }
 
-    pub fn new_from_file(
-        filename: &str,
-    ) -> Result<CodemastersMemoryMap, MemoryMapError> {
+    pub fn new_from_file(filename: &str) -> Result<CodemastersMemoryMap, MemoryMapError> {
         use std::fs::File;
         use std::io::Read;
 

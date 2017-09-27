@@ -10,7 +10,7 @@ use std::error::Error;
 
 use sdl2;
 
-use ::log;
+use ::message::{NothingReceiver, Pausable, Receiver, Sender};
 use ::sdl_wrap::event::HostIo;
 use ::hardware::memory_map::MemoryMap;
 use ::hardware::io::sms2::Sms2Io;
@@ -25,7 +25,27 @@ pub struct EmulationManager<M: MemoryMap>
 const SYSTEM_FREQUENCY: u64 = 10738580;
 const AUDIO_BUFFER_SIZE: usize = 0x800;
 
-impl<M: MemoryMap> EmulationManager<M> {
+#[allow(dead_code)]
+struct PrintingReceiver;
+
+impl Pausable for PrintingReceiver {
+    fn wants_pause(&self) -> bool { false }
+    fn clear_pause(&mut self) {}
+}
+
+impl<D> Receiver<D> for PrintingReceiver
+where
+    D: std::fmt::Debug
+{
+    fn receive(&mut self, id: u32, message: D) {
+        println!("{}: {:?}", id, message);
+    }
+}
+
+impl<M: MemoryMap> EmulationManager<M>
+where
+    <M as Sender>::Message: std::fmt::Debug,
+{
     pub fn new(mm: M, host_io: HostIo) -> EmulationManager<M> {
         let io = Sms2Io::new(mm, host_io);
         EmulationManager {
@@ -63,14 +83,12 @@ impl<M: MemoryMap> EmulationManager<M> {
 
         let system_time = std::time::SystemTime::now();
 
-        for i in 0 .. n {
-            log_major!("EM: loop {}", i);
-
+        for _ in 0 .. n {
             self.z80.io.vdp.draw_line(screen)?;
 
             let vdp_cycles = self.z80.io.vdp.cycles;
             let z80_target_cycles = 2 * vdp_cycles / 3;
-            Z80Interpreter {}.run(&mut self.z80, z80_target_cycles);
+            Z80Interpreter {}.run(&mut NothingReceiver, &mut self.z80, z80_target_cycles);
 
             let sound_target_cycles = z80_target_cycles / 16;
 

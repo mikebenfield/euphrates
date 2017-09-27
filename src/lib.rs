@@ -11,8 +11,7 @@ extern crate rand;
 extern crate tempdir;
 extern crate sdl2;
 
-#[macro_use]
-pub mod log;
+pub mod message;
 mod bits;
 pub mod sdl_wrap;
 #[macro_use]

@@ -7,33 +7,31 @@
 
 pub mod sms2;
 
+use ::message::{Receiver, Sender};
 use super::memory_map::*;
 use super::irq::*;
 
-pub trait Io: Irq {
+pub trait Io<R>: Irq + Sender {
     type MemoryMap: MemoryMap + ?Sized;
     /// Yes, `self` does need to be mutable, because some components may change
     /// when read from; for instance, the VDP
-    fn input(&mut self, address: u16) -> u8;
-    fn output(&mut self, address: u16, x: u8);
+    fn input(&mut self, receiver: &mut R, address: u16) -> u8;
+    fn output(&mut self, receiver: &mut R, address: u16, x: u8);
     fn mem(&self) -> &Self::MemoryMap;
     fn mem_mut(&mut self) -> &mut Self::MemoryMap;
 }
 
-#[derive(Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct SimpleIo {
-    pub mem: [u8; 0x10000],
+    mem: SimpleMemoryMap,
+    id: u32,
 }
 
-impl Clone for SimpleIo {
-    fn clone(&self) -> SimpleIo {
-        *self
-    }
-}
-impl Default for SimpleIo {
-    fn default() -> SimpleIo {
+impl SimpleIo {
+    pub fn new(mem: SimpleMemoryMap) -> SimpleIo {
         SimpleIo {
-            mem: [0; 0x10000],
+            mem: mem,
+            id: 0,
         }
     }
 }
@@ -44,14 +42,56 @@ impl Irq for SimpleIo {
     fn clear_nmi(&self) {}
 }
 
-impl Io for SimpleIo {
-    type MemoryMap = [u8; 0x10000];
-    fn input(&mut self, _: u16) -> u8 { 0 }
-    fn output(&mut self, _: u16, _: u8) {}
-    fn mem(&self) -> &[u8; 0x10000] {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum SimpleIoMessage {
+    Input {
+        address: u16,
+    },
+
+    Output {
+        address: u16,
+        value: u8,
+    },
+}
+
+impl Sender for SimpleIo {
+    type Message = SimpleIoMessage;
+
+    fn id(&self) -> u32 { self.id }
+    fn set_id(&mut self, id: u32) { self.id = id; }
+}
+
+impl<R> Io<R> for SimpleIo
+where
+    R: Receiver<SimpleIoMessage>
+{
+    type MemoryMap = SimpleMemoryMap;
+
+    fn input(&mut self, receiver: &mut R, address: u16) -> u8 {
+        receiver.receive(
+            self.id(),
+            SimpleIoMessage::Input {
+                address: address,
+            }
+        );
+        0
+    }
+
+    fn output(&mut self, receiver: &mut R, address: u16, value: u8) {
+        receiver.receive(
+            self.id(),
+            SimpleIoMessage::Output {
+                address: address,
+                value: value,
+            }
+        );
+    }
+
+    fn mem(&self) -> &SimpleMemoryMap {
         &self.mem
     }
-    fn mem_mut(&mut self) -> &mut [u8; 0x10000] {
+
+    fn mem_mut(&mut self) -> &mut SimpleMemoryMap {
         &mut self.mem
     }
 }

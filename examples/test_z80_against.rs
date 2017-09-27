@@ -61,7 +61,9 @@ use std::process::exit;
 use rand::{Rng, SeedableRng};
 
 use attalus::hardware::z80::*;
+use attalus::hardware::memory_map::*;
 use attalus::hardware::io::*;
+use attalus::message::NothingReceiver;
 
 #[derive(Clone, Debug)]
 pub struct TestAgainstError {
@@ -98,13 +100,14 @@ where
         mem[i] = rng.gen();
     }
     mem[0..mem_start.len()].copy_from_slice(mem_start);
-    let mut z = Z80::new(SimpleIo { mem: mem });
+    let simple_mem_map = SimpleMemoryMap::new(mem);
+    let mut z = Z80::new(SimpleIo::new(simple_mem_map));
     for reg in [
         B, C, D, E, A, H, L,
         B0, C0, D0, E0, A0, L0, H0,
         IXH, IXL, IYH, IYL,
     ].iter() {
-        reg.set(&mut z, rng.gen());
+        z.set_reg8(*reg, rng.gen());
     }
     z
 }
@@ -131,41 +134,43 @@ fn write_core<P: AsRef<Path>>(
         }
     }
 
-    write_from(A.get(z80), &mut buf);
-    write_from(F.get(z80) as c_int, &mut buf);
-    write_from(B.get(z80), &mut buf);
-    write_from(C.get(z80), &mut buf);
-    write_from(D.get(z80), &mut buf);
-    write_from(E.get(z80), &mut buf);
-    write_from(H.get(z80), &mut buf);
-    write_from(L.get(z80), &mut buf);
+    write_from(z80.get_reg8(A), &mut buf);
+    write_from(z80.get_reg8(F) as c_int, &mut buf);
+    write_from(z80.get_reg8(B), &mut buf);
+    write_from(z80.get_reg8(C), &mut buf);
+    write_from(z80.get_reg8(D), &mut buf);
+    write_from(z80.get_reg8(E), &mut buf);
+    write_from(z80.get_reg8(H), &mut buf);
+    write_from(z80.get_reg8(L), &mut buf);
 
-    write_from(A0.get(z80), &mut buf);
-    write_from(F0.get(z80) as c_int, &mut buf);
-    write_from(B0.get(z80), &mut buf);
-    write_from(C0.get(z80), &mut buf);
-    write_from(D0.get(z80), &mut buf);
-    write_from(E0.get(z80), &mut buf);
-    write_from(H0.get(z80), &mut buf);
-    write_from(L0.get(z80), &mut buf);
+    write_from(z80.get_reg8(A0), &mut buf);
+    write_from(z80.get_reg8(F0) as c_int, &mut buf);
+    write_from(z80.get_reg8(B0), &mut buf);
+    write_from(z80.get_reg8(C0), &mut buf);
+    write_from(z80.get_reg8(D0), &mut buf);
+    write_from(z80.get_reg8(E0), &mut buf);
+    write_from(z80.get_reg8(H0), &mut buf);
+    write_from(z80.get_reg8(L0), &mut buf);
 
-    write_from(I.get(z80), &mut buf);
+    write_from(z80.get_reg8(I), &mut buf);
 
     let iff1: u8 = if z80.iff1 == 0xFFFFFFFFFFFFFFFF { 0 } else { 1 };
     let iff2: u8 = if z80.iff2 { 2 } else { 0 };
     write_from(iff1 | iff2, &mut buf);
 
-    write_from(R.get(z80) as c_long, &mut buf);
+    write_from(z80.get_reg8(R) as c_long, &mut buf);
 
-    write_from(PC.get(z80), &mut buf);
-    write_from(SP.get(z80), &mut buf);
-    write_from(IX.get(z80), &mut buf);
-    write_from(IY.get(z80), &mut buf);
+    write_from(z80.get_reg16(PC), &mut buf);
+    write_from(z80.get_reg16(SP), &mut buf);
+    write_from(z80.get_reg16(IX), &mut buf);
+    write_from(z80.get_reg16(IY), &mut buf);
 
     let mut f = File::create(path)?;
 
     f.write_all(&buf[..])?;
-    f.write_all(&z80.io.mem()[..])?;
+    f.write_all(
+        <SimpleIo as Io<NothingReceiver>>::mem(&z80.io).slice()
+    )?;
     Ok(())
 }
 
@@ -224,13 +229,13 @@ where
     {
         let mut t: T = Default::default();
         read_into(&mut t, i, buf);
-        reg.set(z, t);
+        reg.set(&mut NothingReceiver, z, t);
     }
 
     read_register(&mut z80, A, &mut i, &mut buf);
     let mut ff: c_int = 0;
     read_into(&mut ff, &mut i, &mut buf);
-    F.set(&mut z80, ff as u8);
+    z80.set_reg8(F, ff as u8);
     read_register(&mut z80, B, &mut i, &mut buf);
     read_register(&mut z80, C, &mut i, &mut buf);
     read_register(&mut z80, D, &mut i, &mut buf);
@@ -241,7 +246,7 @@ where
     read_register(&mut z80, A0, &mut i, &mut buf);
     let mut ff0: c_int = 0;
     read_into(&mut ff0, &mut i, &mut buf);
-    F0.set(&mut z80, ff0 as u8);
+    z80.set_reg8(F0, ff0 as u8);
     read_register(&mut z80, B0, &mut i, &mut buf);
     read_register(&mut z80, C0, &mut i, &mut buf);
     read_register(&mut z80, D0, &mut i, &mut buf);
@@ -262,7 +267,7 @@ where
 
     let mut rr: c_long = 0;
     read_into(&mut rr, &mut i, &mut buf);
-    R.set(&mut z80, rr as u8);
+    z80.set_reg8(R, rr as u8);
 
     read_register(&mut z80, PC, &mut i, &mut buf);
     read_register(&mut z80, SP, &mut i, &mut buf);
@@ -271,7 +276,11 @@ where
 
     let mut mem = [0u8; 0x10000];
     mem.copy_from_slice(&buf[i..]);
-    z80.io = SimpleIo { mem: mem };
+    z80.io = SimpleIo::new(
+        SimpleMemoryMap::new(
+            mem
+        )
+    );
 
     Ok(z80)
 }
@@ -287,29 +296,33 @@ fn z80_same_state(lhs: &Z80<SimpleIo>, rhs: &Z80<SimpleIo>) -> bool  {
         IXH, IXL, IYH, IYL,
         SPH, SPL, PCH, PCL,
     ].iter() {
-        if reg.get(lhs) != reg.get(rhs) {
+        if lhs.get_reg8(*reg) != rhs.get_reg8(*reg) {
             println!("diff register {:?}", reg);
             return false;
         }
     }
 
-    let f_lhs = F.get(lhs);
-    let f_rhs = F.get(rhs);
+    let f_lhs = lhs.get_reg8(F);
+    let f_rhs = rhs.get_reg8(F);
     if f_lhs & 0b11010111 != f_rhs & 0b11010111 {
+        println!("diff flags {:b} {:b}", f_lhs, f_rhs);
         return false;
     }
 
-    let f0_lhs = F0.get(lhs);
-    let f0_rhs = F0.get(rhs);
+    let f0_lhs = lhs.get_reg8(F0);
+    let f0_rhs = rhs.get_reg8(F0);
     if f0_lhs & 0b11010111 != f0_rhs & 0b11010111 {
         println!("diff flags' {:b} {:b}", f0_lhs, f0_rhs);
         return false;
     }
 
-    if lhs.io.mem()[..] != rhs.io.mem()[..] {
-        for i in 0..lhs.io.mem.len() {
-            if lhs.io.mem()[i] != rhs.io.mem()[i] {
-                println!("diff memory at {:x}, {:x}, {:x}", i, lhs.io.mem()[i], rhs.io.mem()[i]);
+    let lhs_slice = <SimpleIo as Io<NothingReceiver>>::mem(&lhs.io).slice();
+    let rhs_slice = <SimpleIo as Io<NothingReceiver>>::mem(&rhs.io).slice();
+
+    if lhs_slice != rhs_slice {
+        for i in 0..lhs_slice.len() {
+            if lhs_slice[i] != rhs_slice[i] {
+                println!("diff memory at {:x}, {:x}, {:x}", i, lhs_slice[i], rhs_slice[i]);
             }
         }
         return false;
@@ -690,7 +703,7 @@ where
     for i in 0..count {
         println!("\nTest {} of \n{:}", i, instruction_sequence.mnemonics);
         let mut z80 = random_z80(&instructions[..], rng);
-        PC.set(&mut z80, 0);
+        z80.set_reg16(PC, 0);
         
         let dir = TempDir::new("attalus_tmp")?;
         let file_path = dir.path().join("core.z80");
@@ -714,11 +727,11 @@ where
         wait_for_exit(&mut child)?;
         let sim_z80 = read_core(&file_path)?;
         let mut attalus_z80 = z80.clone();
-        Z80Interpreter {}.run(&mut attalus_z80, 1000);
+        Z80Interpreter {}.run(&mut NothingReceiver, &mut attalus_z80, 1000);
 
         // z80sim bumps up PC even after a halt
-        let pc = PC.get(&attalus_z80);
-        PC.set(&mut attalus_z80, pc + 1);
+        let pc = attalus_z80.get_reg16(PC);
+        attalus_z80.set_reg16(PC, pc + 1);
 
         if !z80_same_state(&attalus_z80, &sim_z80) {
             return Ok(

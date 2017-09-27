@@ -5,7 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::log;
+use ::message::{Receiver, Sender};
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -69,15 +69,82 @@ pub struct SegaMemoryMap {
     // bitmask, with each bit indicating whether the corresponding slot in the pages field
     // can be written to
     slot_writable: u8,
+
+    id: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum SegaMemoryMapRegister {
+    FFFC,
+    FFFD,
+    FFFE,
+    FFFF,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum MemoryLocation {
+    RomAddress(u32),
+    SystemRamAddress(u16),
+    CartridgeRamAddress(u16),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum SegaMemoryMapMessage<R> {
+    AllocateFirstPage,
+    AllocateSecondPage,
+    InvalidWrite {
+        logical_address: u16,
+        value: u8,
+        location: MemoryLocation,
+    },
+    RegisterWrite {
+        register: R,
+        value: u8,
+    },
+    MapRom {
+        slot: u8,
+        page: u8,
+    },
+    MapCartridgeRam {
+        page: u8,
+        slot: u8,
+    },
+    Read {
+        logical_address: u16,
+        value: u8,
+        location: MemoryLocation,
+    },
+    Write {
+        logical_address: u16,
+        value: u8,
+        location: MemoryLocation,
+    },
+}
+
+impl Sender for SegaMemoryMap {
+    type Message = SegaMemoryMapMessage<SegaMemoryMapRegister>;
+
+    fn id(&self) -> u32 { self.id }
+    fn set_id(&mut self, id: u32) { self.id = id; }
 }
 
 /// If the `logical_address` being written to corresponds to one of the memory
 /// registers, update the memory map to reflect the new value.
-fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8) {
+fn write_check_register<R>(
+    receiver: &mut R,
+    smm: &mut SegaMemoryMap,
+    logical_address: u16,
+    value: u8
+) where
+    R: Receiver<SegaMemoryMapMessage<SegaMemoryMapRegister>>
+{
     macro_rules! ensure_one_page_allocated {
         () => {
             if smm.ram_pages_allocated == Zero {
-                log_major!("SegaMemoryMap: Allocating first page of Cartridge RAM");
+                receiver.receive(
+                    smm.id(),
+                    SegaMemoryMapMessage::AllocateFirstPage::<SegaMemoryMapRegister>
+                );
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.ram_pages_allocated = One;
@@ -89,14 +156,24 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
     macro_rules! ensure_two_pages_allocated {
         () => {
             if smm.ram_pages_allocated == Zero {
-                log_major!("SegaMemoryMap: Allocating both pages of Cartridge RAM");
+                receiver.receive(
+                    smm.id(),
+                    SegaMemoryMapMessage::AllocateFirstPage::<SegaMemoryMapRegister>
+                );
+                receiver.receive(
+                    smm.id(),
+                    SegaMemoryMapMessage::AllocateSecondPage::<SegaMemoryMapRegister>
+                );
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.memory.shrink_to_fit();
             } else if smm.ram_pages_allocated == One {
-                log_major!("SegaMemoryMap: Allocating second page of Cartridge RAM");
+                receiver.receive(
+                    smm.id(),
+                    SegaMemoryMapMessage::AllocateSecondPage::<SegaMemoryMapRegister>
+                );
                 assert!(smm.memory.len() >= 3);
                 // the first sega-page of cartridge RAM needs to come last, so
                 // push it over
@@ -148,11 +225,27 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
     match logical_address {
         0xFFFC => {
             // RAM mapping and misc register
-            log_major!("SegaMemoryMap: write to register FFFC");
+            // XXX - there is an unimplemented feature in which, if bit 4 is
+            // set, the fist sega-page of Cartridge RAM is mapped into sega-slot
+            // 3. But "no known software" uses this feature.
+            receiver.receive(
+                smm.id(),
+                SegaMemoryMapMessage::RegisterWrite {
+                    register: SegaMemoryMapRegister::FFFC,
+                    value: value,
+                },
+            );
             let impl_page = match value & 0b1100 {
                 0b1000 => {
                     // sega-slot 2 mapped to sega-page 0 of cartridge RAM
                     ensure_one_page_allocated!();
+                    receiver.receive(
+                        smm.id(),
+                        SegaMemoryMapMessage::MapCartridgeRam {
+                            page: 0,
+                            slot: 2,
+                        },
+                    );
                     smm.slot_writable |= 1 << 4;
                     smm.slot_writable |= 1 << 5;
                     (smm.memory.len() - 2) as u16
@@ -160,6 +253,13 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
                 0b1100 => {
                     // sega-slot 2 mapped to sega-page 1 of cartridge RAM
                     ensure_two_pages_allocated!();
+                    receiver.receive(
+                        smm.id(),
+                        SegaMemoryMapMessage::MapCartridgeRam {
+                            page: 1,
+                            slot: 2,
+                        },
+                    );
                     smm.slot_writable |= 1 << 4;
                     smm.slot_writable |= 1 << 5;
                     (smm.memory.len() - 4) as u16
@@ -167,6 +267,13 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
                 _ => {
                     // sega-slot 2 mapped to page of ROM indicated by register
                     // 0xFFFF
+                    receiver.receive(
+                        smm.id(),
+                        SegaMemoryMapMessage::MapRom {
+                            page: smm.reg_ffff,
+                            slot: 2,
+                        },
+                    );
                     smm.slot_writable &= !(1 << 4);
                     smm.slot_writable &= !(1 << 5);
                     (smm.reg_ffff as u16) * 2 + 1
@@ -177,8 +284,20 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
             smm.reg_fffc = value;
         }
         0xFFFD => {
-            log_major!("SegaMemoryMap: write to register FFFD");
-            log_major!("SegaMemoryMap: selecting page {:0>2X} for slot 0", sega_page);
+            receiver.receive(
+                smm.id(),
+                SegaMemoryMapMessage::RegisterWrite {
+                    register: SegaMemoryMapRegister::FFFD,
+                    value: value,
+                },
+            );
+            receiver.receive(
+                smm.id(),
+                SegaMemoryMapMessage::MapRom {
+                    page: sega_page,
+                    slot: 0,
+                },
+            );
             smm.pages[0] = impl_page;
             smm.pages[1] = impl_page + 1;
             smm.slot_writable &= !(1 << 0);
@@ -186,8 +305,20 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
             smm.reg_fffd = sega_page;
         }
         0xFFFE => {
-            log_major!("SegaMemoryMap: write to register FFFE");
-            log_major!("SegaMemoryMap: selecting page {:0>2X} for slot 1", sega_page);
+            receiver.receive(
+                smm.id(),
+                SegaMemoryMapMessage::RegisterWrite {
+                    register: SegaMemoryMapRegister::FFFE,
+                    value: value,
+                },
+            );
+            receiver.receive(
+                smm.id(),
+                SegaMemoryMapMessage::MapRom {
+                    page: sega_page,
+                    slot: 1,
+                },
+            );
             smm.pages[2] = impl_page;
             smm.pages[3] = impl_page + 1;
             smm.slot_writable &= !(1 << 2);
@@ -195,15 +326,23 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
             smm.reg_fffe = sega_page;
         }
         0xFFFF => {
-            log_major!("SegaMemoryMap: write to register FFFF");
+            receiver.receive(
+                smm.id(),
+                SegaMemoryMapMessage::RegisterWrite {
+                    register: SegaMemoryMapRegister::FFFF,
+                    value: value,
+                },
+            );
             if smm.reg_ffff & 0b1000 == 0 {
-                log_major!("SegaMemoryMap: selecting page {:0>2X} for slot 2", sega_page);
+                receiver.receive(
+                    smm.id(),
+                    SegaMemoryMapMessage::MapRom {
+                        page: sega_page,
+                        slot: 1,
+                    },
+                );
                 smm.pages[4] = impl_page;
                 smm.pages[5] = impl_page + 1;
-            } else {
-                log_major!(
-                    "SegaMemoryMap: not changing page since slot 2 is mapped to cartridge RAM"
-                );
             }
             smm.reg_ffff = sega_page;
         }
@@ -212,10 +351,59 @@ fn write_check_register(smm: &mut SegaMemoryMap, logical_address: u16, value: u8
     }
 }
 
-impl MemoryMap for SegaMemoryMap {
-    fn read(&self, logical_address: u16) -> u8 {
-        log_minor!("SegaMemoryMap: read: logical address {:0>4X}", logical_address);
+impl SegaMemoryMap {
+    #[inline(always)]
+    fn logical_address_to_memory_location(&self, logical_address: u16) -> MemoryLocation {
         if logical_address < 0x400 {
+            return MemoryLocation::RomAddress(logical_address as u32);
+        }
+        let sega_slot = (logical_address & 0xC000) >> 14; // high order 2 bits
+        let physical_address = logical_address & 0x3FFF; // low order 14 bits
+        match sega_slot {
+            0 => {
+                // ROM, page determined by register fffd
+                let page = self.reg_fffd as u32;
+                return MemoryLocation::RomAddress(page * physical_address as u32);
+            },
+            1 => {
+                // ROM, page determined by register fffe
+                let page = self.reg_fffe as u32;
+                return MemoryLocation::RomAddress(page * physical_address as u32);
+            },
+            2 => {
+                match self.reg_ffff & 0b1100 {
+                    0b1000 => {
+                        // mapped to sega-page 0 of cartridge RAM
+                        return MemoryLocation::CartridgeRamAddress(physical_address);
+                    },
+                    0b1100 => {
+                        // mapped to sega-page 1 of cartridge RAM
+                        return MemoryLocation::CartridgeRamAddress(0x4000 | physical_address);
+                    },
+                    _ => {
+                        // ROM, page determined by register ffff
+                        let page = self.reg_fffe as u32;
+                        return MemoryLocation::RomAddress(page * physical_address as u32);
+                    }
+                }
+            },
+            3 => {
+                // System RAM, which is only 8 KiB, mirrored
+                return MemoryLocation::SystemRamAddress(physical_address & 0x1FFF);
+            },
+            _ => {
+                unreachable!();
+            }
+        }
+    }
+}
+
+impl MemoryMap for SegaMemoryMap {
+    fn read<R>(&self, receiver: &mut R, logical_address: u16) -> u8
+    where
+        R: Receiver<SegaMemoryMapMessage<SegaMemoryMapRegister>>
+    {
+        let result = if logical_address < 0x400 {
             // first KiB of logical memory is always mapped to the first KiB of
             // the first page of ROM
             // Some options for the future to avoid this check:
@@ -224,35 +412,51 @@ impl MemoryMap for SegaMemoryMap {
             // KiB of the zeroth impl-page.
             // - Use 1 KiB impl-pages, and never remap the zeroth slot. (This is
             // probably the best option.)
-            log_minor!("SegaMemoryMap: read: first KiB");
-            log_minor!("SegaMemoryMap: read: physical address {:0>4X}", logical_address);
-            let result = self.memory[1][logical_address as usize];
-            log_minor!("SegaMemoryMap: read: value {:0>2X}", result);
-            return result;
-        }
-        let physical_address = logical_address & 0x1FFF; // low order 13 bits
-        let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        log_minor!("SegaMemoryMap: read: implementation slot {:0>4X}", impl_slot);
-        log_minor!("SegaMemoryMap: read: physical address {:0>4X}", physical_address);
-        let impl_page = self.pages[impl_slot as usize];
-        let result = self.memory[impl_page as usize][physical_address as usize];
-        log_minor!("SegaMemoryMap: read: value {:0>2X}", result);
+            self.memory[1][logical_address as usize]
+        } else {
+            let physical_address = logical_address & 0x1FFF; // low order 13 bits
+            let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
+            let impl_page = self.pages[impl_slot as usize];
+            self.memory[impl_page as usize][physical_address as usize]
+        };
+        receiver.receive(
+            self.id(),
+            SegaMemoryMapMessage::Read {
+                logical_address: logical_address,
+                value: result,
+                location: self.logical_address_to_memory_location(logical_address),
+            },
+        );
         result
     }
 
-    fn write(&mut self, logical_address: u16, value: u8) {
-        write_check_register(self, logical_address, value);
-        log_minor!("SegaMemoryMap: write: logical address {:0>4X}", logical_address);
-        log_minor!("SegaMemoryMap: write: value {:0>2X}", value);
+    fn write<R>(&mut self, receiver: &mut R, logical_address: u16, value: u8)
+    where
+        R: Receiver<SegaMemoryMapMessage<SegaMemoryMapRegister>>
+    {
+        write_check_register(receiver, self, logical_address, value);
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        log_minor!("SegaMemoryMap: write: implementation slot {:0>4X}", impl_slot);
-        log_minor!("SegaMemoryMap: write: physical address {:0>4X}", physical_address);
         if self.slot_writable & (1 << impl_slot) != 0 {
+            receiver.receive(
+                self.id(),
+                SegaMemoryMapMessage::Write {
+                    logical_address: logical_address,
+                    value: value,
+                    location: self.logical_address_to_memory_location(logical_address),
+                },
+            );
             let impl_page = self.pages[impl_slot as usize];
             self.memory[impl_page as usize][physical_address as usize] = value;
         } else {
-            log_fault!("SegaMemoryMap: write: nonwritable memory");
+            receiver.receive(
+                self.id(),
+                SegaMemoryMapMessage::InvalidWrite {
+                    logical_address: logical_address,
+                    value: value,
+                    location: self.logical_address_to_memory_location(logical_address),
+                },
+            );
         }
     }
 }
@@ -296,6 +500,7 @@ impl SegaMemoryMap {
                 pages: [1, 2, 3, 4, 5, 6, 0, 0],
                 // only the system RAM is writable
                 slot_writable: 0b11000000,
+                id: 0,
             }
         )
     }

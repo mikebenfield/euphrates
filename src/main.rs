@@ -12,8 +12,13 @@ use attalus::sdl_wrap::event::HostIo;
 use attalus::hardware::memory_map::*;
 use attalus::emulation_manager::*;
 use attalus::sdl_wrap::video::Window;
+use attalus::message::Sender;
 
-fn start_loop<M: MemoryMap>(mm: M, n: u64) {
+fn start_loop<M: MemoryMap>(mm: M, n: u64)
+where
+    M: MemoryMap,
+    <M as Sender>::Message: std::fmt::Debug,
+{
     let sdl = sdl2::init().unwrap();
     let audio = sdl.audio().unwrap();
     let host_io = HostIo::new(&sdl).unwrap();

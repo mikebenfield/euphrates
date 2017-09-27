@@ -20,9 +20,3 @@ pub fn set_bit(dest: &mut u8, bit: u8) {
 pub fn clear_bit(dest: &mut u8, bit: u8) {
     *dest &= !(1 << bit);
 }
-
-pub fn assign_bit(dest: &mut u8, bit1: u8, source: u8, bit2: u8) {
-    let bitflag = source >> bit2 & 1;
-    let bitflag_positioned = bitflag << bit1;
-    *dest = (*dest & !(1 << bit1)) | bitflag_positioned;
-}

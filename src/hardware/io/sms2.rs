@@ -5,7 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::log;
+use ::message::{Receiver, Sender};
 
 use super::*;
 use ::sdl_wrap::event::HostIo;
@@ -14,16 +14,17 @@ use ::hardware::vdp;
 use ::hardware::sn76489;
 use ::hardware::memory_map::MemoryMap;
 
-pub struct Sms2Io<M: MemoryMap> {
+pub struct Sms2Io<M> {
     memory_control: u8,
     io_control: u8,
     mem: M,
+    id: u32,
     pub host_io: HostIo,
     pub sn76489: sn76489::Sn76489,
     pub vdp: vdp::Vdp,
 }
 
-impl<M: MemoryMap> Sms2Io<M> {
+impl<M> Sms2Io<M> {
     pub fn new(mm: M, host_io: HostIo) -> Sms2Io<M> {
         let mut vdp: vdp::Vdp = Default::default();
         vdp.version = vdp::Version::SMS2;
@@ -35,11 +36,13 @@ impl<M: MemoryMap> Sms2Io<M> {
             memory_control: 0,
             io_control: 0,
             mem: mm,
+            id: 0,
         }
     }
 }
 
-impl<M: MemoryMap> irq::Irq for Sms2Io<M> {
+
+impl<M> irq::Irq for Sms2Io<M> {
     fn requesting_mi(&self) -> Option<u8> {
         self.vdp.requesting_mi()
     }
@@ -51,10 +54,39 @@ impl<M: MemoryMap> irq::Irq for Sms2Io<M> {
     }
 }
 
-impl<M: MemoryMap> Io for Sms2Io<M> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum Sms2IoMessage {
+    Input {
+        address: u16,
+        value: u8,
+    },
+
+    Output {
+        address: u16,
+        value: u8,
+    },
+
+    BogusOutput {
+        address: u16,
+        value: u8,
+    }
+}
+
+impl<M> Sender for Sms2Io<M> {
+    type Message = Sms2IoMessage;
+
+    fn id(&self) -> u32 { self.id }
+    fn set_id(&mut self, id: u32) { self.id = id; }
+}
+
+impl<M, R> Io<R> for Sms2Io<M>
+where
+    M: MemoryMap,
+    R: Receiver<Sms2IoMessage>
+{
     type MemoryMap = M;
 
-    fn input(&mut self, address: u16) -> u8 {
+    fn input(&mut self, receiver: &mut R, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
         let value =
             match masked {
@@ -97,47 +129,58 @@ impl<M: MemoryMap> Io for Sms2Io<M> {
                 }
             };
 
-        log_minor!("Io: input: address {:0>4X}, value 0x{:0>2X}", address, value);
+        receiver.receive(
+            self.id(),
+            Sms2IoMessage::Input {
+                address: address,
+                value: value,
+            }
+        );
 
         value
     }
 
-    fn output(&mut self, address: u16, x: u8) {
+    fn output(&mut self, receiver: &mut R, address: u16, x: u8) {
+        receiver.receive(
+            self.id(),
+            Sms2IoMessage::Output {
+                address: address,
+                value: x,
+            }
+        );
+
         let masked = (address & 0b11000001) as u8;
-        log_major!("Io: output to address {:0>4X}", address);
+
         match masked {
             0b00000000 => {
-                log_major!("Io: output memory control: {:0>2X}", x);
                 self.memory_control = x;
             }
             0b00000001 => {
-                log_major!("Io: output io control: {:0>2X}", x);
                 self.io_control = x;
             }
             0b01000000 => {
-                // SN76489 PSG - XXX not implemented
-                log_major!("Io: Attempted to output to SN76489 PSG");
                 self.sn76489.write(x);
             }
             0b01000001 => {
-                // SN76489 PSG - XXX not implemented
-                log_major!("Io: Attempted to output to SN76489 PSG");
                 self.sn76489.write(x);
             }
             0b10000000 => {
-                // VDP data
                 self.vdp.write_data(x);
             }
             0b10000001 => {
-                // VDP control
                 self.vdp.write_control(x);
             }
             _ => {
                 // writes to the remaining addresses have no effect
-                log_major!("Io: Attempted to output to bogus address");
+                receiver.receive(
+                    self.id(),
+                    Sms2IoMessage::BogusOutput {
+                        address: address,
+                        value: x,
+                    }
+                );
             }
         }
-        log_minor!("Io: output: address {:0>4X}, value 0x{:0>2X}", address, x);
     }
 
     fn mem(&self) -> &M {
