@@ -73,7 +73,7 @@ pub struct SegaMemoryMap {
     id: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum SegaMemoryMapRegister {
     FFFC,
     FFFD,
@@ -81,14 +81,14 @@ pub enum SegaMemoryMapRegister {
     FFFF,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum MemoryLocation {
     RomAddress(u32),
     SystemRamAddress(u16),
     CartridgeRamAddress(u16),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum SegaMemoryMapMessage<R> {
     AllocateFirstPage,
     AllocateSecondPage,

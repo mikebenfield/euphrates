@@ -42,7 +42,7 @@ impl Irq for SimpleIo {
     fn clear_nmi(&self) {}
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum SimpleIoMessage {
     Input {
         address: u16,

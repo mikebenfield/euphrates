@@ -5,7 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Sn76489 {
     // registers for the 4 different channels, in this order:
     // [channel 0 tone], [channel 0 volume], [channel 1 tone], [channel 1 volume],

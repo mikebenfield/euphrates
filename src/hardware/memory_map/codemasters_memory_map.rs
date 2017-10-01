@@ -31,7 +31,7 @@ pub struct CodemastersMemoryMap {
     id: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum CodemastersMemoryMapRegister {
     R0000,
     R4000,

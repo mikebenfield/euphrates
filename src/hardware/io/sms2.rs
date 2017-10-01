@@ -54,7 +54,7 @@ impl<M> irq::Irq for Sms2Io<M> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Sms2IoMessage {
     Input {
         address: u16,
