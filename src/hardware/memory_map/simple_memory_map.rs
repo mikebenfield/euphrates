@@ -39,7 +39,7 @@ impl SimpleMemoryMap {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum SimpleMemoryMapMessage {
     Read {
         address: u16,

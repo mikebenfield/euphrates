@@ -5,9 +5,12 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use serde::ser::{Serialize};
+use serde::de::{DeserializeOwned};
+
 pub trait Sender
 {
-    type Message;
+    type Message: DeserializeOwned + Serialize;
 
     fn id(&self) -> u32;
 

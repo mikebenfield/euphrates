@@ -10,6 +10,9 @@ extern crate bitflags;
 extern crate rand;
 extern crate tempdir;
 extern crate sdl2;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 pub mod message;
 mod bits;

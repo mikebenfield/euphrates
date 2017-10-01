@@ -33,7 +33,7 @@ pub use self::sega_memory_map::*;
 pub use self::codemasters_memory_map::*;
 pub use self::simple_memory_map::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct MemoryMapError {
     msg: String
 }

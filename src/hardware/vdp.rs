@@ -11,7 +11,7 @@ use std::error::Error;
 use ::bits::*;
 use super::irq::Irq;
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ScreenError(pub String);
 
 impl<T: Error> From<T> for ScreenError {
@@ -26,6 +26,7 @@ pub trait Screen {
     fn set_resolution(&mut self, width: usize, height: usize) -> Result<(), ScreenError>;
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NoScreen;
 
 impl Screen for NoScreen {
@@ -34,7 +35,7 @@ impl Screen for NoScreen {
     fn set_resolution(&mut self, _: usize, _: usize) -> Result<(), ScreenError> { Ok(()) }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum System {
     NTSC, PAL,
 }
@@ -45,14 +46,14 @@ impl Default for System {
 
 use self::System::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Version {
     SMS, SMS2, GG, MD,
 }
 
 use self::Version::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Resolution {
     Low = 192, Medium = 224, High = 240,
 }
@@ -64,6 +65,7 @@ impl Default for Version {
 }
 
 bitflags! {
+    #[derive(Serialize, Deserialize)]
     struct StatusFlags: u8 {
         const FRAME_INTERRUPT = 0b10000000;
         const SPRITE_OVERFLOW = 0b01000000;

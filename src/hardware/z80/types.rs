@@ -14,7 +14,7 @@ use ::hardware::memory_map::MemoryMap;
 use ::hardware::io::Io;
 
 #[cfg(target_endian = "little")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg8 {
     C, B, E, D, F, A, L, H,
     C0, B0, E0, D0, F0, A0, L0, H0,
@@ -23,7 +23,7 @@ pub enum Reg8 {
 }
 
 #[cfg(target_endian = "big")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg8 {
     B, C, D, E, A, F, H, L,
     B0, C0, D0, E0, A0, F0, H0, L0,
@@ -33,7 +33,7 @@ pub enum Reg8 {
 
 pub use self::Reg8::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg16 {
     BC, DE, AF, HL,
     BC0, DE0, AF0, HL0,
@@ -43,7 +43,7 @@ pub enum Reg16 {
 
 pub use self::Reg16::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ConditionCode {
     NZcc, Zcc, NCcc, Ccc, POcc, PEcc, Pcc, Mcc
 }
@@ -82,7 +82,7 @@ impl Flags {
 
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum InterruptMode {
     Im0, Im1, Im2
 }
@@ -93,10 +93,10 @@ impl Default for InterruptMode {
     fn default() -> InterruptMode { Im0 }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Address<T>(pub T);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Shift(pub Reg16, pub i8);
 
 #[derive(Clone, Copy, Debug)]
@@ -123,7 +123,7 @@ pub struct Z80<I> {
     id: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Opcode {
     OneByte([u8; 1]),
     TwoBytes([u8; 2]),
@@ -131,7 +131,7 @@ pub enum Opcode {
     FourBytes([u8; 4]),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Z80Message {
     Reg8Changed {
         register: Reg8,
