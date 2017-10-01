@@ -10,7 +10,7 @@
 //! sequences with several different starting Z80 states. `z80sim` doesn't
 //! implement most undocumented opcodes, so we don't test undocumented opcodes.
 //! We also don't test opcodes like `lddr` that are likely to overwrite our own
-//! instructions. It is still in princple possible that our instructions could be
+//! instructions. It is still in principle possible that our instructions could be
 //! overwritten by the various ld instructions with undocumented opcodes, and
 //! that could lead to different results between `z80sim` and `attalus`. In my
 //! light testing that seems not to happen.
