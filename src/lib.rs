@@ -13,7 +13,11 @@ extern crate sdl2;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate rlua;
+#[macro_use]
+extern crate quick_error;
 
+pub mod lua;
 pub mod message;
 mod bits;
 pub mod sdl_wrap;

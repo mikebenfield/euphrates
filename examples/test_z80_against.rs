@@ -290,7 +290,7 @@ where
 /// Actually, doesn't check I or R registers. Doesn't check undefined bits in F
 /// or F0.
 fn z80_same_state(lhs: &Z80<SimpleIo>, rhs: &Z80<SimpleIo>) -> bool  {
-    for reg in [ 
+    for reg in [
         B, C, D, E, A, H, L,
         B0, C0, D0, E0, A0, L0, H0,
         IXH, IXL, IYH, IYL,
@@ -704,7 +704,7 @@ where
         println!("\nTest {} of \n{:}", i, instruction_sequence.mnemonics);
         let mut z80 = random_z80(&instructions[..], rng);
         z80.set_reg16(PC, 0);
-        
+
         let dir = TempDir::new("attalus_tmp")?;
         let file_path = dir.path().join("core.z80");
         write_core(&file_path, &z80)?;

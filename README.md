@@ -14,18 +14,18 @@ some of which I've already accomplished:
 
 - [x] emulate the Z80 processor using a software interpreter;
 
-- [x] emulate the standard Sega memory mapper with an index array; 
+- [x] emulate the standard Sega memory mapper with an index array;
 
-- [ ] emulate the Video Display Processor, drawing graphics with SDL;
+- [x] emulate the Video Display Processor, drawing graphics with SDL;
 
-- [ ] emulate controller input so that it's possible to play some games;
+- [x] emulate controller input so that it's possible to play some games;
 
-- [ ] emulate the SN76489 sound chip;
+- [x] emulate the SN76489 sound chip;
 
 - [ ] implement VDP modes and other features necessary to also play Game Gear
 games;
 
-- [ ] emulate the CodeMasters memory mapper with an index array;
+- [x] emulate the CodeMasters memory mapper with an index array;
 
 - [ ] emulate the YM2413 FM sound unit;
 
@@ -48,7 +48,7 @@ Attalus is Copyright 2017, Michael Benfield.
 
 You may distribute and/or modify Attalus under the terms of the GNU General
 Public License as published by the Free Sofware Foundation, either version 3
-of the license or (at your option) any later version. 
+of the license or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS

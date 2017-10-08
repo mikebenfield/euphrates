@@ -656,7 +656,7 @@ impl<I> Z80<I>
             a.wrapping_add(diff)
         };
         A.set(receiver, self, new_a);
-        
+
         let mut f = self.flags();
         f.set_parity(new_a);
         f.set_zero(new_a);
