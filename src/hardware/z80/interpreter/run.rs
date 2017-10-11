@@ -67,6 +67,14 @@ where
         };
     }
 
+    macro_rules! check_return {
+        () => {
+            if z.cycles >= cycles || receiver.wants_pause() {
+                return;
+            }
+        }
+    }
+
     macro_rules! do_instruction {
         (halt, $t_states: expr $(,$arguments: tt)*) => {
             use std;
@@ -79,9 +87,7 @@ where
         ($mnemonic: ident, $t_states: expr $(,$arguments: tt)*) => {
             apply_args!($mnemonic, $($arguments),*);
             z.cycles += $t_states;
-            if z.cycles >= cycles {
-                return;
-            }
+            check_return!();
             prefix = Prefix::NoPrefix;
             continue;
         };
@@ -326,6 +332,13 @@ where
     loop {
         match prefix {
             Prefix::NoPrefix => {
+                receiver.receive(
+                    z.id(),
+                    Z80Message::ReadingPcToExecute(z.get_reg16(PC))
+                );
+                if receiver.wants_pause() {
+                    return;
+                }
                 opcode = read_pc(receiver, z);
                 inc_r(z);
                 process_instructions!(instruction_noprefix, d, e, n, nn);
@@ -352,9 +365,7 @@ where
                 inc_r(z);
                 process_instructions!(instruction_ed, d, e, n, nn);
                 z.cycles += 8;
-                if z.cycles >= cycles {
-                    return;
-                }
+                check_return!();
                 prefix = Prefix::NoPrefix;
                 continue;
             },
@@ -363,9 +374,7 @@ where
                 inc_r(z);
                 process_instructions!(instruction_cb, d, e, n, nn);
                 z.cycles += 8;
-                if z.cycles >= cycles {
-                    return;
-                }
+                check_return!();
                 prefix = Prefix::NoPrefix;
                 continue;
             },

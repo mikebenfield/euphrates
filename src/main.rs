@@ -20,7 +20,7 @@ use attalus::sdl_wrap::event::HostIo;
 use attalus::hardware::memory_map::*;
 use attalus::emulation_manager::*;
 use attalus::sdl_wrap::video::Window;
-use attalus::message::Sender;
+use attalus::message::{Receiver, Sender};
 use attalus::lua::serde as lua_serde;
 
 quick_error! {
@@ -46,6 +46,7 @@ fn start_loop<M: MemoryMap>(mm: M, n: u64)
 where
     M: MemoryMap,
     <M as Sender>::Message: std::fmt::Debug,
+    DisassemblingReceiver: Receiver<<M as Sender>::Message>,
 {
     let sdl = sdl2::init().unwrap();
     let audio = sdl.audio().unwrap();
