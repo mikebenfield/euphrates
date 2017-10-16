@@ -8,7 +8,6 @@
 use ::message::{Receiver, Sender};
 
 use super::*;
-use ::sdl_wrap::event::HostIo;
 use ::hardware::irq;
 use ::hardware::vdp;
 use ::hardware::sn76489;
@@ -19,26 +18,33 @@ pub struct Sms2Io<M> {
     io_control: u8,
     mem: M,
     id: u32,
-    pub host_io: HostIo,
+    joypad_a: u8,
+    joypad_b: u8,
     pub sn76489: sn76489::Sn76489,
     pub vdp: vdp::Vdp,
 }
 
 impl<M> Sms2Io<M> {
-    pub fn new(mm: M, host_io: HostIo) -> Sms2Io<M> {
+    pub fn new(mm: M) -> Sms2Io<M> {
         let mut vdp: vdp::Vdp = Default::default();
         vdp.version = vdp::Version::SMS2;
         let sn76489: sn76489::Sn76489 = Default::default();
         Sms2Io {
-            host_io: host_io,
             sn76489: sn76489,
             vdp: vdp,
             memory_control: 0,
             io_control: 0,
             mem: mm,
             id: 0,
+            joypad_a: 0xFF,
+            joypad_b: 0xFF,
         }
     }
+
+    pub fn joypad_a(&self) -> u8 { self.joypad_a }
+    pub fn joypad_b(&self) -> u8 { self.joypad_b }
+    pub fn set_joypad_a(&mut self, x: u8) { self.joypad_a = x; }
+    pub fn set_joypad_b(&mut self, x: u8) { self.joypad_b = x; }
 }
 
 
@@ -118,11 +124,11 @@ where
                 }
                 0b11000000 => {
                     // IO port A/B register
-                    self.host_io.joypada()
+                    self.joypad_a()
                 }
                 0b11000001 => {
                     // IO port B register
-                    self.host_io.joypadb()
+                    self.joypad_b()
                 }
                 _ => {
                     panic!("Missing IO address in input");

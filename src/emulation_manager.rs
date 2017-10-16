@@ -13,7 +13,6 @@ use sdl2;
 
 use ::lua::repl;
 use ::message::{NothingReceiver, Pausable, Receiver, Sender};
-use ::sdl_wrap::event::HostIo;
 use ::hardware::memory_map::MemoryMap;
 use ::hardware::io::sms2::Sms2Io;
 use ::hardware::z80::*;
@@ -275,8 +274,8 @@ where
     <M as Sender>::Message: std::fmt::Debug,
     DisassemblingReceiver: Receiver<<M as Sender>::Message>,
 {
-    pub fn new(mm: M, host_io: HostIo) -> EmulationManager<M> {
-        let io = Sms2Io::new(mm, host_io);
+    pub fn new(mm: M) -> EmulationManager<M> {
+        let io = Sms2Io::new(mm);
         EmulationManager {
             z80: Z80::new(io),
             receiver: Default::default(),
@@ -287,6 +286,7 @@ where
         &mut self,
         screen: &mut S,
         audio: sdl2::AudioSubsystem,
+        event_pump: sdl2::EventPump,
         n: u64,
     ) -> Result<()>
     where
@@ -371,6 +371,10 @@ where
                         audio_queue.queue(buf);
                     }
                 );
+
+                let input_status = sdl_wrap::event::input_status(&event_pump);
+                self.z80.io.set_joypad_a(input_status.joypad_a);
+                self.z80.io.set_joypad_b(input_status.joypad_b);
 
                 let z80_effective_cycles = self.z80.cycles - z80_cycles_start;
                 let total_duration = system_time.elapsed()?;

@@ -42,74 +42,59 @@ bitflags! {
     }
 }
 
-pub struct HostIo {
-    event_pump: sdl2::EventPump,
+pub struct InputStatus {
+    pub joypad_a: u8,
+    pub joypad_b: u8,
 }
 
-impl HostIo {
-    pub fn new(sdl: &sdl2::Sdl) -> Result<HostIo, Error> {
-        match sdl.event() {
-            Err(s) => return Err(Error(s)),
-            _ => {}
-        };
-        let event_pump = match sdl.event_pump() {
-            Err(s) => return Err(Error(s)),
-            Ok(e) => e,
-        };
-        Ok(
-            HostIo {
-                event_pump: event_pump,
-            }
-        )
-    }
-    pub fn joypada(&mut self) -> u8 {
-        let keyboard_state = self.event_pump.keyboard_state();
-        let mut jp_input = JoypadPortA::all();
+pub fn input_status(event_pump: &sdl2::EventPump) -> InputStatus {
+        let keyboard_state = event_pump.keyboard_state();
+
+        let mut joypad_a = JoypadPortA::all();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::W) {
-            jp_input.remove(JOYPAD1_UP);
+            joypad_a.remove(JOYPAD1_UP);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::A) {
-            jp_input.remove(JOYPAD1_LEFT);
+            joypad_a.remove(JOYPAD1_LEFT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::S) {
-            jp_input.remove(JOYPAD1_DOWN);
+            joypad_a.remove(JOYPAD1_DOWN);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::D) {
-            jp_input.remove(JOYPAD1_RIGHT);
+            joypad_a.remove(JOYPAD1_RIGHT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::F) {
-            jp_input.remove(JOYPAD1_A);
+            joypad_a.remove(JOYPAD1_A);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::G) {
-            jp_input.remove(JOYPAD1_B);
+            joypad_a.remove(JOYPAD1_B);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
-            jp_input.remove(JOYPAD2_UP);
+            joypad_a.remove(JOYPAD2_UP);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::K) {
-            jp_input.remove(JOYPAD2_DOWN);
+            joypad_a.remove(JOYPAD2_DOWN);
         }
-        jp_input.bits
-    }
 
-    pub fn joypadb(&mut self) -> u8 {
-        let keyboard_state = self.event_pump.keyboard_state();
-        let mut jp_input = JoypadPortB::all();
+        let mut joypad_b = JoypadPortB::all();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::J) {
-            jp_input.remove(JOYPAD2_LEFT);
+            joypad_b.remove(JOYPAD2_LEFT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::L) {
-            jp_input.remove(JOYPAD2_RIGHT);
+            joypad_b.remove(JOYPAD2_RIGHT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Semicolon) {
-            jp_input.remove(JOYPAD2_A);
+            joypad_b.remove(JOYPAD2_A);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Apostrophe) {
-            jp_input.remove(JOYPAD2_B);
+            joypad_b.remove(JOYPAD2_B);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Space) {
-            jp_input.remove(RESET);
+            joypad_b.remove(RESET);
         }
-        jp_input.bits
-    }
+
+        InputStatus {
+            joypad_a: joypad_a.bits,
+            joypad_b: joypad_b.bits,
+        }
 }

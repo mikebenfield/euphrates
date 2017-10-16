@@ -16,7 +16,6 @@ use std::io::Read;
 
 use serde::ser::Serialize;
 
-use attalus::sdl_wrap::event::HostIo;
 use attalus::hardware::memory_map::*;
 use attalus::emulation_manager::*;
 use attalus::sdl_wrap::video::Window;
@@ -50,16 +49,17 @@ where
 {
     let sdl = sdl2::init().unwrap();
     let audio = sdl.audio().unwrap();
-    let host_io = HostIo::new(&sdl).unwrap();
 
-    let mut em = EmulationManager::new(mm, host_io);
+    let event_pump = sdl.event_pump().unwrap();
+
+    let mut em = EmulationManager::new(mm);
 
     let mut win = Window::new(&sdl).unwrap();
     win.set_size(768, 576);
     win.set_texture_size(256, 192);
     win.set_title("Attalus");
 
-    match em.main_loop(&mut win, audio, n) {
+    match em.main_loop(&mut win, audio, event_pump, n) {
         Ok(()) => println!("Exit OK"),
         _ => println!("Exit error"),
     }
