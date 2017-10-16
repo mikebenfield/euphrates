@@ -125,7 +125,7 @@ fn write_check_register<R>(
             cmm.reg_8000 = value;
             2
         },
-        _ => unreachable!(),
+        _ => return,
     };
 
     swap_slot(cmm, receiver, slot as usize, value);
