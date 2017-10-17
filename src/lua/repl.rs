@@ -13,7 +13,7 @@ use rlua;
 
 use lua::serde as lua_serde;
 
-pub fn repl<T>(sender: mpsc::Sender<T>)
+pub fn repl<T>(sender: mpsc::Sender<T>, initial_code: &str)
 where
     T: 'static + Send + DeserializeOwned
 {
@@ -28,6 +28,8 @@ where
         }
     );
     lua.globals().raw_set("command", f).unwrap();
+
+    let () = lua.eval(initial_code, Some("Lua REPL Initial code")).unwrap();
 
     loop {
         let mut input_string = "".to_string();

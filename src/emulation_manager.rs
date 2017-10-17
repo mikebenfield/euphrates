@@ -320,7 +320,7 @@ where
             .name("Lua REPL".into())
             .spawn(
                 || {
-                    repl::repl(sender);
+                    repl::repl(sender, include_str!("emulation_manager_lua.lua"));
                 }
             ).unwrap();
 
