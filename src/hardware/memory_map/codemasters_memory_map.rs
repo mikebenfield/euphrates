@@ -31,15 +31,8 @@ pub struct CodemastersMemoryMap {
     id: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum CodemastersMemoryMapRegister {
-    R0000,
-    R4000,
-    R8000,
-}
-
 impl Sender for CodemastersMemoryMap {
-    type Message = SegaMemoryMapMessage<CodemastersMemoryMapRegister>;
+    type Message = SegaMemoryMapMessage;
 
     fn id(&self) -> u32 {
         self.id
@@ -56,11 +49,11 @@ fn write_check_register<R>(
     logical_address: u16,
     value: u8,
 ) where
-    R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+    R: Receiver<SegaMemoryMapMessage>,
 {
     fn swap_slot<R>(cmm: &mut CodemastersMemoryMap, receiver: &mut R, sega_slot: usize, value: u8)
     where
-        R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+        R: Receiver<SegaMemoryMapMessage>,
     {
         debug_assert!(sega_slot <= 3);
         let (upper_bit_set, lower_bits) = ((0x80 & value) != 0, 0x7F & value);
@@ -114,14 +107,35 @@ fn write_check_register<R>(
 
     let slot = match logical_address {
         0 => {
+            receiver.receive(
+                cmm.id(),
+                SegaMemoryMapMessage::RegisterWrite {
+                    register: 0,
+                    value: value,
+                },
+            );
             cmm.reg_0000 = value;
             0
         },
         0x4000 => {
+            receiver.receive(
+                cmm.id(),
+                SegaMemoryMapMessage::RegisterWrite {
+                    register: 0x4000,
+                    value: value,
+                },
+            );
             cmm.reg_4000 = value;
             1
         },
         0x8000 => {
+            receiver.receive(
+                cmm.id(),
+                SegaMemoryMapMessage::RegisterWrite {
+                    register: 0x8000,
+                    value: value,
+                },
+            );
             cmm.reg_8000 = value;
             2
         },
@@ -134,7 +148,7 @@ fn write_check_register<R>(
 impl MemoryMap for CodemastersMemoryMap {
     fn read<R>(&self, _receiver: &mut R, logical_address: u16) -> u8
     where
-        R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+        R: Receiver<SegaMemoryMapMessage>,
     {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
@@ -145,7 +159,7 @@ impl MemoryMap for CodemastersMemoryMap {
 
     fn write<R>(&mut self, receiver: &mut R, logical_address: u16, value: u8)
     where
-        R: Receiver<SegaMemoryMapMessage<CodemastersMemoryMapRegister>>,
+        R: Receiver<SegaMemoryMapMessage>,
     {
         write_check_register(self, receiver, logical_address, value);
         if logical_address == 0 || logical_address == 0x4000 || logical_address == 0x8000 {

@@ -248,8 +248,8 @@ impl Receiver<::hardware::io::sms2::Sms2IoMessage> for DisassemblingReceiver {
     fn receive(&mut self, _id: u32, _message: ::hardware::io::sms2::Sms2IoMessage) {}
 }
 
-impl<R> Receiver<::hardware::memory_map::sega_memory_map::SegaMemoryMapMessage<R>> for DisassemblingReceiver {
-    fn receive(&mut self, _id: u32, _message: ::hardware::memory_map::sega_memory_map::SegaMemoryMapMessage<R>) {}
+impl Receiver<::hardware::memory_map::sega_memory_map::SegaMemoryMapMessage> for DisassemblingReceiver {
+    fn receive(&mut self, _id: u32, _message: ::hardware::memory_map::sega_memory_map::SegaMemoryMapMessage) {}
 }
 
 #[allow(dead_code)]

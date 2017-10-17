@@ -73,14 +73,6 @@ pub struct SegaMemoryMap {
     id: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
-pub enum SegaMemoryMapRegister {
-    FFFC,
-    FFFD,
-    FFFE,
-    FFFF,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum MemoryLocation {
     RomAddress(u32),
@@ -89,7 +81,7 @@ pub enum MemoryLocation {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum SegaMemoryMapMessage<R> {
+pub enum SegaMemoryMapMessage {
     AllocateFirstPage,
     AllocateSecondPage,
     InvalidWrite {
@@ -98,7 +90,7 @@ pub enum SegaMemoryMapMessage<R> {
         location: MemoryLocation,
     },
     RegisterWrite {
-        register: R,
+        register: u16,
         value: u8,
     },
     MapRom {
@@ -122,7 +114,7 @@ pub enum SegaMemoryMapMessage<R> {
 }
 
 impl Sender for SegaMemoryMap {
-    type Message = SegaMemoryMapMessage<SegaMemoryMapRegister>;
+    type Message = SegaMemoryMapMessage;
 
     fn id(&self) -> u32 { self.id }
     fn set_id(&mut self, id: u32) { self.id = id; }
@@ -136,14 +128,14 @@ fn write_check_register<R>(
     logical_address: u16,
     value: u8
 ) where
-    R: Receiver<SegaMemoryMapMessage<SegaMemoryMapRegister>>
+    R: Receiver<SegaMemoryMapMessage>
 {
     macro_rules! ensure_one_page_allocated {
         () => {
             if smm.ram_pages_allocated == Zero {
                 receiver.receive(
                     smm.id(),
-                    SegaMemoryMapMessage::AllocateFirstPage::<SegaMemoryMapRegister>
+                    SegaMemoryMapMessage::AllocateFirstPage
                 );
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
@@ -158,11 +150,11 @@ fn write_check_register<R>(
             if smm.ram_pages_allocated == Zero {
                 receiver.receive(
                     smm.id(),
-                    SegaMemoryMapMessage::AllocateFirstPage::<SegaMemoryMapRegister>
+                    SegaMemoryMapMessage::AllocateFirstPage
                 );
                 receiver.receive(
                     smm.id(),
-                    SegaMemoryMapMessage::AllocateSecondPage::<SegaMemoryMapRegister>
+                    SegaMemoryMapMessage::AllocateSecondPage
                 );
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
@@ -172,7 +164,7 @@ fn write_check_register<R>(
             } else if smm.ram_pages_allocated == One {
                 receiver.receive(
                     smm.id(),
-                    SegaMemoryMapMessage::AllocateSecondPage::<SegaMemoryMapRegister>
+                    SegaMemoryMapMessage::AllocateSecondPage
                 );
                 assert!(smm.memory.len() >= 3);
                 // the first sega-page of cartridge RAM needs to come last, so
@@ -231,7 +223,7 @@ fn write_check_register<R>(
             receiver.receive(
                 smm.id(),
                 SegaMemoryMapMessage::RegisterWrite {
-                    register: SegaMemoryMapRegister::FFFC,
+                    register: 0xFFFC,
                     value: value,
                 },
             );
@@ -287,7 +279,7 @@ fn write_check_register<R>(
             receiver.receive(
                 smm.id(),
                 SegaMemoryMapMessage::RegisterWrite {
-                    register: SegaMemoryMapRegister::FFFD,
+                    register: 0xFFFD,
                     value: value,
                 },
             );
@@ -308,7 +300,7 @@ fn write_check_register<R>(
             receiver.receive(
                 smm.id(),
                 SegaMemoryMapMessage::RegisterWrite {
-                    register: SegaMemoryMapRegister::FFFE,
+                    register: 0xFFFE,
                     value: value,
                 },
             );
@@ -329,7 +321,7 @@ fn write_check_register<R>(
             receiver.receive(
                 smm.id(),
                 SegaMemoryMapMessage::RegisterWrite {
-                    register: SegaMemoryMapRegister::FFFF,
+                    register: 0xFFFF,
                     value: value,
                 },
             );
@@ -401,7 +393,7 @@ impl SegaMemoryMap {
 impl MemoryMap for SegaMemoryMap {
     fn read<R>(&self, receiver: &mut R, logical_address: u16) -> u8
     where
-        R: Receiver<SegaMemoryMapMessage<SegaMemoryMapRegister>>
+        R: Receiver<SegaMemoryMapMessage>
     {
         let result = if logical_address < 0x400 {
             // first KiB of logical memory is always mapped to the first KiB of
@@ -432,7 +424,7 @@ impl MemoryMap for SegaMemoryMap {
 
     fn write<R>(&mut self, receiver: &mut R, logical_address: u16, value: u8)
     where
-        R: Receiver<SegaMemoryMapMessage<SegaMemoryMapRegister>>
+        R: Receiver<SegaMemoryMapMessage>
     {
         write_check_register(receiver, self, logical_address, value);
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
