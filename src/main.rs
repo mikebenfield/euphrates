@@ -5,41 +5,14 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-extern crate serde;
 extern crate sdl2;
 extern crate rlua;
-#[macro_use]
-extern crate quick_error;
 extern crate attalus;
-
-use std::io::Read;
-
-use serde::ser::Serialize;
 
 use attalus::hardware::memory_map::*;
 use attalus::emulation_manager::*;
 use attalus::sdl_wrap::video::Window;
 use attalus::message::{Receiver, Sender};
-use attalus::lua::serde as lua_serde;
-
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        Lua(err: rlua::Error) {
-            from()
-        }
-
-        LuaSerde(err: lua_serde::Error) {
-            from()
-        }
-
-        Io(err: std::io::Error) {
-            from()
-        }
-    }
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 fn start_loop<M: MemoryMap>(mm: M)
 where
@@ -65,33 +38,9 @@ where
     }
 }
 
-fn do_lua(filename: &str) -> Result<()> {
-    use rlua::{Lua};
-    let lua = Lua::new();
-    let val = Some(123usize);
-    let v = val.serialize(lua_serde::Serializer::new(&lua))?;
-    lua.globals().raw_set("this_var_name", v)?;
-    lua.globals().raw_set("this_other_var",
-        lua_serde::ToLuaN(&attalus::hardware::z80::Z80Message::MaskableInterruptDenied)
-    )?;
-
-    let mut file = std::fs::File::open(filename)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let f = lua.load(contents.as_ref(), Some(filename))?;
-    let () = f.call(())?;
-    let z: lua_serde::FromLuaN<attalus::hardware::z80::Z80Message> =
-        lua.globals().raw_get("output")?;
-    println!("{:?}", z.0);
-    Ok(())
-}
-
 fn main() {
     let mut args: Vec<String> = Vec::new();
     args.extend(std::env::args());
-    if args.len() == 3 && args[1] == "lua" {
-        return do_lua(args[2].as_ref()).unwrap();
-    }
     if args.len() != 3 {
         eprintln!("Usage: exec [sega|codemasters] filename");
         return;

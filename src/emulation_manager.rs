@@ -14,6 +14,7 @@ use sdl2;
 use ::lua::repl;
 use ::message::{NothingReceiver, Pausable, Receiver, Sender};
 use ::hardware::memory_map::MemoryMap;
+use ::hardware::memory_map::sega_memory_map;
 use ::hardware::io::sms2::Sms2Io;
 use ::hardware::z80::*;
 use ::hardware::vdp::*;
@@ -65,6 +66,7 @@ enum DisassemblingReceiverStatus {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 enum DisassemblingReceiverMessage {
     Z80(Z80Message),
+    MemoryMap(sega_memory_map::SegaMemoryMapMessage),
 }
 
 const MAX_MESSAGES: usize = 50;
