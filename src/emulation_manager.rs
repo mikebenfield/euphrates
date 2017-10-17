@@ -287,7 +287,6 @@ where
         screen: &mut S,
         audio: sdl2::AudioSubsystem,
         event_pump: sdl2::EventPump,
-        n: u64,
     ) -> Result<()>
     where
         S: Screen
@@ -342,7 +341,7 @@ where
             }
         }
 
-        for _ in 0 .. n {
+        loop {
             if self.receiver.wants_pause() {
                 check_message_receiver!();
             }

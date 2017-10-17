@@ -41,7 +41,7 @@ quick_error! {
 
 type Result<T> = std::result::Result<T, Error>;
 
-fn start_loop<M: MemoryMap>(mm: M, n: u64)
+fn start_loop<M: MemoryMap>(mm: M)
 where
     M: MemoryMap,
     <M as Sender>::Message: std::fmt::Debug,
@@ -59,7 +59,7 @@ where
     win.set_texture_size(256, 192);
     win.set_title("Attalus");
 
-    match em.main_loop(&mut win, audio, event_pump, n) {
+    match em.main_loop(&mut win, audio, event_pump) {
         Ok(()) => println!("Exit OK"),
         _ => println!("Exit error"),
     }
@@ -92,21 +92,20 @@ fn main() {
     if args.len() == 3 && args[1] == "lua" {
         return do_lua(args[2].as_ref()).unwrap();
     }
-    if args.len() < 4 {
-        eprintln!("Usage: exec [sega|codemasters] filename n");
+    if args.len() != 3 {
+        eprintln!("Usage: exec [sega|codemasters] filename");
         return;
     }
     let filename = &args[2];
-    let n: u64 = args[3].parse().expect("Usage: exec [sega|codemasters] filename n");
     match args[1].as_ref() {
         "sega" => {
-            start_loop(SegaMemoryMap::new_from_file(filename.as_ref()).unwrap(), n);
+            start_loop(SegaMemoryMap::new_from_file(filename.as_ref()).unwrap());
         }
         "codemasters" => {
-            start_loop(CodemastersMemoryMap::new_from_file(filename.as_ref()).unwrap(), n);
+            start_loop(CodemastersMemoryMap::new_from_file(filename.as_ref()).unwrap());
         }
         _ => {
-            eprintln!("Usage: exec [sega|codemasters] filename n");
+            eprintln!("Usage: exec [sega|codemasters] filename");
             return;
         }
     }
