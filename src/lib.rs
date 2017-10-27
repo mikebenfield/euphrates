@@ -17,6 +17,10 @@ extern crate rlua;
 #[macro_use]
 extern crate quick_error;
 
+#[macro_use]
+extern crate attalus_derive;
+
+mod runtime_pattern;
 pub mod lua;
 pub mod message;
 mod bits;

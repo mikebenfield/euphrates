@@ -13,6 +13,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+attalus_derive = { path = "attalus_derive" }
 bitflags = "0.9"
 sdl2 = "0.30"
 rand = "0.3"

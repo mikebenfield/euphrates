@@ -11,17 +11,17 @@ use std::collections::vec_deque::VecDeque;
 
 use sdl2;
 
-use ::lua::repl;
-use ::message::{NothingReceiver, Pausable, Receiver, Sender};
-use ::hardware::memory_map::MemoryMap;
-use ::hardware::memory_map::sega_memory_map;
-use ::hardware::io::sms2::Sms2Io;
-use ::hardware::z80::*;
-use ::hardware::vdp::*;
+use lua::repl;
+use message::{NothingReceiver, Pausable, Receiver, Sender};
+use hardware::memory_map::MemoryMap;
+use hardware::memory_map::sega_memory_map;
+use hardware::io::sms2;
+use hardware::z80::*;
+use hardware::vdp::*;
+use runtime_pattern::{Matchable, WholePattern};
 
-pub struct EmulationManager<M: MemoryMap>
-{
-    z80: Z80<Sms2Io<M>>,
+pub struct EmulationManager<M: MemoryMap> {
+    z80: Z80<sms2::Sms2Io<M>>,
     receiver: DisassemblingReceiver,
 }
 
@@ -42,7 +42,7 @@ quick_error! {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Command {
     Hold,
     Resume,
@@ -52,6 +52,8 @@ pub enum Command {
     BreakAtPc(u16),
     RemovePcBreakpoints,
     ShowRecentMessages,
+    BreakAtMessage(DisassemblingReceiverMessagePattern),
+    RemoveBreakMessages,
 }
 
 const SYSTEM_FREQUENCY: u64 = 10738580;
@@ -63,10 +65,11 @@ enum DisassemblingReceiverStatus {
     None,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-enum DisassemblingReceiverMessage {
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+pub enum DisassemblingReceiverMessage {
     Z80(Z80Message),
     MemoryMap(sega_memory_map::SegaMemoryMapMessage),
+    Io(sms2::Sms2IoMessage),
 }
 
 const MAX_MESSAGES: usize = 50;
@@ -78,6 +81,7 @@ pub struct DisassemblingReceiver {
     hold: bool,
     status: DisassemblingReceiverStatus,
     pc_breakpoints: Vec<u16>,
+    message_patterns: Vec<DisassemblingReceiverMessagePattern>,
     recent_messages: VecDeque<DisassemblingReceiverMessage>,
 }
 
@@ -93,15 +97,32 @@ impl DisassemblingReceiver {
             last_pc: 0,
             opcodes: [None; 0x10000],
             hold: false,
-            status: DisassemblingReceiverStatus:: None,
+            status: DisassemblingReceiverStatus::None,
             pc_breakpoints: Vec::new(),
+            message_patterns: Vec::new(),
             recent_messages: VecDeque::new(),
         }
     }
 
+    fn receive_general(&mut self, message: DisassemblingReceiverMessage) {
+        if self.recent_messages.len() >= MAX_MESSAGES {
+            self.recent_messages.pop_front();
+        }
+        if self.message_patterns.iter().any(|pattern| {
+            let mut patt: WholePattern<
+                DisassemblingReceiverMessage,
+                DisassemblingReceiverMessagePattern,
+            > = WholePattern::Patt(pattern.clone());
+            message.matc(&mut patt)
+        }) {
+            self.hold = true;
+        }
+        self.recent_messages.push_back(message);
+    }
+
     /// Find the PC pointing at the instruction immediately before pc, if it exists
     fn back_1(&self, pc: u16) -> Option<u16> {
-        for i in 1 .. 5 {
+        for i in 1..5 {
             if pc < i {
                 return None;
             }
@@ -119,7 +140,7 @@ impl DisassemblingReceiver {
     /// Find the earliest PC pointing at an opcode, at most n steps back
     fn back_n(&self, n: u16, pc: u16) -> u16 {
         let mut pc_current = pc;
-        for _ in 0 .. n {
+        for _ in 0..n {
             match self.back_1(pc_current) {
                 None => return pc_current,
                 Some(pc_new) => pc_current = pc_new,
@@ -131,12 +152,17 @@ impl DisassemblingReceiver {
     fn disassembly_around(&self, pc: u16) -> String {
         let mut pc_current = self.back_n(5, pc);
         let mut result = "".to_owned();
-        for _ in 0 .. 10 {
+        for _ in 0..10 {
             let opcode = match self.opcodes[pc_current as usize] {
                 None => return result,
                 Some(x) => x,
             };
-            result.push_str(&format!("{:0>4X}: {: <width$}", pc_current, opcode, width=12));
+            result.push_str(&format!(
+                "{:0>4X}: {: <width$}",
+                pc_current,
+                opcode,
+                width = 12
+            ));
             match opcode.mnemonic() {
                 None => result.push_str("Unknown opcode"),
                 Some(x) => result.push_str(&format!("{}", x)),
@@ -147,10 +173,10 @@ impl DisassemblingReceiver {
             result.push('\n');
             // XXX use wrapping add?
             pc_current += match opcode {
-                Opcode::OneByte(_) => { 1 },
-                Opcode::TwoBytes(_) => { 2 },
-                Opcode::ThreeBytes(_) => { 3 },
-                Opcode::FourBytes(_) => { 4 },
+                Opcode::OneByte(_) => 1,
+                Opcode::TwoBytes(_) => 2,
+                Opcode::ThreeBytes(_) => 3,
+                Opcode::FourBytes(_) => 4,
             };
         }
         result
@@ -159,11 +185,11 @@ impl DisassemblingReceiver {
     fn receive_loop<F, M>(
         &mut self,
         mpsc_receiver: &mpsc::Receiver<Command>,
-        z80: &mut Z80<Sms2Io<M>>,
-        f: F
+        z80: &mut Z80<sms2::Sms2Io<M>>,
+        f: F,
     ) -> Option<std::time::Duration>
     where
-        F: Fn(&mut Z80<Sms2Io<M>>) -> bool,
+        F: Fn(&mut Z80<sms2::Sms2Io<M>>) -> bool,
         M: MemoryMap,
         Self: Receiver<<M as Sender>::Message>,
     {
@@ -184,13 +210,17 @@ impl DisassemblingReceiver {
                 }
                 (Ok(Command::Resume), _) => break,
                 (Ok(Command::Z80Status), _) => println!("{}", z80),
-                (Ok(Command::Disassemble), _) => println!("{}", self.disassembly_around(z80.get_reg16(PC))),
+                (Ok(Command::Disassemble), _) => {
+                    println!("{}", self.disassembly_around(z80.get_reg16(PC)))
+                }
                 (Ok(Command::BreakAtPc(pc)), _) => self.pc_breakpoints.push(pc),
                 (Ok(Command::RemovePcBreakpoints), _) => self.pc_breakpoints = Vec::new(),
                 (Ok(Command::Step), _) => {
                     self.status = DisassemblingReceiverStatus::Step;
                     break;
-                },
+                }
+                (Ok(Command::BreakAtMessage(pattern)), _) => self.message_patterns.push(pattern),
+                (Ok(Command::RemoveBreakMessages), _) => self.message_patterns = Vec::new(),
                 _ => {}
             }
             if f(z80) {
@@ -209,7 +239,9 @@ impl DisassemblingReceiver {
 }
 
 impl Pausable for DisassemblingReceiver {
-    fn wants_pause(&self) -> bool { self.hold }
+    fn wants_pause(&self) -> bool {
+        self.hold
+    }
     fn clear_pause(&mut self) {}
 }
 
@@ -218,17 +250,15 @@ impl Receiver<Z80Message> for DisassemblingReceiver {
         match message {
             Z80Message::ReadingPcToExecute(pc) => {
                 let may_break = match self.recent_messages.back() {
-                    Some(&DisassemblingReceiverMessage::Z80(Z80Message::ReadingPcToExecute(pc2))) => {
-                        pc != pc2
-                    },
-                    _ => {
-                        true
-                    }
+                    Some(
+                        &DisassemblingReceiverMessage::Z80(Z80Message::ReadingPcToExecute(pc2)),
+                    ) => pc != pc2,
+                    _ => true,
                 };
                 if may_break && self.pc_breakpoints.contains(&pc) {
                     self.hold = true;
                 }
-            },
+            }
             Z80Message::InstructionAtPc(pc) => self.last_pc = pc,
             Z80Message::InstructionOpcode(opcode) => {
                 self.opcodes[self.last_pc as usize] = Some(opcode);
@@ -236,35 +266,42 @@ impl Receiver<Z80Message> for DisassemblingReceiver {
                     self.hold = true;
                     self.status = DisassemblingReceiverStatus::None;
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
-        if self.recent_messages.len() >= MAX_MESSAGES {
-            self.recent_messages.pop_front();
-        }
-        self.recent_messages.push_back(DisassemblingReceiverMessage::Z80(message));
+        self.receive_general(DisassemblingReceiverMessage::Z80(message));
     }
 }
 
-impl Receiver<::hardware::io::sms2::Sms2IoMessage> for DisassemblingReceiver {
-    fn receive(&mut self, _id: u32, _message: ::hardware::io::sms2::Sms2IoMessage) {}
+impl Receiver<sms2::Sms2IoMessage> for DisassemblingReceiver {
+    fn receive(&mut self, _id: u32, message: ::hardware::io::sms2::Sms2IoMessage) {
+        self.receive_general(DisassemblingReceiverMessage::Io(message));
+    }
 }
 
-impl Receiver<::hardware::memory_map::sega_memory_map::SegaMemoryMapMessage> for DisassemblingReceiver {
-    fn receive(&mut self, _id: u32, _message: ::hardware::memory_map::sega_memory_map::SegaMemoryMapMessage) {}
+impl Receiver<sega_memory_map::SegaMemoryMapMessage> for DisassemblingReceiver {
+    fn receive(
+        &mut self,
+        _id: u32,
+        message: ::hardware::memory_map::sega_memory_map::SegaMemoryMapMessage,
+    ) {
+        self.receive_general(DisassemblingReceiverMessage::MemoryMap(message));
+    }
 }
 
 #[allow(dead_code)]
 struct PrintingReceiver;
 
 impl Pausable for PrintingReceiver {
-    fn wants_pause(&self) -> bool { false }
+    fn wants_pause(&self) -> bool {
+        false
+    }
     fn clear_pause(&mut self) {}
 }
 
 impl<D> Receiver<D> for PrintingReceiver
 where
-    D: std::fmt::Debug
+    D: std::fmt::Debug,
 {
     fn receive(&mut self, id: u32, message: D) {
         println!("{}: {:?}", id, message);
@@ -277,7 +314,7 @@ where
     DisassemblingReceiver: Receiver<<M as Sender>::Message>,
 {
     pub fn new(mm: M) -> EmulationManager<M> {
-        let io = Sms2Io::new(mm);
+        let io = sms2::Sms2Io::new(mm);
         EmulationManager {
             z80: Z80::new(io),
             receiver: Default::default(),
@@ -291,7 +328,7 @@ where
         event_pump: sdl2::EventPump,
     ) -> Result<()>
     where
-        S: Screen
+        S: Screen,
     {
         use sdl_wrap;
 
@@ -301,7 +338,7 @@ where
                 freq: Some((SYSTEM_FREQUENCY / 48) as i32),
                 channels: Some(1),
                 samples: Some(AUDIO_BUFFER_SIZE as u16),
-            }
+            },
         );
         let audio_queue = match result {
             Err(s) => return Err(Error::Custom(s)),
@@ -319,11 +356,10 @@ where
 
         std::thread::Builder::new()
             .name("Lua REPL".into())
-            .spawn(
-                || {
-                    repl::repl(sender, include_str!("emulation_manager_lua.lua"));
-                }
-            ).unwrap();
+            .spawn(|| {
+                repl::repl(sender, include_str!("emulation_manager_lua.lua"));
+            })
+            .unwrap();
 
         let z80_cycles_start = self.z80.cycles;
 
@@ -365,13 +401,12 @@ where
 
                 let sound_target_cycles = z80_target_cycles / 16;
 
-                self.z80.io.sn76489.queue(
-                    sound_target_cycles,
-                    &mut audio_buffer,
-                    |buf| {
+                self.z80
+                    .io
+                    .sn76489
+                    .queue(sound_target_cycles, &mut audio_buffer, |buf| {
                         audio_queue.queue(buf);
-                    }
-                );
+                    });
 
                 let input_status = sdl_wrap::event::input_status(&event_pump);
                 self.z80.io.set_joypad_a(input_status.joypad_a);
@@ -384,20 +419,18 @@ where
                 let remaining_cycles = z80_effective_cycles - cycles_given_seconds;
                 let desired_time_nanos = (3000000000 * remaining_cycles) / SYSTEM_FREQUENCY;
                 debug_assert!(desired_time_nanos < 1000000000);
-                let desired_duration = std::time::Duration::new(
-                    desired_time_seconds,
-                    desired_time_nanos as u32
-                );
-                match desired_duration.checked_add(total_hold_duration)
+                let desired_duration =
+                    std::time::Duration::new(desired_time_seconds, desired_time_nanos as u32);
+                match desired_duration
+                    .checked_add(total_hold_duration)
                     .map(|d| d.checked_sub(total_duration))
                 {
                     Some(Some(diff)) => {
                         std::thread::sleep(diff);
-                    },
+                    }
                     _ => {}
                 }
             }
         }
-        Ok(())
     }
 }

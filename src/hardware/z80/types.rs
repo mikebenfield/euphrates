@@ -15,7 +15,7 @@ use ::hardware::memory_map::MemoryMap;
 use ::hardware::io::Io;
 
 #[cfg(target_endian = "little")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Reg8 {
     C, B, E, D, F, A, L, H,
     C0, B0, E0, D0, F0, A0, L0, H0,
@@ -24,7 +24,7 @@ pub enum Reg8 {
 }
 
 #[cfg(target_endian = "big")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Reg8 {
     B, C, D, E, A, F, H, L,
     B0, C0, D0, E0, A0, F0, H0, L0,
@@ -68,7 +68,7 @@ impl fmt::Display for Reg8 {
 
 pub use self::Reg8::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Reg16 {
     BC, DE, AF, HL,
     BC0, DE0, AF0, HL0,
@@ -98,7 +98,7 @@ impl fmt::Display for Reg16 {
 
 pub use self::Reg16::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum ConditionCode {
     NZcc, Zcc, NCcc, Ccc, POcc, PEcc, Pcc, Mcc
 }
@@ -153,7 +153,7 @@ impl Flags {
 
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum InterruptMode {
     Im0, Im1, Im2
 }
@@ -164,7 +164,7 @@ impl Default for InterruptMode {
     fn default() -> InterruptMode { Im0 }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub struct Address<T>(pub T);
 
 impl fmt::Display for Address<Reg16> {
@@ -181,7 +181,7 @@ impl fmt::Display for Address<u16> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub struct Shift(pub Reg16, pub i8);
 
 impl fmt::Display for Shift {
@@ -190,7 +190,6 @@ impl fmt::Display for Shift {
         f.pad(&s)
     }
 }
-
 
 #[derive(Clone, Copy, Debug)]
 pub struct Z80<I> {
@@ -216,7 +215,7 @@ pub struct Z80<I> {
     id: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Matchable)]
 pub enum Opcode {
     OneByte([u8; 1]),
     TwoBytes([u8; 2]),
@@ -242,7 +241,7 @@ impl fmt::Display for Opcode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Parameter {
     Reg8(Reg8), Reg16(Reg16), Shift(Shift), AddressReg16(Address<Reg16>),
     AddressU16(Address<u16>), U8(u8), I8(i8), U16(u16), Cc(ConditionCode),
@@ -264,7 +263,7 @@ impl fmt::Display for Parameter {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Mnemonic {
     Ld, Push, Pop, Ex, Exx, Ldi, Ldir, Ldd, Lddr, Cpi, Cpir, Cpd, Cpdr,
     Add, Adc, Sub, Sbc, And, Or, Xor, Cp, Inc, Dec, Daa, Cpl, Neg, Ccf,
@@ -281,7 +280,7 @@ impl fmt::Display for Mnemonic {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum FullMnemonic {
     ZeroParameters(Mnemonic),
     OneParameter(Mnemonic, Parameter),
@@ -605,7 +604,7 @@ impl Opcode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Z80Message {
     Reg8Changed {
         register: Reg8,

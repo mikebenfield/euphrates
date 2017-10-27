@@ -19,6 +19,14 @@ function remove_breakpoints()
     command("RemovePcBreakpoints")
 end
 
+function remove_breakpoint_messages()
+    command("RemoveBreakMessages")
+end
+
+function break_at_message(x)
+    command({"BreakAtMessage", x})
+end
+
 function messages()
     command("ShowRecentMessages")
 end

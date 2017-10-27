@@ -228,87 +228,87 @@ impl CodemastersMemoryMap {
     }
 }
 
-mod tests {
-    use super::*;
+// mod tests {
+//     use super::*;
 
-    #[allow(dead_code)]
-    fn build_mmap() -> CodemastersMemoryMap {
-        let mut rom = [0u8; 0x10000]; // 64 KiB (8 8KiB impl-pages or 4 16KiB sega-pages)
-        rom[0x2000] = 1;
-        rom[0x4000] = 2;
-        rom[0x6000] = 3;
-        rom[0x8000] = 4;
-        rom[0xA000] = 5;
-        rom[0xC000] = 6;
-        rom[0xE000] = 7;
-        CodemastersMemoryMap::new(&rom).unwrap()
-    }
+//     #[allow(dead_code)]
+//     fn build_mmap() -> CodemastersMemoryMap {
+//         let mut rom = [0u8; 0x10000]; // 64 KiB (8 8KiB impl-pages or 4 16KiB sega-pages)
+//         rom[0x2000] = 1;
+//         rom[0x4000] = 2;
+//         rom[0x6000] = 3;
+//         rom[0x8000] = 4;
+//         rom[0xA000] = 5;
+//         rom[0xC000] = 6;
+//         rom[0xE000] = 7;
+//         CodemastersMemoryMap::new(&rom).unwrap()
+//     }
 
-    #[test]
-    fn read() {
-        let cmm = &mut build_mmap();
+//     #[test]
+//     fn read() {
+//         let cmm = &mut build_mmap();
 
-        // read impl-slot 0
-        assert!(cmm.read(0) == 0);
+//         // read impl-slot 0
+//         assert!(cmm.read(0) == 0);
 
-        // read impl-slot 1
-        assert!(cmm.read(0x2000) == 1);
+//         // read impl-slot 1
+//         assert!(cmm.read(0x2000) == 1);
 
-        // read impl-slot 2
-        assert!(cmm.read(0x4000) == 2);
+//         // read impl-slot 2
+//         assert!(cmm.read(0x4000) == 2);
 
-        // read impl-slot 3
-        assert!(cmm.read(0x6000) == 3);
+//         // read impl-slot 3
+//         assert!(cmm.read(0x6000) == 3);
 
-        // read impl-slot 4
-        assert!(cmm.read(0x8000) == 0);
+//         // read impl-slot 4
+//         assert!(cmm.read(0x8000) == 0);
 
-        // read impl-slot 5
-        assert!(cmm.read(0xA000) == 1);
+//         // read impl-slot 5
+//         assert!(cmm.read(0xA000) == 1);
 
-        // read impl-slot 6 (should be system memory)
-        assert!(cmm.read(0xC000) == 0);
+//         // read impl-slot 6 (should be system memory)
+//         assert!(cmm.read(0xC000) == 0);
 
-        // read impl-slot 7 (should be system memory)
-        assert!(cmm.read(0xE000) == 0);
-    }
+//         // read impl-slot 7 (should be system memory)
+//         assert!(cmm.read(0xE000) == 0);
+//     }
 
-    #[test]
-    fn slot0() {
-        let smm = &mut build_mmap();
+//     #[test]
+//     fn slot0() {
+//         let smm = &mut build_mmap();
 
-        smm.write(0, 3); // sega-slot 0 should now map to sega-page 3
-        assert!(smm.read(0) == 6);
-        assert!(smm.read(0x2000) == 7);
+//         smm.write(0, 3); // sega-slot 0 should now map to sega-page 3
+//         assert!(smm.read(0) == 6);
+//         assert!(smm.read(0x2000) == 7);
 
-        smm.write(0, 0); // sega-slot 0 should now map to sega-page 0
-        assert!(smm.read(0) == 0);
-        assert!(smm.read(0x2000) == 1);
-    }
+//         smm.write(0, 0); // sega-slot 0 should now map to sega-page 0
+//         assert!(smm.read(0) == 0);
+//         assert!(smm.read(0x2000) == 1);
+//     }
 
-    #[test]
-    fn slot1() {
-        let smm = &mut build_mmap();
+//     #[test]
+//     fn slot1() {
+//         let smm = &mut build_mmap();
 
-        smm.write(0x4000, 3); // sega-slot 1 should now map to sega-page 3
-        assert!(smm.read(0x4000) == 6);
-        assert!(smm.read(0x6000) == 7);
+//         smm.write(0x4000, 3); // sega-slot 1 should now map to sega-page 3
+//         assert!(smm.read(0x4000) == 6);
+//         assert!(smm.read(0x6000) == 7);
 
-        smm.write(0x4000, 0); // sega-slot 1 should now map to sega-page 0
-        assert!(smm.read(0x4000) == 0);
-        assert!(smm.read(0x6000) == 1);
-    }
+//         smm.write(0x4000, 0); // sega-slot 1 should now map to sega-page 0
+//         assert!(smm.read(0x4000) == 0);
+//         assert!(smm.read(0x6000) == 1);
+//     }
 
-    #[test]
-    fn slot2() {
-        let smm = &mut build_mmap();
+//     #[test]
+//     fn slot2() {
+//         let smm = &mut build_mmap();
 
-        smm.write(0x8000, 3); // sega-slot 2 should now map to sega-page 3
-        assert!(smm.read(0x8000) == 6);
-        assert!(smm.read(0xA000) == 7);
+//         smm.write(0x8000, 3); // sega-slot 2 should now map to sega-page 3
+//         assert!(smm.read(0x8000) == 6);
+//         assert!(smm.read(0xA000) == 7);
 
-        smm.write(0x8000, 0); // sega-slot 2 should now map to sega-page 0
-        assert!(smm.read(0x8000) == 0);
-        assert!(smm.read(0xA000) == 1);
-    }
-}
+//         smm.write(0x8000, 0); // sega-slot 2 should now map to sega-page 0
+//         assert!(smm.read(0x8000) == 0);
+//         assert!(smm.read(0xA000) == 1);
+//     }
+// }
