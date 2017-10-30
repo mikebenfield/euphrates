@@ -363,7 +363,7 @@ impl SegaMemoryMap {
                 return MemoryLocation::RomAddress(page * physical_address as u32);
             },
             2 => {
-                match self.reg_ffff & 0b1100 {
+                match self.reg_fffc & 0b1100 {
                     0b1000 => {
                         // mapped to sega-page 0 of cartridge RAM
                         return MemoryLocation::CartridgeRamAddress(physical_address);
@@ -374,7 +374,7 @@ impl SegaMemoryMap {
                     },
                     _ => {
                         // ROM, page determined by register ffff
-                        let page = self.reg_fffe as u32;
+                        let page = self.reg_ffff as u32;
                         return MemoryLocation::RomAddress(page * physical_address as u32);
                     }
                 }
