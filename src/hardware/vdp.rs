@@ -8,8 +8,11 @@
 use std;
 use std::error::Error;
 
+use serde::Serialize;
+
 use ::bits::*;
 use super::irq::Irq;
+use ::message::{Receiver, Sender};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ScreenError(pub String);
@@ -26,7 +29,7 @@ pub trait Screen {
     fn set_resolution(&mut self, width: usize, height: usize) -> Result<(), ScreenError>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NoScreen;
 
 impl Screen for NoScreen {
@@ -35,7 +38,7 @@ impl Screen for NoScreen {
     fn set_resolution(&mut self, _: usize, _: usize) -> Result<(), ScreenError> { Ok(()) }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum System {
     NTSC, PAL,
 }
@@ -46,14 +49,14 @@ impl Default for System {
 
 use self::System::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Version {
     SMS, SMS2, GG, MD,
 }
 
 use self::Version::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Resolution {
     Low = 192, Medium = 224, High = 240,
 }
@@ -89,6 +92,65 @@ pub struct Vdp {
     cram: [u8; 32],
     vram: [u8; 0x4000],
     line_counter: u8,
+    id: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum VdpQueryResult {
+    Bool(bool),
+    Resolution(Resolution),
+    Number(u32),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum VdpQuery {
+    DisableVertScroll,
+    DisableHorizScroll,
+    LeftColumnBlank,
+    LineIrqEnable,
+    ShiftSprites,
+    Resolution,
+    ActiveLines,
+    DisplayVisible,
+    FrameIrqEnable,
+    TallSprites,
+    ZoomSprites,
+    XScroll,
+    YScroll,
+    RegLineCounter,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+pub enum VdpMessage {
+    ReadV {
+        actual: u16,
+        reported: u8,
+    },
+
+    ReadH {
+        actual: u16,
+        reported: u8,
+    },
+
+    ReadData(u8),
+
+    ReadControl(u8),
+
+    WriteData(u8),
+
+    WriteControl(u8),
+}
+
+impl Sender for Vdp {
+    type Message = VdpMessage;
+
+    fn id(&self) -> u32 {
+        self.id
+    }
+
+    fn set_id(&mut self, id: u32) {
+        self.id = id;
+    }
 }
 
 impl std::fmt::Debug for Vdp {
@@ -126,11 +188,12 @@ impl Default for Vdp {
             h: 0,
             v: 0,
             address0: 0,
-            buffer: 0,
             reg: [0; 11],
+            buffer: 0,
             cram: [0; 32],
             vram: [0; 0x4000],
             line_counter: 0,
+            id: 0,
         }
     }
 }
@@ -298,7 +361,11 @@ impl Vdp {
         let addr = self.address0;
         self.address0 = (addr.wrapping_add(1) & 0x3FFF) | (addr & 0xC000);
     }
-    pub fn read_v(&self) -> u8 {
+
+    pub fn read_v<R>(&self, receiver: &mut R) -> u8
+    where
+        R: Receiver<VdpMessage>,
+    {
         let result =
             match (self.system, self.resolution(), self.v) {
                 (NTSC, Low, 0...0xDA) => self.v,
@@ -316,28 +383,89 @@ impl Vdp {
                 (PAL, High, 0x100...0x10A) => self.v-0x100,
                 (PAL, High, _) => self.v-57,
             };
+        receiver.receive(
+            self.id(),
+            VdpMessage::ReadV{
+                actual: self.v,
+                reported: result as u8,
+            },
+        );
         result as u8
     }
 
-    pub fn read_h(&self) -> u8 {
-        (self.h >> 1) as u8
+    pub fn query(&self, q: VdpQuery) -> VdpQueryResult {
+        use self::VdpQuery::*;
+        use self::VdpQueryResult::*;
+
+        match q {
+            DisableVertScroll => Bool(self.disable_vert_scroll()),
+            DisableHorizScroll => Bool(self.disable_horiz_scroll()),
+            LeftColumnBlank => Bool(self.left_column_blank()),
+            LineIrqEnable => Bool(self.line_irq_enable()),
+            ShiftSprites => Bool(self.shift_sprites()),
+            VdpQuery::Resolution => VdpQueryResult::Resolution(self.resolution()),
+            ActiveLines => Number(self.active_lines() as u32),
+            DisplayVisible => Bool(self.display_visible()),
+            FrameIrqEnable => Bool(self.frame_irq_enable()),
+            TallSprites => Bool(self.tall_sprites()),
+            ZoomSprites => Bool(self.zoom_sprites()),
+            XScroll => Number(self.x_scroll() as u32),
+            YScroll => Number(self.y_scroll() as u32),
+            RegLineCounter => Number(self.reg_line_counter() as u32),
+        }
     }
 
-    pub fn read_data(&mut self) -> u8 {
+    pub fn read_h<R>(&self, receiver: &mut R) -> u8
+    where
+        R: Receiver<VdpMessage>,
+    {
+        let result = (self.h >> 1) as u8;
+        receiver.receive(
+            self.id(),
+            VdpMessage::ReadH {
+                actual: self.h,
+                reported: result,
+            }
+        );
+        result
+    }
+
+    pub fn read_data<R>(&mut self, receiver: &mut R) -> u8
+    where
+        R: Receiver<VdpMessage>
+    {
         let current_buffer = self.buffer;
         self.buffer = self.cram[(self.address() % 32) as usize];
         self.inc_address();
         self.status_flags.remove(CONTROL_FLAG);
+        receiver.receive(
+            self.id(),
+            VdpMessage::ReadData(current_buffer),
+        );
         current_buffer
     }
 
-    pub fn read_control(&mut self) -> u8 {
+    pub fn read_control<R>(&mut self, receiver: &mut R) -> u8
+    where
+        R: Receiver<VdpMessage>
+    {
         let current_status = self.status_flags.bits;
         self.status_flags.bits = 0;
+        receiver.receive(
+            self.id(),
+            VdpMessage::ReadControl(current_status),
+        );
         current_status
     }
 
-    pub fn write_data(&mut self, x: u8) {
+    pub fn write_data<R>(&mut self, receiver: &mut R, x: u8)
+    where
+        R: Receiver<VdpMessage>,
+    {
+        receiver.receive(
+            self.id(),
+            VdpMessage::WriteData(x),
+        );
         match (self.code(), self.version) {
             // XXX - no Game Gear yet
             (3, _) => {
@@ -351,7 +479,14 @@ impl Vdp {
         self.status_flags.remove(CONTROL_FLAG);
     }
 
-    pub fn write_control(&mut self, x: u8) {
+    pub fn write_control<R>(&mut self, receiver: &mut R, x: u8)
+    where
+        R: Receiver<VdpMessage>,
+    {
+        receiver.receive(
+            self.id(),
+            VdpMessage::WriteControl(x),
+        );
         if self.status_flags.contains(CONTROL_FLAG) {
             self.address0 = self.address0 & 0x00FF | (x as u16) << 8;
             if self.code() == 0 {

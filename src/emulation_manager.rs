@@ -70,6 +70,7 @@ pub enum DisassemblingReceiverMessage {
     Z80(Z80Message),
     MemoryMap(sega_memory_map::SegaMemoryMapMessage),
     Io(sms2::Sms2IoMessage),
+    Vdp(VdpMessage),
 }
 
 const MAX_MESSAGES: usize = 50;
@@ -96,7 +97,7 @@ impl DisassemblingReceiver {
         DisassemblingReceiver {
             last_pc: 0,
             opcodes: [None; 0x10000],
-            hold: false,
+            hold: true,
             status: DisassemblingReceiverStatus::None,
             pc_breakpoints: Vec::new(),
             message_patterns: Vec::new(),
@@ -279,6 +280,12 @@ impl Receiver<sms2::Sms2IoMessage> for DisassemblingReceiver {
     }
 }
 
+impl Receiver<VdpMessage> for DisassemblingReceiver {
+    fn receive(&mut self, _id: u32, message: VdpMessage) {
+        self.receive_general(DisassemblingReceiverMessage::Vdp(message));
+    }
+}
+
 impl Receiver<sega_memory_map::SegaMemoryMapMessage> for DisassemblingReceiver {
     fn receive(
         &mut self,
@@ -396,7 +403,7 @@ where
                 Z80Interpreter {}.run(&mut self.receiver, &mut self.z80, z80_target_cycles);
             }
 
-            if self.z80.io.vdp.read_v() == 0 {
+            if self.z80.io.vdp.read_v(&mut self.receiver) == 0 {
                 check_message_receiver!();
 
                 let sound_target_cycles = z80_target_cycles / 16;

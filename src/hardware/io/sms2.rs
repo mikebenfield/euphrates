@@ -88,7 +88,7 @@ impl<M> Sender for Sms2Io<M> {
 impl<M, R> Io<R> for Sms2Io<M>
 where
     M: MemoryMap,
-    R: Receiver<Sms2IoMessage>
+    R: Receiver<Sms2IoMessage> + Receiver<vdp::VdpMessage>,
 {
     type MemoryMap = M;
 
@@ -108,19 +108,19 @@ where
                 }
                 0b01000000 => {
                     // V counter
-                    self.vdp.read_v()
+                    self.vdp.read_v(receiver)
                 }
                 0b01000001 => {
                     // H counter
-                    self.vdp.read_h()
+                    self.vdp.read_h(receiver)
                 }
                 0b10000000 => {
                     // VDP data
-                    self.vdp.read_data()
+                    self.vdp.read_data(receiver)
                 }
                 0b10000001 => {
                     // VDP control
-                    self.vdp.read_control()
+                    self.vdp.read_control(receiver)
                 }
                 0b11000000 => {
                     // IO port A/B register
@@ -171,10 +171,10 @@ where
                 self.sn76489.write(x);
             }
             0b10000000 => {
-                self.vdp.write_data(x);
+                self.vdp.write_data(receiver, x);
             }
             0b10000001 => {
-                self.vdp.write_control(x);
+                self.vdp.write_control(receiver, x);
             }
             _ => {
                 // writes to the remaining addresses have no effect
