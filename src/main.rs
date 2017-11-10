@@ -6,37 +6,14 @@
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
 extern crate sdl2;
-extern crate rlua;
 extern crate attalus;
 
-use attalus::hardware::memory_map::*;
-use attalus::emulation_manager::*;
-use attalus::sdl_wrap::video::Window;
-use attalus::message::{Receiver, Sender};
-
-fn start_loop<M: MemoryMap>(mm: M)
-where
-    M: MemoryMap,
-    <M as Sender>::Message: std::fmt::Debug,
-    DisassemblingReceiver: Receiver<<M as Sender>::Message>,
-{
-    let sdl = sdl2::init().unwrap();
-    let audio = sdl.audio().unwrap();
-
-    let event_pump = sdl.event_pump().unwrap();
-
-    let mut em = EmulationManager::new(mm);
-
-    let mut win = Window::new(&sdl).unwrap();
-    win.set_size(768, 576);
-    win.set_texture_size(256, 192);
-    win.set_title("Attalus");
-
-    match em.main_loop(&mut win, audio, event_pump) {
-        Ok(()) => println!("Exit OK"),
-        _ => println!("Exit error"),
-    }
-}
+use attalus::hardware::z80;
+use attalus::systems::sega_master_system::{self, HardwareBuilder, System};
+use attalus::hardware::memory_16_8;
+use attalus::hardware::vdp;
+use attalus::sdl_wrap;
+use attalus::memo::NothingInbox;
 
 fn main() {
     let mut args: Vec<String> = Vec::new();
@@ -46,16 +23,29 @@ fn main() {
         return;
     }
     let filename = &args[2];
-    match args[1].as_ref() {
-        "sega" => {
-            start_loop(SegaMemoryMap::new_from_file(filename.as_ref()).unwrap());
-        }
-        "codemasters" => {
-            start_loop(CodemastersMemoryMap::new_from_file(filename.as_ref()).unwrap());
-        }
-        _ => {
-            eprintln!("Usage: exec [sega|codemasters] filename");
-            return;
-        }
-    }
+
+    let sdl = sdl2::init().unwrap();
+
+    let mut emulator = sega_master_system::Emulator::new(
+        sega_master_system::Frequency::Ntsc,
+        <z80::Interpreter as Default>::default(),
+        <vdp::SimpleEmulator as Default>::default(),
+    );
+    let master_system_hardware = HardwareBuilder::new().build_from_file::<memory_16_8::sega::Component>(filename).unwrap();
+    let mut master_system = System::new(NothingInbox, master_system_hardware);
+
+    let mut win = sdl_wrap::simple_graphics::Window::new(&sdl).unwrap();
+    win.set_size(768, 576);
+    win.set_texture_size(256, 192);
+    win.set_title("Attalus");
+    let mut user_interface = sdl_wrap::master_system_user_interface::SdlMasterSystemUserInterface::new(&sdl).unwrap();
+
+    let mut audio = sdl_wrap::simple_audio::Audio::new(&sdl).unwrap();
+
+    emulator.run(
+        &mut master_system,
+        &mut win,
+        &mut audio,
+        &mut user_interface,
+    ).unwrap();
 }

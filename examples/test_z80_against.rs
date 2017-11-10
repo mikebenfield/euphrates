@@ -61,9 +61,9 @@ use std::process::exit;
 use rand::{Rng, SeedableRng};
 
 use attalus::hardware::z80::*;
-use attalus::hardware::memory_map::*;
+use attalus::hardware::memory_16_8::*;
 use attalus::hardware::io::*;
-use attalus::message::NothingReceiver;
+use attalus::memo::NothingInbox;
 
 #[derive(Clone, Debug)]
 pub struct TestAgainstError {
@@ -169,7 +169,7 @@ fn write_core<P: AsRef<Path>>(
 
     f.write_all(&buf[..])?;
     f.write_all(
-        <SimpleIo as Io<NothingReceiver>>::mem(&z80.io).slice()
+        <SimpleIo as Io<NothingInbox>>::mem(&z80.io).slice()
     )?;
     Ok(())
 }
@@ -229,7 +229,7 @@ where
     {
         let mut t: T = Default::default();
         read_into(&mut t, i, buf);
-        reg.set(&mut NothingReceiver, z, t);
+        reg.set(&mut NothingInbox, z, t);
     }
 
     read_register(&mut z80, A, &mut i, &mut buf);
@@ -316,8 +316,8 @@ fn z80_same_state(lhs: &Z80<SimpleIo>, rhs: &Z80<SimpleIo>) -> bool  {
         return false;
     }
 
-    let lhs_slice = <SimpleIo as Io<NothingReceiver>>::mem(&lhs.io).slice();
-    let rhs_slice = <SimpleIo as Io<NothingReceiver>>::mem(&rhs.io).slice();
+    let lhs_slice = <SimpleIo as Io<NothingInbox>>::mem(&lhs.io).slice();
+    let rhs_slice = <SimpleIo as Io<NothingInbox>>::mem(&rhs.io).slice();
 
     if lhs_slice != rhs_slice {
         for i in 0..lhs_slice.len() {
@@ -727,7 +727,7 @@ where
         wait_for_exit(&mut child)?;
         let sim_z80 = read_core(&file_path)?;
         let mut attalus_z80 = z80.clone();
-        Z80Interpreter {}.run(&mut NothingReceiver, &mut attalus_z80, 1000);
+        Z80Interpreter {}.run(&mut NothingInbox, &mut attalus_z80, 1000);
 
         // z80sim bumps up PC even after a halt
         let pc = attalus_z80.get_reg16(PC);

@@ -7,15 +7,8 @@
 
 use sdl2;
 
-pub fn check_quit() -> bool {
-    use sdl2::sys as sdls;
-    unsafe {
-        sdls::event::SDL_PumpEvents();
-        let has_event = 0 != sdls::event::SDL_HasEvent(sdls::event::SDL_QUIT);
-        sdls::event::SDL_FlushEvent(sdls::event::SDL_QUIT);
-        has_event
-    }
-}
+use ::errors::*;
+use ::systems::sega_master_system::{MasterSystem, UserInterface, PlayerStatus, Query, Command};
 
 bitflags! {
     struct JoypadPortA: u8 {
@@ -40,13 +33,47 @@ bitflags! {
     }
 }
 
-pub struct InputStatus {
-    pub joypad_a: u8,
-    pub joypad_b: u8,
+pub struct SdlMasterSystemUserInterface {
+    joypad_a: u8,
+    joypad_b: u8,
+    quit: bool,
+    event_pump: sdl2::EventPump,
 }
 
-pub fn input_status(event_pump: &sdl2::EventPump) -> InputStatus {
-        let keyboard_state = event_pump.keyboard_state();
+impl SdlMasterSystemUserInterface {
+    pub fn new(sdl: &sdl2::Sdl) -> Result<Self> {
+        if let Err(s) = sdl.event() {
+            bail! {
+                ErrorKind::HostMultimedia(s)
+            }
+        }
+        match sdl.event_pump() {
+            Err(s) => bail! {
+                ErrorKind::HostMultimedia(s)
+            },
+            Ok(event_pump) => Ok(
+                SdlMasterSystemUserInterface {
+                    joypad_a: 0xFF,
+                    joypad_b: 0xFF,
+                    event_pump: event_pump,
+                    quit: false,
+                },
+            ),
+        }
+    }
+}
+
+impl UserInterface for SdlMasterSystemUserInterface {
+    fn update_player(&mut self) {
+        self.quit = false;
+
+        for event in self.event_pump.poll_iter() {
+            if let sdl2::event::Event::Quit { .. } = event {
+                self.quit = true;
+            }
+        }
+
+        let keyboard_state = self.event_pump.keyboard_state();
 
         let mut joypad_a = JoypadPortA::all();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::W) {
@@ -73,6 +100,7 @@ pub fn input_status(event_pump: &sdl2::EventPump) -> InputStatus {
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::K) {
             joypad_a.remove(JOYPAD2_DOWN);
         }
+        self.joypad_a = joypad_a.bits;
 
         let mut joypad_b = JoypadPortB::all();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::J) {
@@ -90,9 +118,32 @@ pub fn input_status(event_pump: &sdl2::EventPump) -> InputStatus {
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Space) {
             joypad_b.remove(RESET);
         }
+        self.joypad_b = joypad_b.bits;
+    }
 
-        InputStatus {
-            joypad_a: joypad_a.bits,
-            joypad_b: joypad_b.bits,
+    fn player_status(&self) -> PlayerStatus {
+        PlayerStatus {
+            joypad_a: self.joypad_a,
+            joypad_b: self.joypad_b,
         }
+    }
+
+    fn update_user(&mut self, _z: &mut MasterSystem) {
+    }
+
+    fn respond(&mut self, _s: String) {
+    }
+
+    fn command(&mut self) -> Option<Command> {
+        None
+    }
+
+    fn query(&mut self) -> Option<Query> {
+        None
+    }
+
+    fn wants_quit(&self) -> bool {
+        self.quit
+    }
 }
+

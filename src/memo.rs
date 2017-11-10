@@ -8,9 +8,9 @@
 use serde::ser::{Serialize};
 use serde::de::{DeserializeOwned};
 
-pub trait Sender
+pub trait Outbox
 {
-    type Message: DeserializeOwned + Serialize;
+    type Memo: DeserializeOwned + Serialize;
 
     fn id(&self) -> u32;
 
@@ -23,18 +23,22 @@ pub trait Pausable {
     fn clear_pause(&mut self);
 }
 
-pub trait Receiver<M>: Pausable {
-    fn receive(&mut self, id: u32, message: M);
+pub trait Inbox<M>: Pausable {
+    fn receive(&mut self, id: u32, memo: M);
 }
 
-pub struct NothingReceiver;
+#[derive(Copy, Clone, Default, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NothingInbox;
 
-impl Pausable for NothingReceiver {
+impl Pausable for NothingInbox {
+    #[inline(always)]
     fn wants_pause(&self) -> bool { false }
 
+    #[inline(always)]
     fn clear_pause(&mut self) {}
 }
 
-impl<M> Receiver<M> for NothingReceiver {
-    fn receive(&mut self, _id: u32, _message: M) {}
+impl<M> Inbox<M> for NothingInbox {
+    #[inline(always)]
+    fn receive(&mut self, _id: u32, _memo: M) {}
 }

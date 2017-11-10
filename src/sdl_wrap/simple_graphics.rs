@@ -5,11 +5,12 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std;
+
 use sdl2;
 
-use errors::*;
-use super::*;
-use ::hardware::vdp;
+use ::errors::*;
+use ::host_multimedia::{SimpleColor, SimpleGraphics};
 
 const DEFAULT_SIZE: usize = 256;
 
@@ -137,16 +138,35 @@ impl Window {
     }
 }
 
-impl vdp::Screen for Window {
-    fn paint(&mut self, x: usize, y: usize, color: u8) {
-        let blue = (0x30 & color) << 2;
-        let green = (0x0C & color) << 4;
-        let red = (0x03 & color) << 6;
-        let idx = 4 * (y * self.texture_width + x);
-        self.pixels[idx] = blue;
-        self.pixels[idx + 1] = green;
-        self.pixels[idx + 2] = red;
+impl SimpleGraphics for Window {
+    fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
+        self.set_texture_size(width as usize, height as usize);
+        Ok(())
+    }
+
+    fn resolution(&self) -> (u32, u32) {
+        let (x, y) = self.texture_size();
+        (x as u32, y as u32)
+    }
+
+    fn paint(&mut self, x: u32, y: u32, color: SimpleColor) -> Result<()> {
+        let idx = 4 * (y as usize * self.texture_width + x as usize);
+        self.pixels[idx] = color.blue;
+        self.pixels[idx + 1] = color.green;
+        self.pixels[idx + 2] = color.red;
         self.pixels[idx + 3] = 0;
+        Ok(())
+    }
+
+    fn get(&self, x: u32, y: u32) -> Result<SimpleColor> {
+        let idx = 4 * (y as usize * self.texture_width + x as usize);
+        Ok(
+            SimpleColor {
+                blue: self.pixels[idx],
+                green: self.pixels[idx + 1],
+                red: self.pixels[idx + 2],
+            }
+        )
     }
 
     fn render(&mut self) -> Result<()> {
@@ -159,18 +179,12 @@ impl vdp::Screen for Window {
             ErrorKind::HostMultimedia("Error updating texture".to_owned())
         )?;
         match self.canvas.copy(&self.texture, None, None) {
-            // why the hell does rust_sdl2 use String for some errors?
             Err(s) => bail!(
-                ErrorKind::Screen(s)
+                ErrorKind::HostMultimedia(s)
             ),
             _ => {}
         }
         self.canvas.present();
-        Ok(())
-    }
-
-    fn set_resolution(&mut self, width: usize, height: usize) -> Result<()> {
-        self.set_texture_size(width, height);
         Ok(())
     }
 }

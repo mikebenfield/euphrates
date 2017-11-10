@@ -14,8 +14,9 @@ use std::string::FromUtf8Error;
 
 use sdl2;
 
-pub mod video;
-pub mod event;
+pub mod master_system_user_interface;
+pub mod simple_graphics;
+pub mod simple_audio;
 
 #[derive(Clone, Debug)]
 pub struct Error(String);

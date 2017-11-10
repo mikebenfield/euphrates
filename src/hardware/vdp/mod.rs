@@ -5,13 +5,8 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-#[macro_use]
-pub mod instruction_list;
-pub mod instructions;
-mod types;
-mod machine;
-mod interpreter;
+mod vdp;
+mod emulator;
 
-pub use self::types::*;
-pub use self::machine::*;
-pub use self::interpreter::*;
+pub use self::vdp::*;
+pub use self::emulator::*;

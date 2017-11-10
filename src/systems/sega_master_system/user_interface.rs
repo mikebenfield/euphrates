@@ -5,13 +5,25 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-#[macro_use]
-pub mod instruction_list;
-pub mod instructions;
-mod types;
-mod machine;
-mod interpreter;
+use super::*;
 
-pub use self::types::*;
-pub use self::machine::*;
-pub use self::interpreter::*;
+pub struct PlayerStatus {
+    pub joypad_a: u8,
+    pub joypad_b: u8,
+}
+
+pub trait UserInterface {
+    fn update_player(&mut self);
+
+    fn player_status(&self) -> PlayerStatus;
+
+    fn update_user(&mut self, z: &mut MasterSystem);
+
+    fn respond(&mut self, s: String);
+
+    fn command(&mut self) -> Option<Command>;
+
+    fn query(&mut self) -> Option<Query>;
+
+    fn wants_quit(&self) -> bool;
+}

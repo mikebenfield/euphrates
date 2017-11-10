@@ -5,12 +5,18 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use errors::*;
-use message::{Receiver, Sender};
-use super::*;
+use ::errors::*;
+use ::has::Has;
+use ::memo::{Inbox, Outbox};
 
-pub struct CodemastersMemoryMap {
-    // As in the SegaMemoryMap, memory is a sequence of 8 KiB
+use super::*;
+use super::sega::{Memo, MasterSystemMemory};
+
+/// The Codemasters memory map, used in Sega Master System games created by
+/// British game developer Codemasters.
+#[derive(Clone)]
+pub struct Component {
+    // As in the `sega::Component`, memory is a sequence of 8 KiB
     // implementation-pages. The first implementation-page corresponds to the
     // console RAM, and then pairs of pages correspond to 16 KiB
     // codemasters-pages of cartridge ROM. Finally, there *may* be a final 8 KiB
@@ -20,7 +26,7 @@ pub struct CodemastersMemoryMap {
     cartridge_ram_allocated: bool,
 
     // The `pages` field works identically to the corresponding field in
-    // SegaMemoryMap
+    // `sega::Component`.
     pages: [u16; 8],
 
     reg_0000: u8,
@@ -32,8 +38,8 @@ pub struct CodemastersMemoryMap {
     id: u32,
 }
 
-impl Sender for CodemastersMemoryMap {
-    type Message = SegaMemoryMapMessage;
+impl Outbox for Component {
+    type Memo = Memo;
 
     fn id(&self) -> u32 {
         self.id
@@ -44,26 +50,45 @@ impl Sender for CodemastersMemoryMap {
     }
 }
 
-fn write_check_register<R>(
-    cmm: &mut CodemastersMemoryMap,
-    receiver: &mut R,
+fn write_check_register<T>(
+    t: &mut T,
     logical_address: u16,
     value: u8,
 ) where
-    R: Receiver<SegaMemoryMapMessage>,
+    T: Inbox<Memo> + Has<Component>,
 {
-    fn swap_slot<R>(cmm: &mut CodemastersMemoryMap, receiver: &mut R, sega_slot: usize, value: u8)
+    macro_rules! receive {
+        ($x: expr) => {
+            {
+                let id = t.get().id();
+                let __y = $x;
+                t.receive(id, __y);
+            }
+        }
+    }
+
+    fn swap_slot<T>(t: &mut T, sega_slot: usize, value: u8)
     where
-        R: Receiver<SegaMemoryMapMessage>,
+        T: Inbox<Memo> + Has<Component>,
     {
+        macro_rules! receive {
+            ($x: expr) => {
+                {
+                    let id = t.get().id();
+                    let __y = $x;
+                    t.receive(id, __y);
+                }
+            }
+        }
+
         debug_assert!(sega_slot <= 3);
         let (upper_bit_set, lower_bits) = ((0x80 & value) != 0, 0x7F & value);
         let impl_slot0 = 2 * sega_slot;
         let impl_slot1 = impl_slot0 + 1;
-        let rom_impl_page_count = if cmm.cartridge_ram_allocated {
-            cmm.memory.len() - 2
+        let rom_impl_page_count = if t.get().cartridge_ram_allocated {
+            t.get().memory.len() - 2
         } else {
-            cmm.memory.len() - 1
+            t.get().memory.len() - 1
         };
         let rom_sega_page_count = (rom_impl_page_count / 2) as u8;
         let sega_page = if rom_sega_page_count == 0 {
@@ -71,112 +96,103 @@ fn write_check_register<R>(
         } else {
             lower_bits % rom_sega_page_count
         };
-        receiver.receive(
-            cmm.id(),
-            SegaMemoryMapMessage::MapRom {
+        receive! (
+            Memo::MapRom {
                 slot: sega_slot as u8,
                 page: sega_page,
-            },
+            }
         );
         let impl_page = (sega_page as u16) * 2 + 1;
         if upper_bit_set {
             // RAM goes into the second implementation-slot
-            if !cmm.cartridge_ram_allocated {
-                receiver.receive(
-                    cmm.id(),
-                    SegaMemoryMapMessage::AllocateFirstPage,
-                );
-                cmm.memory.push([0; 0x2000]);
-                cmm.memory.shrink_to_fit();
+            if !t.get().cartridge_ram_allocated {
+                receive!(Memo::AllocateFirstPage);
+                t.get_mut().memory.push([0; 0x2000]);
+                t.get_mut().memory.shrink_to_fit();
             }
-            receiver.receive(
-                cmm.id(),
-                SegaMemoryMapMessage::MapCartridgeRam {
+            receive!(
+                Memo::MapCartridgeRam {
                     slot: sega_slot as u8,
                     page: sega_page,
-                },
+                }
             );
+            let cmm = t.get_mut();
             cmm.pages[impl_slot1] = (cmm.memory.len() - 1) as u16;
             cmm.slot_writable |= 1 << impl_slot1;
         } else {
+            let cmm = t.get_mut();
             cmm.pages[impl_slot1] = impl_page + 1;
             cmm.slot_writable &= !(1 << impl_slot1);
         }
-        cmm.pages[impl_slot0] = impl_page;
+        t.get_mut().pages[impl_slot0] = impl_page;
         // even impl_slots will never be marked as writable anyway
     }
 
     let slot = match logical_address {
         0 => {
-            receiver.receive(
-                cmm.id(),
-                SegaMemoryMapMessage::RegisterWrite {
+            receive!(
+                Memo::RegisterWrite {
                     register: 0,
                     value: value,
-                },
+                }
             );
-            cmm.reg_0000 = value;
+            t.get_mut().reg_0000 = value;
             0
         },
         0x4000 => {
-            receiver.receive(
-                cmm.id(),
-                SegaMemoryMapMessage::RegisterWrite {
+            receive!(
+                Memo::RegisterWrite {
                     register: 0x4000,
                     value: value,
-                },
+                }
             );
-            cmm.reg_4000 = value;
+            t.get_mut().reg_4000 = value;
             1
         },
         0x8000 => {
-            receiver.receive(
-                cmm.id(),
-                SegaMemoryMapMessage::RegisterWrite {
+            receive!(
+                Memo::RegisterWrite {
                     register: 0x8000,
                     value: value,
-                },
+                }
             );
-            cmm.reg_8000 = value;
+            t.get_mut().reg_8000 = value;
             2
         },
         _ => return,
     };
 
-    swap_slot(cmm, receiver, slot as usize, value);
+    swap_slot(t, slot as usize, value);
 }
 
-impl MemoryMap for CodemastersMemoryMap {
-    fn read<R>(&self, _receiver: &mut R, logical_address: u16) -> u8
-    where
-        R: Receiver<SegaMemoryMapMessage>,
-    {
+impl<T> ComponentOf<T> for Component
+where
+    T: Inbox<Memo> + Has<Component>
+{
+    fn read(t: &mut T, logical_address: u16) -> u8 {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        let impl_page = self.pages[impl_slot as usize];
-        let result = self.memory[impl_page as usize][physical_address as usize];
+        let impl_page = t.get().pages[impl_slot as usize];
+        let result = t.get().memory[impl_page as usize][physical_address as usize];
         result
     }
 
-    fn write<R>(&mut self, receiver: &mut R, logical_address: u16, value: u8)
-    where
-        R: Receiver<SegaMemoryMapMessage>,
-    {
-        write_check_register(self, receiver, logical_address, value);
+    fn write(t: &mut T, logical_address: u16, value: u8) {
+        write_check_register(t, logical_address, value);
         if logical_address == 0 || logical_address == 0x4000 || logical_address == 0x8000 {
             return;
         }
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        if self.slot_writable & (1 << impl_slot) != 0 {
-            let impl_page = self.pages[impl_slot as usize];
-            self.memory[impl_page as usize][physical_address as usize] = value;
+        if t.get().slot_writable & (1 << impl_slot) != 0 {
+            let impl_page = t.get().pages[impl_slot as usize];
+            t.get_mut().memory[impl_page as usize][physical_address as usize] = value;
         } else {
         }
     }
 }
 
-impl MasterSystemMemoryMap for CodemastersMemoryMap {
+impl MasterSystemMemory for Component {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
             bail! {
@@ -200,7 +216,7 @@ impl MasterSystemMemoryMap for CodemastersMemoryMap {
             memory.push(impl_page);
         }
 
-        Ok(CodemastersMemoryMap {
+        Ok(Component {
             memory: memory,
             cartridge_ram_allocated: false,
             // according to smspower.org, the mapper is initialized with
@@ -221,7 +237,7 @@ impl MasterSystemMemoryMap for CodemastersMemoryMap {
 //     use super::*;
 
 //     #[allow(dead_code)]
-//     fn build_mmap() -> CodemastersMemoryMap {
+//     fn build_mmap() -> Component {
 //         let mut rom = [0u8; 0x10000]; // 64 KiB (8 8KiB impl-pages or 4 16KiB sega-pages)
 //         rom[0x2000] = 1;
 //         rom[0x4000] = 2;
@@ -230,7 +246,7 @@ impl MasterSystemMemoryMap for CodemastersMemoryMap {
 //         rom[0xA000] = 5;
 //         rom[0xC000] = 6;
 //         rom[0xE000] = 7;
-//         CodemastersMemoryMap::new(&rom).unwrap()
+//         Component::new(&rom).unwrap()
 //     }
 
 //     #[test]
