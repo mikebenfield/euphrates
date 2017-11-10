@@ -13,25 +13,37 @@ use serde;
 use serde::ser;
 use serde::de;
 
-quick_error! {
-    #[derive(Clone, Debug)]
-    pub enum Error {
-        Custom(s: String) {}
+pub mod errors {
+    use rlua;
 
-        Lua(err: rlua::Error) {
-            from()
+    error_chain! {
+
+        foreign_links {
+            Lua(rlua::Error);
         }
 
-        DeserializeType(s: String) {}
+        errors {
+            Custom(s: String) {
+                description("Custom error")
+                display("Custom error: {}", s)
+            }
+
+            DeserializeType(s: String) {
+                description("Error deserializing type")
+                display("Error deserializing type: {}", s)
+            }
+        }
     }
 }
+
+pub use self::errors::*;
 
 impl ser::Error for Error {
     fn custom<T>(msg: T) -> Self
     where
         T: std::fmt::Display,
     {
-        Error::Custom(format!("{}", msg))
+        Error::from(ErrorKind::Custom(format!("{}", msg)))
     }
 }
 
@@ -40,11 +52,9 @@ impl de::Error for Error {
     where
         T: std::fmt::Display,
     {
-        Error::Custom(format!("{}", msg))
+        Error::from(ErrorKind::Custom(format!("{}", msg)))
     }
 }
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct Serializer<'lua> {
     lua: &'lua rlua::Lua,
@@ -440,8 +450,10 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
             let c = s.chars().next().unwrap();
             visitor.visit_char(c)
         } else {
-            Err(
-                Error::DeserializeType(format!("Attempted to deserialize string {} as char", s))
+            bail!(
+                ErrorKind::DeserializeType(
+                    format!("Attempted to deserialize string {} as char", s)
+                )
             )
         }
     }
@@ -453,10 +465,11 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
         if let rlua::Value::String(ref s) = self.value {
             visitor.visit_str(s.to_str()?)
         } else {
-            Err(Error::DeserializeType(format!(
-                "Attempted to deserialize str using {:?}",
-                self.value
-            )))
+            bail!(
+                ErrorKind::DeserializeType(
+                    format!("Attempted to deserialize str using {:?}", self.value)
+                )
+            )
         }
     }
 
@@ -496,10 +509,11 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
         if let rlua::Value::Nil = self.value {
             visitor.visit_unit()
         } else {
-            Err(Error::DeserializeType(format!(
-                "Attempted to deserialize () using {:?}",
-                self.value
-            )))
+            bail!(
+                ErrorKind::DeserializeType(
+                    format!("Attempted to deserialize () using {:?}", self.value)
+                )
+            )
         }
     }
 
@@ -512,11 +526,15 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
                 return visitor.visit_unit();
             }
         }
-        Err(Error::DeserializeType(format!(
-            "Attempted to deserialize unit struct {} using {:?}",
-            name,
-            self.value
-        )))
+        bail!(
+            ErrorKind::DeserializeType(
+                format!(
+                    "Attempted to deserialize unit struct {} using {:?}",
+                    name,
+                    self.value
+                )
+            )
+        )
     }
 
     fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
@@ -541,10 +559,14 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
                 )?
             )
         } else {
-            Err(Error::DeserializeType(format!(
-                "Attempted to deserialize array using {:?}",
-                self.value
-            )))
+            bail! (
+                ErrorKind::DeserializeType(
+                    format!(
+                        "Attempted to deserialize array using {:?}",
+                        self.value
+                    )
+                )
+            )
         }
     }
 
@@ -582,8 +604,8 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
                 )?
             )
         } else {
-            Err(
-                Error::Custom(
+            bail!(
+                ErrorKind::DeserializeType(
                     format!("tried to deserialize {:?} as map", self.value)
                 )
             )
@@ -638,8 +660,8 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
                     table: t,
                 }
             ),
-            _ => Err(
-                Error::Custom(format!("Attempt to deserialize invalid data {:?}", self.value))
+            _ => bail!(
+                ErrorKind::DeserializeType(format!("Attempt to deserialize invalid data {:?}", self.value))
             ),
         }
     }
@@ -779,9 +801,9 @@ impl<'de> de::EnumAccess<'de> for Deserializer<'de> {
             },
             _ => {}
         }
-        return Err(Error::Custom(
-            format!("attempt to deserialize {:?} as enum", self.value)
-        ));
+        bail!(
+            ErrorKind::Custom(format!("attempt to deserialize {:?} as enum", self.value))
+        )
     }
 
 }
@@ -793,9 +815,11 @@ impl<'de> de::VariantAccess<'de> for Deserializer<'de> {
         if let rlua::Value::Nil = self.value {
             Ok(())
         } else {
-            Err(Error::Custom(
-                format!("attempt to deserialize {:?} as a unit variant", self.value)
-            ))
+            bail!(
+                ErrorKind::Custom(
+                    format!("attempt to deserialize {:?} as a unit variant", self.value)
+                )
+            )
         }
     }
 
@@ -839,12 +863,12 @@ where
         );
         match result {
             Ok(value) => Ok(value),
-            Err(Error::Lua(e)) => Err(e),
+            Err(Error(ErrorKind::Lua(e), _)) => Err(e),
             Err(e) => Err(
-                rlua::Error::ToLuaConversionError{
+                rlua::Error::ToLuaConversionError {
                     from: "",
                     to: "",
-                    message: Some(std::error::Error::description(&e).to_string()),
+                    message: Some(e.description().to_string()),
                 }
             ),
         }
@@ -866,12 +890,15 @@ where
         );
         match t {
             Ok(value) => Ok(FromLuaN(value)),
-            Err(Error::Lua(e)) => Err(e),
+            Err(Error(ErrorKind::Lua(e), _)) => Err(e),
             Err(e) => Err(
-                rlua::Error::ToLuaConversionError{
+                rlua::Error::FromLuaConversionError {
                     from: "",
+                    // XXX - I could use serde or another derive macro
+                    // to get the name of the Rust type. Decent amount
+                    // of code for questionable benefit though.
                     to: "",
-                    message: Some(std::error::Error::description(&e).to_string()),
+                    message: Some(format!("{}", e))
                 }
             ),
         }

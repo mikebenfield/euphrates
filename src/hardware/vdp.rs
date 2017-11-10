@@ -6,27 +6,16 @@
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
 use std;
-use std::error::Error;
 
-use serde::Serialize;
-
+use errors::*;
 use ::bits::*;
 use super::irq::Irq;
 use ::message::{Receiver, Sender};
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct ScreenError(pub String);
-
-impl<T: Error> From<T> for ScreenError {
-    fn from(t: T) -> ScreenError {
-        ScreenError(t.description().to_string())
-    }
-}
-
 pub trait Screen {
     fn paint(&mut self, x: usize, y: usize, color: u8);
-    fn render(&mut self) -> Result<(), ScreenError>;
-    fn set_resolution(&mut self, width: usize, height: usize) -> Result<(), ScreenError>;
+    fn render(&mut self) -> Result<()>;
+    fn set_resolution(&mut self, width: usize, height: usize) -> Result<()>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
@@ -34,8 +23,8 @@ pub struct NoScreen;
 
 impl Screen for NoScreen {
     fn paint(&mut self, _: usize, _: usize, _: u8) {}
-    fn render(&mut self) -> Result<(), ScreenError> { Ok(()) }
-    fn set_resolution(&mut self, _: usize, _: usize) -> Result<(), ScreenError> { Ok(()) }
+    fn render(&mut self) -> Result<()> { Ok(()) }
+    fn set_resolution(&mut self, _: usize, _: usize) -> Result<()> { Ok(()) }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
@@ -154,7 +143,7 @@ impl Sender for Vdp {
 }
 
 impl std::fmt::Debug for Vdp {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
             "Vdp \
@@ -502,9 +491,9 @@ impl Vdp {
         }
     }
 
-    pub fn draw_line<S: Screen>(&mut self, screen: &mut S) -> Result<(), ScreenError> {
+    pub fn draw_line<S: Screen>(&mut self, screen: &mut S) -> Result<()> {
 
-        fn done<S: Screen>(vdp: &mut Vdp, screen: &mut S) -> Result<(), ScreenError> {
+        fn done<S: Screen>(vdp: &mut Vdp, screen: &mut S) -> Result<()> {
             match (vdp.resolution(), vdp.v) {
                 (Low, 0xC1) => vdp.status_flags.insert(FRAME_INTERRUPT),
                 (Medium, 0xE1) => vdp.status_flags.insert(FRAME_INTERRUPT),
@@ -639,7 +628,7 @@ impl Vdp {
         done(self, screen)
     }
 
-    pub fn draw_palettes<S: Screen>(&self, screen: &mut S) -> Result<(), ScreenError> {
+    pub fn draw_palettes<S: Screen>(&self, screen: &mut S) -> Result<()> {
         if self.v != 0 {
             return Ok(());
         }
@@ -655,7 +644,7 @@ impl Vdp {
         Ok(())
     }
 
-    pub fn draw_sprites<S: Screen>(&self, screen: &mut S) -> Result<(), ScreenError> {
+    pub fn draw_sprites<S: Screen>(&self, screen: &mut S) -> Result<()> {
         if self.v != 0 {
             return Ok(());
         }
@@ -682,7 +671,7 @@ impl Vdp {
         Ok(())
     }
 
-    pub fn draw_tiles<S: Screen>(&self, screen: &mut S) -> Result<(), ScreenError> {
+    pub fn draw_tiles<S: Screen>(&self, screen: &mut S) -> Result<()> {
         if self.v != 0 {
             return Ok(())
         }

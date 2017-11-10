@@ -5,6 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use errors::*;
 use message::{Receiver, Sender};
 use super::*;
 
@@ -175,15 +176,14 @@ impl MemoryMap for CodemastersMemoryMap {
     }
 }
 
-impl CodemastersMemoryMap {
-    pub fn new(rom: &[u8]) -> Result<CodemastersMemoryMap, MemoryMapError> {
+impl MasterSystemMemoryMap for CodemastersMemoryMap {
+    fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
-            return Err(MemoryMapError {
-                msg: format!(
-                    "Invalid ROM size 0x{:0>6X} (must be a positive multiple of 0x2000)",
-                    rom.len()
-                ),
-            });
+            bail! {
+                ErrorKind::Rom(
+                    format!("Invalid Sega Master System ROM size 0x{:0>6X} (should be a positive multiple of 0x2000)", rom.len())
+                )
+            }
         }
 
         let rom_impl_page_count = rom.len() / 0x2000;
@@ -214,17 +214,6 @@ impl CodemastersMemoryMap {
             slot_writable: 0b11000000,
             id: 0,
         })
-    }
-
-    pub fn new_from_file(filename: &str) -> Result<CodemastersMemoryMap, MemoryMapError> {
-        use std::fs::File;
-        use std::io::Read;
-
-        let mut f = File::open(filename)?;
-        let mut buf: Vec<u8> = Vec::new();
-        f.read_to_end(&mut buf)?;
-
-        CodemastersMemoryMap::new(&buf[0..])
     }
 }
 

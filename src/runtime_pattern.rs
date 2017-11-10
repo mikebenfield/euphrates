@@ -6,9 +6,6 @@
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
 use std::clone::Clone;
-use std::fmt::Debug;
-
-use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WholePattern<T, P>

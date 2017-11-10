@@ -11,8 +11,9 @@ use std::collections::vec_deque::VecDeque;
 
 use sdl2;
 
+use errors::*;
 use lua::repl;
-use message::{NothingReceiver, Pausable, Receiver, Sender};
+use message::{Pausable, Receiver, Sender};
 use hardware::memory_map::MemoryMap;
 use hardware::memory_map::sega_memory_map;
 use hardware::io::sms2;
@@ -24,23 +25,6 @@ pub struct EmulationManager<M: MemoryMap> {
     z80: Z80<sms2::Sms2Io<M>>,
     receiver: DisassemblingReceiver,
 }
-
-quick_error! {
-    #[derive(Clone, Debug)]
-    pub enum Error {
-        Custom(s: String) {}
-
-        Screen(err: ScreenError) {
-            from()
-        }
-
-        Time(err: std::time::SystemTimeError) {
-            from()
-        }
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Command {
@@ -348,7 +332,7 @@ where
             },
         );
         let audio_queue = match result {
-            Err(s) => return Err(Error::Custom(s)),
+            Err(s) => bail!(s),
             Ok(a) => a,
         };
         audio_queue.resume();
@@ -392,6 +376,9 @@ where
             }
 
             self.z80.io.vdp.draw_line(screen)?;
+            // .chain_err(||
+            //     "Error drawing line"
+            // )?;
 
             let vdp_cycles = self.z80.io.vdp.cycles;
             let z80_target_cycles = 2 * vdp_cycles / 3;
@@ -420,7 +407,9 @@ where
                 self.z80.io.set_joypad_b(input_status.joypad_b);
 
                 let z80_effective_cycles = self.z80.cycles - z80_cycles_start;
-                let total_duration = system_time.elapsed()?;
+                let total_duration = system_time.elapsed().chain_err(||
+                    "Error calculating elapsed time"
+                )?;
                 let desired_time_seconds = (3 * z80_effective_cycles) / SYSTEM_FREQUENCY;
                 let cycles_given_seconds = (desired_time_seconds * SYSTEM_FREQUENCY) / 3;
                 let remaining_cycles = z80_effective_cycles - cycles_given_seconds;

@@ -7,8 +7,6 @@
 
 use sdl2;
 
-use super::*;
-
 pub fn check_quit() -> bool {
     use sdl2::sys as sdls;
     unsafe {

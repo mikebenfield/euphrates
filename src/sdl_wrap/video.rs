@@ -7,6 +7,7 @@
 
 use sdl2;
 
+use errors::*;
 use super::*;
 use ::hardware::vdp;
 
@@ -30,19 +31,29 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(sdl: &sdl2::Sdl) -> Result<Window, Error> {
+    pub fn new(sdl: &sdl2::Sdl) -> Result<Window> {
         let vid = sdl.video()?;
         let win = vid.window(&"", DEFAULT_SIZE as u32, DEFAULT_SIZE as u32)
-            .build()?;
+            .build().chain_err(||
+                ErrorKind::HostMultimedia(
+                    format!("Error building window {} by {}", DEFAULT_SIZE, DEFAULT_SIZE)
+                )
+            )?;
         let canvas = win.into_canvas()
             .accelerated()
-            .build()?;
+            .build().chain_err(||
+                ErrorKind::HostMultimedia("Error creating canvas".to_owned())
+            )?;
         let texture_creator = canvas.texture_creator();
         let texture = {
             let texture_tmp = texture_creator.create_texture_static(
                 Some(sdl2::pixels::PixelFormatEnum::ARGB8888),
                 DEFAULT_SIZE as u32,
                 DEFAULT_SIZE as u32,
+            ).chain_err(||
+                ErrorKind::HostMultimedia(
+                    format!("Error creating texture")
+                )
             )?;
             unsafe {
                 std::mem::transmute(texture_tmp)
@@ -138,23 +149,27 @@ impl vdp::Screen for Window {
         self.pixels[idx + 3] = 0;
     }
 
-    fn render(&mut self) -> Result<(), vdp::ScreenError> {
+    fn render(&mut self) -> Result<()> {
         self.canvas.clear();
         self.texture.update(
             None,
             &self.pixels,
             self.texture_width * 4,
+        ).chain_err(||
+            ErrorKind::HostMultimedia("Error updating texture".to_owned())
         )?;
         match self.canvas.copy(&self.texture, None, None) {
             // why the hell does rust_sdl2 use String for some errors?
-            Err(s) => return Err(vdp::ScreenError(s)),
+            Err(s) => bail!(
+                ErrorKind::Screen(s)
+            ),
             _ => {}
         }
         self.canvas.present();
         Ok(())
     }
 
-    fn set_resolution(&mut self, width: usize, height: usize) -> Result<(), vdp::ScreenError> {
+    fn set_resolution(&mut self, width: usize, height: usize) -> Result<()> {
         self.set_texture_size(width, height);
         Ok(())
     }

@@ -26,7 +26,7 @@ pub struct Sms2Io<M> {
 
 impl<M> Sms2Io<M> {
     pub fn new(mm: M) -> Sms2Io<M> {
-        let mut vdp: vdp::Vdp = Default::default();
+        let vdp: vdp::Vdp = Default::default();
         let sn76489: sn76489::Sn76489 = Default::default();
         Sms2Io {
             sn76489: sn76489,

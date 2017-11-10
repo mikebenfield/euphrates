@@ -24,39 +24,10 @@ pub mod sega_memory_map;
 pub mod codemasters_memory_map;
 pub mod simple_memory_map;
 
-use std;
-use std::error::Error;
-use std::fmt;
-
 use ::message::{Receiver, Sender};
 pub use self::sega_memory_map::*;
 pub use self::codemasters_memory_map::*;
 pub use self::simple_memory_map::*;
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct MemoryMapError {
-    msg: String
-}
-
-impl std::convert::From<std::io::Error> for MemoryMapError {
-    fn from(err: std::io::Error) -> MemoryMapError {
-        MemoryMapError {
-            msg: format!("Error reading file: {}", err.description())
-        }
-    }
-}
-
-impl fmt::Display for MemoryMapError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl Error for MemoryMapError {
-    fn description(&self) -> &str {
-        &self.msg
-    }
-}
 
 pub trait MemoryMap: Sender {
     fn read<R>(&self, receiver: &mut R, logical_address: u16) -> u8

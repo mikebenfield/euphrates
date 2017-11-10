@@ -5,6 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use ::errors::*;
 use ::message::{Receiver, Sender};
 use super::*;
 
@@ -453,15 +454,37 @@ impl MemoryMap for SegaMemoryMap {
     }
 }
 
-impl SegaMemoryMap {
-    pub fn new(rom: &[u8]) -> Result<SegaMemoryMap, MemoryMapError> {
+pub trait MasterSystemMemoryMap: Sized + MemoryMap {
+    fn new(rom: &[u8]) -> Result<Self>;
+
+    fn new_from_file(
+        filename: &str,
+    ) -> Result<Self> {
+        use std::fs::File;
+        use std::io::Read;
+
+        let mut f = File::open(filename).chain_err(|| ErrorKind::HostIo(
+            format!("Problem opening ROM file {}", filename)
+        ))?;
+        let mut buf: Vec<u8> = Vec::new();
+        f.read_to_end(&mut buf).chain_err(|| ErrorKind::HostIo(
+            format!("Problem reading ROM file {}", filename)
+        ))?;
+
+        Self::new(&buf).chain_err(|| ErrorKind::HostIo(
+            format!("Problem with ROM from file {}", filename)
+        ))
+    }
+}
+
+impl MasterSystemMemoryMap for SegaMemoryMap {
+    fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
-            return Err(MemoryMapError {
-                msg: format!(
-                    "Invalid ROM size 0x{:0>6X} (must be a positive multiple of 0x2000)",
-                    rom.len()
-                ),
-            });
+            bail! {
+                ErrorKind::Rom(
+                    format!("Invalid Sega Master System ROM size 0x{:0>6X} (should be a positive multiple of 0x2000)", rom.len())
+                )
+            }
         }
 
         let rom_impl_page_count = rom.len() / 0x2000;
@@ -495,19 +518,6 @@ impl SegaMemoryMap {
                 id: 0,
             }
         )
-    }
-
-    pub fn new_from_file(
-        filename: &str,
-    ) -> Result<SegaMemoryMap, MemoryMapError> {
-        use std::fs::File;
-        use std::io::Read;
-
-        let mut f = File::open(filename)?;
-        let mut buf: Vec<u8> = Vec::new();
-        f.read_to_end(&mut buf)?;
-
-        SegaMemoryMap::new(&buf[0..])
     }
 }
 

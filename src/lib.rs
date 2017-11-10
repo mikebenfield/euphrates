@@ -15,7 +15,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate rlua;
 #[macro_use]
-extern crate quick_error;
+extern crate error_chain;
 
 #[macro_use]
 extern crate attalus_derive;
@@ -28,3 +28,26 @@ pub mod sdl_wrap;
 #[macro_use]
 pub mod hardware;
 pub mod emulation_manager;
+pub mod systems;
+
+pub mod errors {
+    error_chain! {
+
+        errors {
+            HostMultimedia(s: String) {
+                display("Multimedia error: {}", s)
+            }
+            Screen(s: String) {
+                display("Screen error: {}", s)
+            }
+            HostIo(s: String) {
+                description("Host I/O error")
+                display("Host I/O error: {}", s)
+            }
+            Rom(s: String) {
+                description("Invalid Rom")
+                display("Invalid Rom Error: {}", s)
+            }
+        }
+    }
+}
