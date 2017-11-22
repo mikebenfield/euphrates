@@ -46,51 +46,122 @@
 
 extern crate tempdir;
 extern crate rand;
+#[macro_use]
+extern crate error_chain;
 
 #[macro_use]
 extern crate attalus;
 
+use std::fmt;
 use std::path::Path;
 use std::error::Error;
 use std::os::raw::{c_int, c_long};
-use std::mem::size_of;
+use std::mem;
 use std::env::args;
 use std::str::FromStr;
 use std::process::exit;
 
 use rand::{Rng, SeedableRng};
 
-use attalus::hardware::z80::*;
-use attalus::hardware::memory_16_8::*;
-use attalus::hardware::io::*;
-use attalus::memo::NothingInbox;
+use attalus::has::Has;
+use attalus::memo::{Inbox, Pausable};
+use attalus::hardware::z80::{self, Reg8, Reg16, Changeable, Interpreter, Emulator};
+use attalus::hardware::z80::Reg8::*;
+use attalus::hardware::z80::Reg16::*;
+use attalus::hardware::irq::Irq;
+use attalus::hardware::memory_16_8;
+use attalus::hardware::io_16_8;
 
-#[derive(Clone, Debug)]
-pub struct TestAgainstError {
-    msg: String
-}
+pub mod errors {
+    use std::io;
 
-impl std::convert::From<std::io::Error> for TestAgainstError {
-    fn from(err: std::io::Error) -> TestAgainstError {
-        TestAgainstError {
-            msg: format!("Error reading file: {}", err.description())
+    error_chain! {
+        foreign_links {
+            Io(io::Error);
         }
     }
 }
 
-impl std::fmt::Display for TestAgainstError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+use ::errors::*;
+
+#[derive(Clone)]
+struct Z80System {
+    memory: [u8; 0x10000],
+    z80: z80::Component,
+}
+
+impl Default for Z80System {
+    fn default() -> Self {
+        Z80System {
+            memory: [0u8; 0x10000],
+            z80: Default::default(),
+        }
     }
 }
 
-impl Error for TestAgainstError {
-    fn description(&self) -> &str {
-        &self.msg
+impl fmt::Display for Z80System {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.z80, f)
     }
 }
 
-fn random_z80<R>(mem_start: &[u8], rng: &mut R) -> Z80<SimpleIo>
+impl Has<z80::Component> for Z80System {
+    fn get(&self) -> &z80::Component {
+        &self.z80
+    }
+
+    fn get_mut(&mut self) -> &mut z80::Component {
+        &mut self.z80
+    }
+}
+
+impl Has<[u8; 0x10000]> for Z80System {
+    fn get(&self) -> &[u8; 0x10000] {
+        &self.memory
+    }
+
+    fn get_mut(&mut self) -> &mut [u8; 0x10000] {
+        &mut self.memory
+    }
+}
+
+impl Pausable for Z80System {}
+
+impl<T> Inbox<T> for Z80System {
+    fn receive(&mut self, _id: u32, _memo: T) {}
+}
+
+impl memory_16_8::MachineImpl for Z80System {
+    type C = [u8; 0x10000];
+}
+
+impl io_16_8::MachineImpl for Z80System {
+    type C = io_16_8::SimpleIo;
+}
+
+impl z80::MachineImpl for Z80System {}
+
+impl Irq for Z80System {}
+
+impl Z80System {
+    fn get_reg8(&self, reg: Reg8) -> u8 {
+        self.z80.get_reg8(reg)
+    }
+
+    fn set_reg8(&mut self, reg: Reg8, x: u8) {
+        self.z80.set_reg8(reg, x)
+    }
+
+    fn get_reg16(&self, reg: Reg16) -> u16 {
+        self.z80.get_reg16(reg)
+    }
+
+    fn set_reg16(&mut self, reg: Reg16, x: u16) {
+        self.z80.set_reg16(reg, x)
+    }
+}
+
+fn random_system<R>(mem_start: &[u8], rng: &mut R) -> Z80System
 where
     R: Rng
 {
@@ -100,8 +171,7 @@ where
         mem[i] = rng.gen();
     }
     mem[0..mem_start.len()].copy_from_slice(mem_start);
-    let simple_mem_map = SimpleMemoryMap::new(mem);
-    let mut z = Z80::new(SimpleIo::new(simple_mem_map));
+    let mut z = z80::Component::new();
     for reg in [
         B, C, D, E, A, H, L,
         B0, C0, D0, E0, A0, L0, H0,
@@ -109,23 +179,26 @@ where
     ].iter() {
         z.set_reg8(*reg, rng.gen());
     }
-    z
+    Z80System {
+        z80: z,
+        memory: mem,
+    }
 }
 
 fn write_core<P: AsRef<Path>>(
     path: P,
-    z80: &Z80<SimpleIo>
-) -> Result<(), TestAgainstError> {
+    z80: &Z80System
+) -> Result<()> {
     use std::fs::File;
     use std::io::Write;
 
     let z80_size: usize =
-        16 + 2*4 + 2 * size_of::<c_int>() + size_of::<c_long>();
+        16 + 2*4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
 
     let mut buf: Vec<u8> = Vec::with_capacity(z80_size);
 
     fn write_from<T>(val: T, buf: &mut Vec<u8>) {
-        let size = size_of::<T>() as isize;
+        let size = mem::size_of::<T>() as isize;
         unsafe {
             let valp: *const u8 = std::mem::transmute(&val);
             for j in 0..size {
@@ -154,8 +227,8 @@ fn write_core<P: AsRef<Path>>(
 
     write_from(z80.get_reg8(I), &mut buf);
 
-    let iff1: u8 = if z80.iff1 == 0xFFFFFFFFFFFFFFFF { 0 } else { 1 };
-    let iff2: u8 = if z80.iff2 { 2 } else { 0 };
+    let iff1: u8 = if z80.z80.iff1 == 0xFFFFFFFFFFFFFFFF { 0 } else { 1 };
+    let iff2: u8 = if z80.z80.iff2 { 2 } else { 0 };
     write_from(iff1 | iff2, &mut buf);
 
     write_from(z80.get_reg8(R) as c_long, &mut buf);
@@ -168,13 +241,11 @@ fn write_core<P: AsRef<Path>>(
     let mut f = File::create(path)?;
 
     f.write_all(&buf[..])?;
-    f.write_all(
-        <SimpleIo as Io<NothingInbox>>::mem(&z80.io).slice()
-    )?;
+    f.write_all(&z80.memory)?;
     Ok(())
 }
 
-fn read_core<P>(path: P) -> Result<Z80<SimpleIo>, TestAgainstError>
+fn read_core<P>(path: P) -> Result<Z80System>
 where
     P: AsRef<Path>
 {
@@ -188,9 +259,9 @@ where
     // (this should be a global const, but can't be due to call of
     // size_of)
     let correct_core_size: usize =
-        0x10000 + 16 + 2*4 + 2 * size_of::<c_int>() + size_of::<c_long>();
+        0x10000 + 16 + 2*4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
 
-    let mut z80: Z80<SimpleIo> = Default::default();
+    let mut z80: Z80System = Default::default();
 
     let mut buf: Vec<u8> = Vec::new();
     {
@@ -199,22 +270,21 @@ where
     }
 
     if buf.len() != correct_core_size {
-        return Err(
-            TestAgainstError {
-                msg: format!(
-                    "Core file of wrong length {} (should be {})",
-                    buf.len(),
-                    correct_core_size)
-            }
-        );
+        bail! {
+            format!(
+                "Core file of wrong length {} (should be {})",
+                buf.len(),
+                correct_core_size
+            )
+        }
     }
 
     let mut i: usize = 0;
 
     fn read_into<T>(val: &mut T, i: &mut usize, buf: &mut [u8]) {
-        let size = size_of::<T>() as isize;
+        let size = mem::size_of::<T>() as isize;
         unsafe {
-            let valp: *mut u8 = std::mem::transmute(val);
+            let valp: *mut u8 = mem::transmute(val);
             for j in 0..size {
                 *valp.offset(j) = buf[*i];
                 *i += 1;
@@ -222,14 +292,14 @@ where
         }
     }
 
-    fn read_register<R, T>(z: &mut Z80<SimpleIo>, reg: R, i: &mut usize, buf: &mut [u8])
+    fn read_register<R, T>(z: &mut Z80System, reg: R, i: &mut usize, buf: &mut [u8])
     where
-        R: Settable<T>,
+        R: Changeable<T>,
         T: Default,
     {
         let mut t: T = Default::default();
         read_into(&mut t, i, buf);
-        reg.set(&mut NothingInbox, z, t);
+        reg.change(z, t);
     }
 
     read_register(&mut z80, A, &mut i, &mut buf);
@@ -258,12 +328,12 @@ where
 
     let mut iff: u8 = 0;
     read_into(&mut iff, &mut i, &mut buf);
-    z80.iff1 = if (iff & 1) == 0 {
+    z80.z80.iff1 = if (iff & 1) == 0 {
         0xFFFFFFFFFFFFFFFF
     } else {
         0
     };
-    z80.iff2 = (iff & 2) != 0;
+    z80.z80.iff2 = (iff & 2) != 0;
 
     let mut rr: c_long = 0;
     read_into(&mut rr, &mut i, &mut buf);
@@ -276,11 +346,7 @@ where
 
     let mut mem = [0u8; 0x10000];
     mem.copy_from_slice(&buf[i..]);
-    z80.io = SimpleIo::new(
-        SimpleMemoryMap::new(
-            mem
-        )
-    );
+    z80.memory = mem;
 
     Ok(z80)
 }
@@ -289,35 +355,37 @@ where
 ///
 /// Actually, doesn't check I or R registers. Doesn't check undefined bits in F
 /// or F0.
-fn z80_same_state(lhs: &Z80<SimpleIo>, rhs: &Z80<SimpleIo>) -> bool  {
+fn z80_same_state(lhs: &Z80System, rhs: &Z80System) -> bool  {
     for reg in [
         B, C, D, E, A, H, L,
         B0, C0, D0, E0, A0, L0, H0,
         IXH, IXL, IYH, IYL,
         SPH, SPL, PCH, PCL,
     ].iter() {
-        if lhs.get_reg8(*reg) != rhs.get_reg8(*reg) {
+        if lhs.z80.get_reg8(*reg) != rhs.z80.get_reg8(*reg) {
             println!("diff register {:?}", reg);
             return false;
         }
     }
 
-    let f_lhs = lhs.get_reg8(F);
-    let f_rhs = rhs.get_reg8(F);
+    let f_lhs = lhs.z80.get_reg8(F);
+    let f_rhs = rhs.z80.get_reg8(F);
+    // for the flag registers, don't check the undefined bits
     if f_lhs & 0b11010111 != f_rhs & 0b11010111 {
         println!("diff flags {:b} {:b}", f_lhs, f_rhs);
         return false;
     }
 
-    let f0_lhs = lhs.get_reg8(F0);
-    let f0_rhs = rhs.get_reg8(F0);
+    let f0_lhs = lhs.z80.get_reg8(F0);
+    let f0_rhs = rhs.z80.get_reg8(F0);
+    // for the flag registers, don't check the undefined bits
     if f0_lhs & 0b11010111 != f0_rhs & 0b11010111 {
         println!("diff flags' {:b} {:b}", f0_lhs, f0_rhs);
         return false;
     }
 
-    let lhs_slice = <SimpleIo as Io<NothingInbox>>::mem(&lhs.io).slice();
-    let rhs_slice = <SimpleIo as Io<NothingInbox>>::mem(&rhs.io).slice();
+    let lhs_slice = &lhs.memory[0..];
+    let rhs_slice = &rhs.memory[0..];
 
     if lhs_slice != rhs_slice {
         for i in 0..lhs_slice.len() {
@@ -599,13 +667,13 @@ where
 #[derive(Clone)]
 pub struct TestFailure {
     mnemonics: String,
-    original_z80: Z80<SimpleIo>,
-    sim_z80: Z80<SimpleIo>,
-    attalus_z80: Z80<SimpleIo>,
+    original_z80: Z80System,
+    sim_z80: Z80System,
+    attalus_z80: Z80System,
 }
 
 impl std::fmt::Debug for TestFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), fmt::Error> {
         write!(
             f,
             "TestFailure \
@@ -643,7 +711,7 @@ fn test_instruction_sequence<R>(
     instruction_sequence: &InstructionSequence,
     count: usize,
     rng: &mut R
-) -> Result<TestResult, TestAgainstError>
+) -> Result<TestResult>
 where
     R: Rng
 {
@@ -652,7 +720,7 @@ where
 
     use tempdir::TempDir;
 
-    fn wait_for_prompt(stdout: &mut ChildStdout) -> Result<(), TestAgainstError> {
+    fn wait_for_prompt(stdout: &mut ChildStdout) -> Result<()> {
         let mut arrow_count = 0u32;
         let mut buf = [0u8];
         let arrow = ">".as_bytes();
@@ -665,14 +733,12 @@ where
                 return Ok(());
             }
         }
-        Err(
-            TestAgainstError {
-                msg: "z80sim won't give a prompt".to_owned()
-            }
-        )
+        bail! {
+            "z80 sim won't give a prompt"
+        }
     }
 
-    fn wait_for_exit(child: &mut Child) -> Result<(), TestAgainstError> {
+    fn wait_for_exit(child: &mut Child) -> Result<()> {
         for _ in 0..50 {
             let status = child.try_wait()?;
             match status {
@@ -680,11 +746,10 @@ where
                     if status.success() {
                         return Ok(());
                     } else {
-                        return Err (
-                            TestAgainstError {
-                                msg: "exit failure from z80sim".to_owned()
-                            }
-                        );
+                        bail! {
+                            "exit failure from z80sim"
+
+                        }
                     }
                 }
                 _ => {}
@@ -692,17 +757,15 @@ where
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         child.kill()?;
-        Err (
-            TestAgainstError {
-                msg: "z80sim would not exit".to_owned()
-            }
-        )
+        bail! {
+            "z80sim would not exit"
+        }
     }
 
     let instructions = instruction_sequence.opcodes.clone();
     for i in 0..count {
         println!("\nTest {} of \n{:}", i, instruction_sequence.mnemonics);
-        let mut z80 = random_z80(&instructions[..], rng);
+        let mut z80 = random_system(&instructions[..], rng);
         z80.set_reg16(PC, 0);
 
         let dir = TempDir::new("attalus_tmp")?;
@@ -727,7 +790,7 @@ where
         wait_for_exit(&mut child)?;
         let sim_z80 = read_core(&file_path)?;
         let mut attalus_z80 = z80.clone();
-        Z80Interpreter {}.run(&mut NothingInbox, &mut attalus_z80, 1000);
+        Interpreter.run(&mut attalus_z80, 1000);
 
         // z80sim bumps up PC even after a halt
         let pc = attalus_z80.get_reg16(PC);
@@ -755,7 +818,7 @@ pub fn test_against<R>(
     n_instructions: usize,
     trials: usize,
     rng: &mut R
-) -> Result<TestResult, TestAgainstError>
+) -> Result<TestResult>
 where
     R: Rng
 {

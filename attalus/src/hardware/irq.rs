@@ -6,13 +6,22 @@
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
 pub trait Irq {
-    fn requesting_mi(&self) -> Option<u8>;
-    fn requesting_nmi(&self) -> bool;
+    #[inline(always)]
+    fn requesting_mi(&self) -> Option<u8> {
+        None
+    }
+
+    #[inline(always)]
+    fn requesting_nmi(&self) -> bool {
+        false
+    }
 
     /// The Z80 responds to nonmaskable interrupts due to the change in voltage
     /// in the NMI pin from high to low, so it will not continually execute
     /// interrupts when the voltage is held low. In software, that means we need
     /// to tell the device the interrupt is being executed and to stop requesting
     /// it.
-    fn clear_nmi(&self);
+    #[inline(always)]
+    fn clear_nmi(&self) {
+    }
 }

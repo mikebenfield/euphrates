@@ -18,9 +18,13 @@ pub trait Outbox
 }
 
 pub trait Pausable {
-    fn wants_pause(&self) -> bool;
+    #[inline(always)]
+    fn wants_pause(&self) -> bool {
+        false
+    }
 
-    fn clear_pause(&mut self);
+    #[inline(always)]
+    fn clear_pause(&mut self) {}
 }
 
 pub trait Inbox<M>: Pausable {
