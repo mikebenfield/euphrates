@@ -10,7 +10,7 @@ use ::has::Has;
 use ::memo::{Pausable, Inbox, Outbox};
 use super::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Matchable)]
 enum RamPagesAllocated {
     Zero, One, Two
 }
@@ -76,6 +76,14 @@ pub struct Component {
     slot_writable: u8,
 
     id: u32,
+}
+
+serde_struct_arrays!{
+    impl_serde,
+    Component,
+    [ram_pages_allocated, reg_fffc, reg_fffd, reg_fffe, reg_ffff, pages, slot_writable, id,],
+    [],
+    [memory: [u8; 0x2000],]
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]

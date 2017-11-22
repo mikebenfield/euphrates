@@ -20,6 +20,7 @@ extern crate error_chain;
 extern crate attalus_derive;
 
 mod runtime_pattern;
+#[macro_use]
 mod utilities;
 pub mod has;
 pub mod memo;
@@ -30,6 +31,9 @@ pub mod systems;
 pub mod host_multimedia;
 
 pub mod errors {
+    pub use std::result::Result as StdResult;
+    pub use std::error::Error as StdError;
+
     error_chain! {
         errors {
             HostMultimedia(s: String) {

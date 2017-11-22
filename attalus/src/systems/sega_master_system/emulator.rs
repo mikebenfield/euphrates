@@ -30,6 +30,7 @@ where
     T: z80::Machine + vdp::Machine + memory_16_8::Machine
 {}
 
+#[derive(Serialize, Deserialize)]
 pub struct Hardware<M> {
     pub z80: z80::Component,
     pub memory: M,

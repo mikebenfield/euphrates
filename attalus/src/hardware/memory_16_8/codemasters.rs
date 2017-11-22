@@ -38,6 +38,14 @@ pub struct Component {
     id: u32,
 }
 
+serde_struct_arrays!{
+    impl_serde,
+    Component,
+    [cartridge_ram_allocated, pages, reg_0000, reg_4000, reg_8000, slot_writable, id,],
+    [],
+    [memory: [u8; 0x2000],]
+}
+
 impl Outbox for Component {
     type Memo = Memo;
 

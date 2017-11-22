@@ -68,6 +68,15 @@ pub struct Component {
     id: u32,
 }
 
+serde_struct_arrays!{
+    impl_serde,
+    Component,
+    [cycles, kind, tv_system, status_flags, h, v, address0, buffer, reg,
+    cram, line_counter, id,],
+    [vram: [u8; 0x4000],],
+    []
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum VdpQueryResult {
     Bool(bool),
