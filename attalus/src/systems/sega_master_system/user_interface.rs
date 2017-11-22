@@ -10,6 +10,7 @@ use super::*;
 pub struct PlayerStatus {
     pub joypad_a: u8,
     pub joypad_b: u8,
+    pub pause: bool,
 }
 
 pub trait UserInterface {

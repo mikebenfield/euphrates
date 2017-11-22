@@ -22,6 +22,6 @@ pub trait Irq {
     /// to tell the device the interrupt is being executed and to stop requesting
     /// it.
     #[inline(always)]
-    fn clear_nmi(&self) {
+    fn clear_nmi(&mut self) {
     }
 }

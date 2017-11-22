@@ -410,10 +410,6 @@ impl Irq for Component {
             None
         }
     }
-    fn requesting_nmi(&self) -> bool {
-        false
-    }
-    fn clear_nmi(&self) {}
 }
 
 pub trait Machine: Has<Component> + Inbox<Memo>

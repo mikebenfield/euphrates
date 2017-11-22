@@ -143,17 +143,20 @@ impl<I, M> Irq for System<I, M>
 {
     #[inline(always)]
     fn requesting_mi(&self) -> Option<u8> {
-        self.hardware.vdp.requesting_mi()
+        self.hardware.vdp.requesting_mi().or_else(||
+            self.hardware.io.requesting_mi()
+        )
     }
 
     #[inline(always)]
     fn requesting_nmi(&self) -> bool {
-        self.hardware.vdp.requesting_nmi()
+        self.hardware.vdp.requesting_nmi() || self.hardware.io.requesting_nmi()
     }
 
     #[inline(always)]
-    fn clear_nmi(&self) {
-        self.hardware.vdp.clear_nmi()
+    fn clear_nmi(&mut self) {
+        self.hardware.vdp.clear_nmi();
+        self.hardware.io.clear_nmi();
     }
 }
 
@@ -344,6 +347,7 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
                 let player_status = user_interface.player_status();
                 master_system.hardware.io.set_joypad_a(player_status.joypad_a);
                 master_system.hardware.io.set_joypad_b(player_status.joypad_b);
+                master_system.hardware.io.set_pause(player_status.pause);
 
                 let time_info = TimeInfo {
                     total_cycles: master_system.hardware.z80.cycles,

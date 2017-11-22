@@ -8,6 +8,7 @@
 use super::*;
 use ::memo::{Inbox, Outbox};
 use ::has::Has;
+use ::hardware::irq::Irq;
 use ::hardware::vdp;
 use ::hardware::sn76489;
 
@@ -38,6 +39,7 @@ pub struct Component {
     id: u32,
     joypad_a: u8,
     joypad_b: u8,
+    pause: bool,
 }
 
 impl Outbox for Component {
@@ -55,6 +57,7 @@ impl Default for Component {
             id: 0,
             joypad_a: 0xFF,
             joypad_b: 0xFF,
+            pause: false,
         }
     }
 }
@@ -65,9 +68,20 @@ impl Component {
     }
 
     pub fn joypad_a(&self) -> u8 { self.joypad_a }
-    pub fn joypad_b(&self) -> u8 { self.joypad_b }
     pub fn set_joypad_a(&mut self, x: u8) { self.joypad_a = x; }
+    pub fn joypad_b(&self) -> u8 { self.joypad_b }
     pub fn set_joypad_b(&mut self, x: u8) { self.joypad_b = x; }
+    pub fn pause(&self) -> bool { self.pause }
+    pub fn set_pause(&mut self, x: bool) { self.pause = x; }
+}
+
+impl Irq for Component {
+    fn requesting_nmi(&self) -> bool {
+        self.pause
+    }
+    fn clear_nmi(&mut self) {
+        self.pause = false
+    }
 }
 
 impl<T> ComponentOf<T> for Component

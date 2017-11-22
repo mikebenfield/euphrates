@@ -324,6 +324,7 @@ where
 
     if z.requesting_nmi() {
         instructions::nonmaskable_interrupt(z);
+        z.clear_nmi();
     } else {
         match z.requesting_mi() {
             Some(x) => {

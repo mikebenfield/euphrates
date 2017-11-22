@@ -36,6 +36,7 @@ bitflags! {
 pub struct SdlMasterSystemUserInterface {
     joypad_a: u8,
     joypad_b: u8,
+    pause: bool,
     quit: bool,
     event_pump: sdl2::EventPump,
 }
@@ -55,8 +56,9 @@ impl SdlMasterSystemUserInterface {
                 SdlMasterSystemUserInterface {
                     joypad_a: 0xFF,
                     joypad_b: 0xFF,
-                    event_pump: event_pump,
+                    pause: false,
                     quit: false,
+                    event_pump: event_pump,
                 },
             ),
         }
@@ -66,10 +68,16 @@ impl SdlMasterSystemUserInterface {
 impl UserInterface for SdlMasterSystemUserInterface {
     fn update_player(&mut self) {
         self.quit = false;
+        self.pause = false;
 
         for event in self.event_pump.poll_iter() {
-            if let sdl2::event::Event::Quit { .. } = event {
-                self.quit = true;
+            match event {
+                sdl2::event::Event::Quit { .. } => self.quit = true,
+                sdl2::event::Event::KeyDown {
+                    scancode: Some(sdl2::keyboard::Scancode::P),
+                    ..
+                } => self.pause = true,
+                _ => {}
             }
         }
 
@@ -125,6 +133,7 @@ impl UserInterface for SdlMasterSystemUserInterface {
         PlayerStatus {
             joypad_a: self.joypad_a,
             joypad_b: self.joypad_b,
+            pause: self.pause,
         }
     }
 
