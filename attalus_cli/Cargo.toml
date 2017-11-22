@@ -1,0 +1,13 @@
+[package]
+name = "attalus_cli"
+version = "0.1.0"
+authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+
+[[bin]]
+name = "attalus"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+attalus = { path = "../attalus" }
+sdl2 = "0.30"

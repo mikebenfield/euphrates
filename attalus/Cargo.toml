@@ -7,13 +7,8 @@ authors = ["Michael Benfield <mike.benfield@gmail.com>"]
 name = "attalus"
 path = "src/lib.rs"
 
-[[bin]]
-name = "attalus"
-path = "src/main.rs"
-doc = false
-
 [dependencies]
-attalus_derive = { path = "attalus_derive" }
+attalus_derive = { path = "../attalus_derive" }
 bitflags = "0.9"
 sdl2 = "0.30"
 rand = "0.3"
