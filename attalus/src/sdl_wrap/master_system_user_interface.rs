@@ -5,9 +5,13 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::{Path, PathBuf};
+use std::io::Write;
+
 use sdl2;
 
 use ::errors::*;
+use ::hardware::z80;
 use ::systems::sega_master_system::{MasterSystem, UserInterface, PlayerStatus, Query, Command};
 
 bitflags! {
@@ -34,6 +38,7 @@ bitflags! {
 }
 
 pub struct SdlMasterSystemUserInterface {
+    save_directory: Option<PathBuf>,
     joypad_a: u8,
     joypad_b: u8,
     pause: bool,
@@ -42,7 +47,7 @@ pub struct SdlMasterSystemUserInterface {
 }
 
 impl SdlMasterSystemUserInterface {
-    pub fn new(sdl: &sdl2::Sdl) -> Result<Self> {
+    pub fn new(sdl: &sdl2::Sdl, save_directory: Option<PathBuf>) -> Result<Self> {
         if let Err(s) = sdl.event() {
             bail! {
                 ErrorKind::HostMultimedia(s)
@@ -54,6 +59,7 @@ impl SdlMasterSystemUserInterface {
             },
             Ok(event_pump) => Ok(
                 SdlMasterSystemUserInterface {
+                    save_directory: save_directory,
                     joypad_a: 0xFF,
                     joypad_b: 0xFF,
                     pause: false,
@@ -65,18 +71,47 @@ impl SdlMasterSystemUserInterface {
     }
 }
 
+fn save_master_system<P: AsRef<Path>>(path: P, master_system: &MasterSystem) -> Result<()> {
+    use std::fs::File;
+
+    let mut file = File::create(path.as_ref()).chain_err(||
+        ErrorKind::HostIo(
+            format!("Could not open file {:?}", path.as_ref())
+        )
+    )?;
+
+    file.write(master_system.tag().as_bytes()).unwrap();
+    file.write(b"\n").unwrap();
+    master_system.encode(&mut file)
+}
+
 impl UserInterface for SdlMasterSystemUserInterface {
-    fn update_player(&mut self) {
+    fn update(&mut self, master_system: &mut MasterSystem) {
         self.quit = false;
         self.pause = false;
 
         for event in self.event_pump.poll_iter() {
+            use sdl2::keyboard::Scancode::*;
+
             match event {
                 sdl2::event::Event::Quit { .. } => self.quit = true,
                 sdl2::event::Event::KeyDown {
-                    scancode: Some(sdl2::keyboard::Scancode::P),
+                    scancode: Some(k),
                     ..
-                } => self.pause = true,
+                } => match k {
+                    P => self.pause = true,
+                    Z => {
+                        if let Some(ref path) = self.save_directory {
+                            let z80: &z80::Component = master_system.get();
+                            let mut path2 = path.clone();
+                            path2.push(format!("{:>0width$X}", z80.cycles, width=20));
+                            if let Err(e) = save_master_system(path2, master_system) {
+                                eprintln!("Error saving file: {:?}", e);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
                 _ => {}
             }
         }
@@ -135,9 +170,6 @@ impl UserInterface for SdlMasterSystemUserInterface {
             joypad_b: self.joypad_b,
             pause: self.pause,
         }
-    }
-
-    fn update_user(&mut self, _z: &mut MasterSystem) {
     }
 
     fn respond(&mut self, _s: String) {

@@ -150,6 +150,7 @@ vec_array_serialize!{0x2000}
 
 array_deserialize!{0x2000}
 array_deserialize!{0x4000}
+array_deserialize!{0x10000}
 
 vec_array_deserialize!{0x2000}
 

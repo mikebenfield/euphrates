@@ -8,7 +8,11 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use std::thread;
+use std::io::{Read, Write};
 
+use bincode::{self, Infinite};
+
+use ::memo::NothingInbox;
 use ::errors::*;
 use ::has::Has;
 use ::memo::{Pausable, Inbox};
@@ -22,12 +26,12 @@ use ::host_multimedia::SimpleAudio;
 
 use super::UserInterface;
 
-pub trait MasterSystem: z80::Machine + vdp::Machine + memory_16_8::Machine
+pub trait MasterSystem: z80::Machine + vdp::Machine + memory_16_8::Machine + Encode
 {}
 
 impl<T> MasterSystem for T
 where
-    T: z80::Machine + vdp::Machine + memory_16_8::Machine
+    T: z80::Machine + vdp::Machine + memory_16_8::Machine + Encode
 {}
 
 #[derive(Serialize, Deserialize)]
@@ -39,6 +43,7 @@ pub struct Hardware<M> {
     pub sn76489: sn76489::real::Component,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct System<I, M> {
     pub inbox: I,
     pub hardware: Hardware<M>,
@@ -52,6 +57,46 @@ impl<I, M> System<I, M> {
         }
     }
 }
+
+pub trait Encode {
+    fn tag(&self) -> &'static str;
+    fn encode(&self, writer: &mut Write) -> Result<()>;
+}
+
+pub trait Decode: Encode + Sized {
+    fn decode(reader: &mut Read) -> Result<Self>;
+}
+
+macro_rules! impl_encode_decode {
+    ($i: ty, $m: ty, $tag: expr) => {
+        impl Encode for System<$i, $m> {
+            fn tag(&self) -> &'static str {
+                $tag
+            }
+
+            fn encode(&self, writer: &mut Write) -> Result<()> {
+                match bincode::serialize_into(writer, self, Infinite) {
+                    Err(_) => bail!("Error"),
+                    Ok(_) => Ok(())
+                }
+            }
+        }
+
+        impl Decode for System<$i, $m> {
+            fn decode(reader: &mut Read) -> Result<Self> {
+                match bincode::deserialize_from(reader, Infinite) {
+                    Err(_) => bail!("Error"),
+                    Ok(x) => Ok(x)
+                }
+            }
+        }
+    }
+}
+
+impl_encode_decode!{super::DebuggingInbox, memory_16_8::sega::Component, "debugging,sega"}
+impl_encode_decode!{NothingInbox, memory_16_8::sega::Component, "nothing,sega"}
+impl_encode_decode!{super::DebuggingInbox, memory_16_8::codemasters::Component, "debugging,codemasters"}
+impl_encode_decode!{NothingInbox, memory_16_8::codemasters::Component, "nothing,codemasters"}
 
 macro_rules! impl_has {
     ($typename: ty, $component_name: ident) => {
@@ -336,13 +381,11 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
                     )?;
                 }
 
-                user_interface.update_user(master_system);
+                user_interface.update(master_system);
 
                 if user_interface.wants_quit() {
                     return Ok(())
                 }
-
-                user_interface.update_player();
 
                 let player_status = user_interface.player_status();
                 master_system.hardware.io.set_joypad_a(player_status.joypad_a);

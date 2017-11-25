@@ -14,11 +14,9 @@ pub struct PlayerStatus {
 }
 
 pub trait UserInterface {
-    fn update_player(&mut self);
+    fn update(&mut self, &mut MasterSystem);
 
     fn player_status(&self) -> PlayerStatus;
-
-    fn update_user(&mut self, z: &mut MasterSystem);
 
     fn respond(&mut self, s: String);
 

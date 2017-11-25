@@ -86,6 +86,15 @@ pub struct DebuggingInbox {
     recent_memos: VecDeque<Memo>,
 }
 
+serde_struct_arrays!{
+    impl_serde,
+    DebuggingInbox,
+    [last_pc, hold, status, pc_breakpoints, memo_patterns, recent_memos,],
+    [opcodes: [Option<::hardware::z80::Opcode>; 0x10000],],
+    []
+}
+
+
 impl Default for DebuggingInbox {
     fn default() -> Self {
         DebuggingInbox::new()

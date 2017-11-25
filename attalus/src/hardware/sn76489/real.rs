@@ -42,6 +42,14 @@ impl<T> super::ComponentOf<T> for Component
 where
     T: Has<Component>
 {
+    /// If bit 7 is 1, this is a latch byte. In this case,
+    /// bits 0-3 are data to be written,
+    /// bit 4 is type (0: tone, 1: volume)
+    /// bits 5-6 are channel
+    /// Write to the lowest 4 bits of the register (top bit is discarded
+    /// for the noise regsiter)
+    /// If bit 7 is 0, this is a data byte. In this case, we write up
+    /// to 6 bits in the upper bits of the latched register.
     fn write_sound(t: &mut T, data: u8) {
         let sn = t.get_mut();
         if data & 0x80 != 0 {
