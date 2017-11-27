@@ -5,7 +5,12 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std;
+
+use errors::{Error, CommonKind};
 use super::*;
+
+pub type Result<T> = std::result::Result<T, Error<CommonKind>>;
 
 pub struct PlayerStatus {
     pub joypad_a: u8,
@@ -14,7 +19,7 @@ pub struct PlayerStatus {
 }
 
 pub trait UserInterface {
-    fn update(&mut self, &mut MasterSystem);
+    fn update(&mut self, &mut MasterSystem) -> Result<()>;
 
     fn player_status(&self) -> PlayerStatus;
 

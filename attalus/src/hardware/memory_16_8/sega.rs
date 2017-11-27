@@ -5,10 +5,16 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::errors::*;
+use std;
+
+use failure::ResultExt;
+
+use errors::{Error, SimpleKind};
 use ::has::Has;
 use ::memo::{Pausable, Inbox, Outbox};
 use super::*;
+
+pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Matchable)]
 enum RamPagesAllocated {
@@ -413,28 +419,38 @@ pub trait MasterSystemMemory: Sized {
         use std::fs::File;
         use std::io::Read;
 
-        let mut f = File::open(filename).chain_err(|| ErrorKind::HostIo(
-            format!("Problem opening ROM file {}", filename)
-        ))?;
+        let mut f = File::open(filename).with_context(|e|
+            SimpleKind(
+                format!("Unable to open ROM file {}: {}", filename, e)
+            )
+        )?;
+        
         let mut buf: Vec<u8> = Vec::new();
-        f.read_to_end(&mut buf).chain_err(|| ErrorKind::HostIo(
-            format!("Problem reading ROM file {}", filename)
-        ))?;
 
-        Self::new(&buf).chain_err(|| ErrorKind::HostIo(
-            format!("Problem with ROM from file {}", filename)
-        ))
+        f.read_to_end(&mut buf).with_context(|e|
+            SimpleKind(
+                format!("Error reading ROM file {}: {}", filename, e)
+            )
+        )?;
+
+        Ok(
+            Self::new(&buf).with_context(|e|
+                SimpleKind(
+                    format!("Error from ROM file {}: {}", filename ,e)
+                )
+            )?
+        )
     }
 }
 
 impl MasterSystemMemory for Component {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
-            bail! {
-                ErrorKind::Rom(
+            Err(
+                SimpleKind(
                     format!("Invalid Sega Master System ROM size 0x{:0>6X} (should be a positive multiple of 0x2000)", rom.len())
                 )
-            }
+            )?
         }
 
         let rom_impl_page_count = rom.len() / 0x2000;

@@ -8,8 +8,6 @@
 use std::marker::PhantomData;
 use std::fmt;
 
-use ::errors::*;
-
 pub fn to16(lo: u8, hi: u8) -> u16 {
     ((hi as u16) << 8) | (lo as u16)
 }
@@ -38,7 +36,7 @@ macro_rules! vec_array_serialize {
         where
             T: Serialize + 'a
         {
-            fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: Serializer
             {
@@ -79,7 +77,7 @@ macro_rules! array_deserialize {
                 )
             }
 
-            fn visit_seq<A>(self, mut seq: A) -> StdResult<Self::Value, A::Error>
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: SeqAccess<'de>
             {
@@ -114,7 +112,7 @@ macro_rules! array_deserialize {
         where
             T: Deserialize<'de> + Copy + Default
         {
-            fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: Deserializer<'de>
             {
@@ -130,7 +128,7 @@ macro_rules! vec_array_deserialize {
         where
             T: Deserialize<'de> + Copy + Default
         {
-            fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: Deserializer<'de>
             {

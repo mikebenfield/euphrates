@@ -8,7 +8,7 @@
 pub mod fake;
 pub mod real;
 
-use ::errors::*;
+use ::errors::{Error, CommonKind};
 
 pub trait Machine {
     /// The default implementation does nothing, so you can easily implement
@@ -47,5 +47,5 @@ where
         component: &mut Component,
         target_cycles: u64,
         audio: &mut HostAudio,
-    ) -> Result<()>;
+    ) -> Result<(), Error<CommonKind>>;
 }

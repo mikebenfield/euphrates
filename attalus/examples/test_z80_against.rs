@@ -44,22 +44,22 @@
 //! 2. Test against other emulators.
 //! 3. A big one: test against actual hardware.
 
+extern crate failure;
 extern crate tempdir;
 extern crate rand;
-#[macro_use]
-extern crate error_chain;
 
 #[macro_use]
 extern crate attalus;
 
 use std::fmt;
 use std::path::Path;
-use std::error::Error;
 use std::os::raw::{c_int, c_long};
 use std::mem;
 use std::env::args;
 use std::str::FromStr;
 use std::process::exit;
+
+use failure::Error;
 
 use rand::{Rng, SeedableRng};
 
@@ -72,17 +72,7 @@ use attalus::hardware::irq::Irq;
 use attalus::hardware::memory_16_8;
 use attalus::hardware::io_16_8;
 
-pub mod errors {
-    use std::io;
-
-    error_chain! {
-        foreign_links {
-            Io(io::Error);
-        }
-    }
-}
-
-use ::errors::*;
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone)]
 struct Z80System {
@@ -270,13 +260,15 @@ where
     }
 
     if buf.len() != correct_core_size {
-        bail! {
-            format!(
-                "Core file of wrong length {} (should be {})",
-                buf.len(),
-                correct_core_size
+        return Err(
+            failure::err_msg(
+                format!(
+                    "Core file of wrong length {} (should be {})",
+                    buf.len(),
+                    correct_core_size
+                )
             )
-        }
+        );
     }
 
     let mut i: usize = 0;
@@ -673,7 +665,7 @@ pub struct TestFailure {
 }
 
 impl std::fmt::Debug for TestFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "TestFailure \
@@ -733,9 +725,11 @@ where
                 return Ok(());
             }
         }
-        bail! {
-            "z80 sim won't give a prompt"
-        }
+        Err(
+            failure::err_msg(
+                "z80sim won't give a prompt"
+            )
+        )
     }
 
     fn wait_for_exit(child: &mut Child) -> Result<()> {
@@ -746,10 +740,9 @@ where
                     if status.success() {
                         return Ok(());
                     } else {
-                        bail! {
-                            "exit failure from z80sim"
-
-                        }
+                        return Err (
+                            failure::err_msg("exit failure from z80sim")
+                        );
                     }
                 }
                 _ => {}
@@ -757,9 +750,10 @@ where
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         child.kill()?;
-        bail! {
-            "z80sim would not exit"
-        }
+
+        Err (
+            failure::err_msg("z80sim would not exit")
+        )
     }
 
     let instructions = instruction_sequence.opcodes.clone();
@@ -893,7 +887,7 @@ fn main() {
             return;
         },
         Err(e) => {
-            eprintln!("Unable to conduct tests: {:}", e.description());
+            eprintln!("Unable to conduct tests: {}", e);
             exit(1);
         }
     }

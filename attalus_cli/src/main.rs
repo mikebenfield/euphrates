@@ -7,14 +7,14 @@
 
 extern crate sdl2;
 extern crate clap;
-#[macro_use]
-extern crate error_chain;
+extern crate failure;
 extern crate attalus;
 
 use std::path::PathBuf;
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 
+use failure::Error;
 use clap::{Arg, ArgMatches, App, SubCommand};
 
 use attalus::hardware::z80;
@@ -24,18 +24,7 @@ use attalus::hardware::vdp;
 use attalus::sdl_wrap;
 use attalus::memo::NothingInbox;
 
-mod errors {
-    use attalus;
-
-    error_chain!{
-        links {
-            AttalusError(attalus::errors::Error, attalus::errors::ErrorKind);
-        }
-
-    }
-}
-
-use ::errors::*;
+type Result<T> = std::result::Result<T, Error>;
 
 fn run_rom(matches: &ArgMatches) -> Result<()> {
     let filename = matches.value_of("rom").unwrap();
@@ -81,7 +70,9 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
             &mut user_interface,
         )?;
     } else {
-        bail!(format!("Can't happen: Unknown memory map {}", memory_map))
+        Err(
+            failure::err_msg(format!("Can't happen: Unknown memory map {}", memory_map))
+        )?;
     }
 
     Ok(())
@@ -179,7 +170,7 @@ fn run() -> Result<()> {
         (x, _) => {
             eprintln!("Unknown subcommand {}", x);
             eprintln!("{}", matches.usage());
-            bail!("No subcommand");
+            return Err(failure::err_msg("No subcommand"));
         }
     };
 }
@@ -188,41 +179,4 @@ fn main() {
     if let Err(x) = run() {
         eprintln!("{:?}", x);
     }
-
-    // match run() {
-    //     Err(x) => eprintln!("{:?}")
-    // }
-    // let mut args: Vec<String> = Vec::new();
-    // args.extend(std::env::args());
-    // if args.len() != 3 {
-    //     eprintln!("Usage: exec [sega|codemasters] filename");
-    //     return;
-    // }
-
-    // let filename = &args[2];
-
-    // let sdl = sdl2::init().unwrap();
-
-    // let mut emulator = sega_master_system::Emulator::new(
-    //     sega_master_system::Frequency::Ntsc,
-    //     <z80::Interpreter as Default>::default(),
-    //     <vdp::SimpleEmulator as Default>::default(),
-    // );
-    // let master_system_hardware = HardwareBuilder::new().build_from_file::<memory_16_8::sega::Component>(filename).unwrap();
-    // let mut master_system = System::new(NothingInbox, master_system_hardware);
-
-    // let mut win = sdl_wrap::simple_graphics::Window::new(&sdl).unwrap();
-    // win.set_size(768, 576);
-    // win.set_texture_size(256, 192);
-    // win.set_title("Attalus");
-    // let mut user_interface = sdl_wrap::master_system_user_interface::SdlMasterSystemUserInterface::new(&sdl).unwrap();
-
-    // let mut audio = sdl_wrap::simple_audio::Audio::new(&sdl).unwrap();
-
-    // emulator.run(
-    //     &mut master_system,
-    //     &mut win,
-    //     &mut audio,
-    //     &mut user_interface,
-    // ).unwrap();
 }

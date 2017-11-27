@@ -5,10 +5,13 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::errors::*;
+use std;
+use ::errors::{Error, CommonKind};
 use ::utilities;
 use super::Component;
 use ::host_multimedia::{SimpleColor, SimpleGraphics};
+
+type Result<T> = std::result::Result<T, Error<CommonKind>>;
 
 pub trait Emulator<HostGraphics> {
     fn draw_line(&mut self, vdp: &mut Component, graphics: &mut HostGraphics) -> Result<()>;
@@ -58,7 +61,7 @@ where
 
         if !vdp.display_visible() {
             for x in 0 .. 256 {
-                graphics.paint(x, vdp.v as u32, SimpleColor {red: 0, green: 0, blue: 0})?;
+                graphics.paint(x, vdp.v as u32, SimpleColor {red: 0, green: 0, blue: 0});
             }
             return finish(vdp, graphics);
         }
@@ -153,7 +156,7 @@ where
 
         for x in 0..256 {
             let color = vdp_color_to_simple_color(line_buffer[x as usize]);
-            graphics.paint(x, v as u32, color)?;
+            graphics.paint(x, v as u32, color);
         }
 
         return finish(vdp, graphics);

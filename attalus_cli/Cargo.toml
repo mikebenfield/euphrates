@@ -12,4 +12,4 @@ doc = false
 attalus = { path = "../attalus" }
 sdl2 = "0.30"
 clap = "2.27"
-error-chain = "0.11"
+failure = "0.1"

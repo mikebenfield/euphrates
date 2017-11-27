@@ -5,7 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use errors::*;
+use errors::{CommonKind, Error};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Component;
@@ -28,7 +28,7 @@ impl<HostAudio, Comp> super::Emulator<HostAudio, Comp> for Emulator {
         _component: &mut Comp,
         _target_cycles: u64,
         _audio: &mut HostAudio,
-    ) -> Result<()> {
+    ) -> Result<(), Error<CommonKind>> {
         Ok(())
     }
 }

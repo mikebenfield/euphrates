@@ -5,15 +5,17 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use std::thread;
 use std::io::{Read, Write};
 
+use failure::ResultExt;
 use bincode::{self, Infinite};
 
+use ::errors::{Error, SimpleKind, CommonKind};
 use ::memo::NothingInbox;
-use ::errors::*;
 use ::has::Has;
 use ::memo::{Pausable, Inbox};
 use ::hardware::irq::Irq;
@@ -25,6 +27,8 @@ use ::hardware::io_16_8;
 use ::host_multimedia::SimpleAudio;
 
 use super::UserInterface;
+
+pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
 pub trait MasterSystem: z80::Machine + vdp::Machine + memory_16_8::Machine + Encode
 {}
@@ -75,19 +79,20 @@ macro_rules! impl_encode_decode {
             }
 
             fn encode(&self, writer: &mut Write) -> Result<()> {
-                match bincode::serialize_into(writer, self, Infinite) {
-                    Err(_) => bail!("Error"),
-                    Ok(_) => Ok(())
-                }
+                bincode::serialize_into(writer, self, Infinite).with_context(|e|
+                    SimpleKind(format!("Serialization error {}", e))
+                )?;
+                Ok(())
             }
         }
 
         impl Decode for System<$i, $m> {
             fn decode(reader: &mut Read) -> Result<Self> {
-                match bincode::deserialize_from(reader, Infinite) {
-                    Err(_) => bail!("Error"),
-                    Ok(x) => Ok(x)
-                }
+                Ok(
+                    bincode::deserialize_from(reader, Infinite).with_context(|e|
+                        SimpleKind(format!("Serialization error {}", e))
+                    )?
+                )
             }
         }
     }
@@ -344,8 +349,17 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
             audio.configure(
                 frequency as u32 / 16,
                 AUDIO_BUFFER_SIZE,
+            ).map_err(|s| 
+                SimpleKind(
+                    format!("Master System emulation: error configuring audio: {}", s)
+                )
             )?;
-            audio.play()?;
+
+            audio.play().with_context(|e|
+                SimpleKind(
+                    format!("Master System emulation: error playing audio: {}", e)
+                )
+            )?;
         }
 
         let start_time = Instant::now();
@@ -360,7 +374,11 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
             }
 
             self.vdp_emulator
-                .draw_line(&mut master_system.hardware.vdp, graphics)?;
+                .draw_line(&mut master_system.hardware.vdp, graphics).with_context(|e|
+                    SimpleKind(
+                        format!("Master System emulation: VDP error {}", e)
+                    )
+                )?;
 
             let vdp_cycles = master_system.hardware.vdp.cycles;
             let z80_target_cycles = 2 * vdp_cycles / 3;
@@ -378,10 +396,27 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
                         &mut master_system.hardware.sn76489,
                         sound_target_cycles,
                         audio,
+                    ).with_context(|e|
+                        SimpleKind(
+                            format!("Master System emulation: error queueing audio {}", e)
+                        )
                     )?;
                 }
 
-                user_interface.update(master_system);
+                if let Err(e) = user_interface.update(master_system) {
+                    match e.kind() {
+                        CommonKind::Dead(_) => {
+                            Err(
+                                SimpleKind(
+                                    format!("Master System emulation error from user interface: {}", e)
+                                )
+                            )?
+                        }
+                        _ => {
+                            eprintln!("Non-fatal error during Master System emulation: {}", e)
+                        }
+                    }
+                }
 
                 if user_interface.wants_quit() {
                     return Ok(())

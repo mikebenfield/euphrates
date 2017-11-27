@@ -5,12 +5,16 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::errors::*;
+use std;
+
+use ::errors::{Error, SimpleKind};
 use ::has::Has;
 use ::memo::{Inbox, Outbox};
 
 use super::*;
 use super::sega::{Memo, MasterSystemMemory};
+
+pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
 /// The Codemasters memory map, used in Sega Master System games created by
 /// British game developer Codemasters.
@@ -203,11 +207,11 @@ where
 impl MasterSystemMemory for Component {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
-            bail! {
-                ErrorKind::Rom(
+            Err(
+                SimpleKind(
                     format!("Invalid Sega Master System ROM size 0x{:0>6X} (should be a positive multiple of 0x2000)", rom.len())
                 )
-            }
+            )?
         }
 
         let rom_impl_page_count = rom.len() / 0x2000;
@@ -224,20 +228,22 @@ impl MasterSystemMemory for Component {
             memory.push(impl_page);
         }
 
-        Ok(Component {
-            memory: memory,
-            cartridge_ram_allocated: false,
-            // according to smspower.org, the mapper is initialized with
-            // sega_slot 0 mapped to sega_page 0, slot 1 mapped to 1, and
-            // slot 2 mapped to 0
-            pages: [1, 2, 3, 4, 1, 2, 0, 0],
-            reg_0000: 0,
-            reg_4000: 1,
-            reg_8000: 0,
-            // only the system RAM is writable
-            slot_writable: 0b11000000,
-            id: 0,
-        })
+        Ok(
+            Component {
+                memory: memory,
+                cartridge_ram_allocated: false,
+                // according to smspower.org, the mapper is initialized with
+                // sega_slot 0 mapped to sega_page 0, slot 1 mapped to 1, and
+                // slot 2 mapped to 0
+                pages: [1, 2, 3, 4, 1, 2, 0, 0],
+                reg_0000: 0,
+                reg_4000: 1,
+                reg_8000: 0,
+                // only the system RAM is writable
+                slot_writable: 0b11000000,
+                id: 0,
+            }
+        )
     }
 }
 

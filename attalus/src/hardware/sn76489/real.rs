@@ -5,7 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::errors::*;
+use ::errors::{Error, CommonKind};
 use ::has::Has;
 use ::host_multimedia::SimpleAudio;
 
@@ -102,7 +102,7 @@ where
         component: &mut Component,
         target_cycles: u64,
         audio: &mut A,
-    ) -> Result<()> {
+    ) -> Result<(), Error<CommonKind>> {
         if component.cycles >= target_cycles {
             return Ok(());
         }
@@ -140,7 +140,7 @@ where
         ];
 
         {
-            let buffer = audio.buffer()?;
+            let buffer = audio.buffer();
             let mut i: usize = 0;
             while i < buffer.len() {
                 let tone0 = component.polarity[0] as i16 * amplitudes[0];

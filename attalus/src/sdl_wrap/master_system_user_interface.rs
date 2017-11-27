@@ -5,14 +5,18 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std;
 use std::path::{Path, PathBuf};
 use std::io::Write;
 
+use failure::ResultExt;
 use sdl2;
 
-use ::errors::*;
+use ::errors::{Error, CommonKind};
 use ::hardware::z80;
 use ::systems::sega_master_system::{MasterSystem, UserInterface, PlayerStatus, Query, Command};
+
+pub type Result<T> = std::result::Result<T, Error<CommonKind>>;
 
 bitflags! {
     struct JoypadPortA: u8 {
@@ -48,45 +52,48 @@ pub struct SdlMasterSystemUserInterface {
 
 impl SdlMasterSystemUserInterface {
     pub fn new(sdl: &sdl2::Sdl, save_directory: Option<PathBuf>) -> Result<Self> {
-        if let Err(s) = sdl.event() {
-            bail! {
-                ErrorKind::HostMultimedia(s)
-            }
-        }
-        match sdl.event_pump() {
-            Err(s) => bail! {
-                ErrorKind::HostMultimedia(s)
+        sdl.event().map_err(|s|
+            CommonKind::Dead(format!("Error initializing the SDL event subsystem {}", s))
+        )?;
+        let event_pump = sdl.event_pump().map_err(|s|
+            CommonKind::Dead(format!("Error obtaining the SDL event pump {}", s))
+        )?;
+
+        Ok(
+            SdlMasterSystemUserInterface {
+                save_directory: save_directory,
+                joypad_a: 0xFF,
+                joypad_b: 0xFF,
+                pause: false,
+                quit: false,
+                event_pump: event_pump,
             },
-            Ok(event_pump) => Ok(
-                SdlMasterSystemUserInterface {
-                    save_directory: save_directory,
-                    joypad_a: 0xFF,
-                    joypad_b: 0xFF,
-                    pause: false,
-                    quit: false,
-                    event_pump: event_pump,
-                },
-            ),
-        }
+        )
     }
 }
 
 fn save_master_system<P: AsRef<Path>>(path: P, master_system: &MasterSystem) -> Result<()> {
     use std::fs::File;
 
-    let mut file = File::create(path.as_ref()).chain_err(||
-        ErrorKind::HostIo(
-            format!("Could not open file {:?}", path.as_ref())
+    let mut file = File::create(path.as_ref()).with_context(|e|
+        CommonKind::Live(
+            format!("SDL user interface: could not open file {:?} to save state: {}", path.as_ref(), e)
         )
     )?;
 
     file.write(master_system.tag().as_bytes()).unwrap();
     file.write(b"\n").unwrap();
-    master_system.encode(&mut file)
+    master_system.encode(&mut file).with_context(|e|
+        CommonKind::Live(
+            format!("SDL user interface: could not encode system image: {}", e)
+        )
+    )?;
+
+    Ok(())
 }
 
 impl UserInterface for SdlMasterSystemUserInterface {
-    fn update(&mut self, master_system: &mut MasterSystem) {
+    fn update(&mut self, master_system: &mut MasterSystem) -> Result<()> {
         self.quit = false;
         self.pause = false;
 
@@ -162,6 +169,8 @@ impl UserInterface for SdlMasterSystemUserInterface {
             joypad_b.remove(RESET);
         }
         self.joypad_b = joypad_b.bits;
+
+        Ok(())
     }
 
     fn player_status(&self) -> PlayerStatus {

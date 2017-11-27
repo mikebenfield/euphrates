@@ -5,49 +5,23 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-#[macro_use]
-extern crate bitflags;
+extern crate failure;
+#[macro_use] extern crate bitflags;
 extern crate rand;
 extern crate tempdir;
 extern crate sdl2;
 extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate error_chain;
+#[macro_use] extern crate serde_derive;
 extern crate bincode;
 
-#[macro_use]
-extern crate attalus_derive;
+#[macro_use] extern crate attalus_derive;
 
+pub mod errors;
 mod runtime_pattern;
-#[macro_use]
-mod utilities;
+#[macro_use] mod utilities;
 pub mod has;
 pub mod memo;
 pub mod sdl_wrap;
-#[macro_use]
-pub mod hardware;
+#[macro_use] pub mod hardware;
 pub mod systems;
 pub mod host_multimedia;
-
-pub mod errors {
-    pub use std::result::Result as StdResult;
-    pub use std::error::Error as StdError;
-
-    error_chain! {
-        errors {
-            HostMultimedia(s: String) {
-                display("Host multimedia error: {}", s)
-            }
-            HostIo(s: String) {
-                description("Host I/O error")
-                display("Host I/O error: {}", s)
-            }
-            Rom(s: String) {
-                description("Invalid ROM")
-                display("Invalid ROM error: {}", s)
-            }
-        }
-    }
-}
