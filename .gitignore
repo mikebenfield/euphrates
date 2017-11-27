@@ -5,3 +5,4 @@ target/
 tmp/
 attalus/Cargo.lock
 attalus_derive/Cargo.lock
+.projectile
