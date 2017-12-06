@@ -5,8 +5,11 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std::marker::PhantomData;
+use std::collections::VecDeque;
 use std::fmt;
+use std::marker::PhantomData;
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub fn to16(lo: u8, hi: u8) -> u16 {
     ((hi as u16) << 8) | (lo as u16)
@@ -24,7 +27,7 @@ pub fn clear_bit(dest: &mut u8, bit: u8) {
     *dest &= !(1 << bit);
 }
 
-use serde::de::{Deserialize, Deserializer, Visitor, SeqAccess, Error as DeError};
+use serde::de::{Deserialize, Deserializer, Error, SeqAccess, Visitor};
 use serde::ser::{Serialize, Serializer};
 
 /// A VecArrayWrap<Vec<[T; len]>> can be serialized, at least if `vec_array_serialize!{len}` has been called.
@@ -379,3 +382,64 @@ macro_rules! serde_struct_arrays {
         }
     }
 }}
+
+//// Things that are immediately helpful for an emulator
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FrameInfo {
+    pub last_frames: VecDeque<Instant>,
+    pub fps: f64,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct TimeInfo {
+    pub total_cycles: u64,
+    pub cycles_start: u64,
+    pub frequency: Option<u64>,
+    pub start_time: Instant,
+    pub hold_duration: Duration,
+}
+
+const KEEP_FRAMES: usize = 50;
+
+pub fn time_govern(time_info: TimeInfo, mut frame_info: FrameInfo) -> FrameInfo {
+    debug_assert!(time_info.cycles_start <= time_info.total_cycles);
+
+    let now = Instant::now();
+
+    let new_fps = if frame_info.last_frames.len() < KEEP_FRAMES {
+        0.0
+    } else {
+        let first_instant = frame_info.last_frames[0];
+        let duration = now.duration_since(first_instant);
+        let duration_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
+        KEEP_FRAMES as f64 / duration_secs
+    };
+
+    frame_info.last_frames.push_back(now);
+    if frame_info.last_frames.len() > KEEP_FRAMES {
+        frame_info.last_frames.pop_front();
+    }
+
+    if let Some(frequency) = time_info.frequency {
+        let guest_cycles = time_info.total_cycles - time_info.cycles_start;
+        let guest_duration_seconds = guest_cycles / frequency;
+        let guest_cycles_remaining = guest_cycles % frequency;
+        let guest_duration_subsec_nanos = (1000000000 * guest_cycles_remaining) / frequency;
+        let guest_duration =
+            Duration::new(guest_duration_seconds, guest_duration_subsec_nanos as u32);
+
+        let host_total_duration = now.duration_since(time_info.start_time);
+        debug_assert!(host_total_duration >= time_info.hold_duration);
+        let host_active_duration = host_total_duration - time_info.hold_duration;
+
+        if let Some(diff_duration) = guest_duration.checked_sub(host_active_duration) {
+            thread::sleep(diff_duration);
+        }
+    }
+
+    FrameInfo {
+        last_frames: frame_info.last_frames,
+        fps: new_fps,
+    }
+}

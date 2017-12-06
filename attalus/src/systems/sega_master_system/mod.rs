@@ -6,9 +6,7 @@
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
 mod emulator;
-mod user_interface;
 mod inbox;
 
 pub use self::emulator::*;
-pub use self::user_interface::*;
 pub use self::inbox::*;

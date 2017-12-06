@@ -5,18 +5,34 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std;
-use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::path::{Path, PathBuf};
+use std;
 
-use failure::ResultExt;
+use failure::Error;
 use sdl2;
 
-use ::errors::{Error, CommonKind};
-use ::hardware::z80;
-use ::systems::sega_master_system::{MasterSystem, UserInterface, PlayerStatus, Query, Command};
+use hardware::vdp;
+use hardware::z80;
+use has::Has;
+use host_multimedia::SimpleAudio;
+use sdl_wrap;
+use systems::sega_master_system::{Emulator, MasterSystem, PlayerStatus, TimeStatus};
+use utilities::FrameInfo;
 
-pub type Result<T> = std::result::Result<T, Error<CommonKind>>;
+pub type Result<T> = std::result::Result<T, Error>;
+
+fn save_master_system<P: AsRef<Path>>(path: P, master_system: &MasterSystem) -> Result<()> {
+    use std::fs::File;
+
+    let mut file = File::create(path.as_ref())?;
+
+    file.write(master_system.tag().as_bytes())?;
+    file.write(b"\n")?;
+    master_system.encode(&mut file)?;
+
+    Ok(())
+}
 
 bitflags! {
     struct JoypadPortA: u8 {
@@ -44,83 +60,55 @@ bitflags! {
     }
 }
 
-pub struct SdlMasterSystemUserInterface {
+pub struct UserInterface {
     save_directory: Option<PathBuf>,
-    joypad_a: u8,
-    joypad_b: u8,
-    pause: bool,
-    quit: bool,
+    player_status: PlayerStatus,
     event_pump: sdl2::EventPump,
 }
 
-impl SdlMasterSystemUserInterface {
+impl UserInterface {
     pub fn new(sdl: &sdl2::Sdl, save_directory: Option<PathBuf>) -> Result<Self> {
-        sdl.event().map_err(|s|
-            CommonKind::Dead(format!("Error initializing the SDL event subsystem {}", s))
-        )?;
-        let event_pump = sdl.event_pump().map_err(|s|
-            CommonKind::Dead(format!("Error obtaining the SDL event pump {}", s))
-        )?;
+        sdl.event().map_err(|s| {
+            format_err!("Error initializing the SDL event subsystem {}", s)
+        })?;
 
-        Ok(
-            SdlMasterSystemUserInterface {
-                save_directory: save_directory,
-                joypad_a: 0xFF,
-                joypad_b: 0xFF,
-                pause: false,
-                quit: false,
-                event_pump: event_pump,
-            },
-        )
+        let event_pump = sdl.event_pump().map_err(|s| {
+            format_err!("Error obtaining the SDL event pump {}", s)
+        })?;
+
+        Ok(UserInterface {
+            save_directory: save_directory,
+            player_status: Default::default(),
+            event_pump: event_pump,
+        })
     }
-}
 
-fn save_master_system<P: AsRef<Path>>(path: P, master_system: &MasterSystem) -> Result<()> {
-    use std::fs::File;
-
-    let mut file = File::create(path.as_ref()).with_context(|e|
-        CommonKind::Live(
-            format!("SDL user interface: could not open file {:?} to save state: {}", path.as_ref(), e)
-        )
-    )?;
-
-    file.write(master_system.tag().as_bytes()).unwrap();
-    file.write(b"\n").unwrap();
-    master_system.encode(&mut file).with_context(|e|
-        CommonKind::Live(
-            format!("SDL user interface: could not encode system image: {}", e)
-        )
-    )?;
-
-    Ok(())
-}
-
-impl UserInterface for SdlMasterSystemUserInterface {
-    fn update(&mut self, master_system: &mut MasterSystem) -> Result<()> {
-        self.quit = false;
-        self.pause = false;
+    fn frame_update<S>(&mut self, master_system: &S) -> bool
+    where
+        S: MasterSystem,
+    {
+        self.player_status.pause = false;
 
         for event in self.event_pump.poll_iter() {
             use sdl2::keyboard::Scancode::*;
 
             match event {
-                sdl2::event::Event::Quit { .. } => self.quit = true,
-                sdl2::event::Event::KeyDown {
-                    scancode: Some(k),
-                    ..
-                } => match k {
-                    P => self.pause = true,
-                    Z => {
-                        if let Some(ref path) = self.save_directory {
-                            let z80: &z80::Component = master_system.get();
-                            let mut path2 = path.clone();
-                            path2.push(format!("{:>0width$X}", z80.cycles, width=20));
-                            if let Err(e) = save_master_system(path2, master_system) {
-                                eprintln!("Error saving file: {:?}", e);
+                sdl2::event::Event::Quit { .. } => return false,
+                sdl2::event::Event::KeyDown { scancode: Some(k), .. } => {
+                    match k {
+                        P => self.player_status.pause = true,
+                        Z => {
+                            if let Some(ref path) = self.save_directory {
+                                let z80: &z80::Component = master_system.get();
+                                let mut path2 = path.clone();
+                                path2.push(format!("{:>0width$X}.state", z80.cycles, width = 20));
+                                if let Err(e) = save_master_system(path2, master_system) {
+                                    eprintln!("Error saving file: {:?}", e);
+                                }
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
                 _ => {}
             }
@@ -153,7 +141,7 @@ impl UserInterface for SdlMasterSystemUserInterface {
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::K) {
             joypad_a.remove(JOYPAD2_DOWN);
         }
-        self.joypad_a = joypad_a.bits;
+        self.player_status.joypad_a = joypad_a.bits;
 
         let mut joypad_b = JoypadPortB::all();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::J) {
@@ -171,32 +159,48 @@ impl UserInterface for SdlMasterSystemUserInterface {
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Space) {
             joypad_b.remove(RESET);
         }
-        self.joypad_b = joypad_b.bits;
+        self.player_status.joypad_b = joypad_b.bits;
 
-        Ok(())
+        true
     }
 
-    fn player_status(&self) -> PlayerStatus {
-        PlayerStatus {
-            joypad_a: self.joypad_a,
-            joypad_b: self.joypad_b,
-            pause: self.pause,
+    pub fn run<Z80Emulator, VdpEmulator, S>(
+        &mut self,
+        sdl: &sdl2::Sdl,
+        emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
+        master_system: &mut S,
+    ) -> Result<()>
+    where
+        S: MasterSystem,
+        Z80Emulator: z80::Emulator<S>,
+        VdpEmulator: vdp::Emulator<sdl_wrap::simple_graphics::Window>,
+    {
+        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
+        win.set_size(768, 576);
+        win.set_texture_size(256, 192);
+        win.set_title("Attalus");
+
+        let mut frame_info = FrameInfo::default();
+
+        let mut audio = sdl_wrap::simple_audio::Audio::new(&sdl)?;
+        emulator.configure_audio(&mut audio)?;
+        audio.play()?;
+
+        let time_status = TimeStatus::new(<S as Has<z80::Component>>::get(master_system).cycles);
+
+        loop {
+            if !self.frame_update(master_system) {
+                return Ok(());
+            }
+
+            emulator.run_frame(
+                master_system,
+                &mut win,
+                &mut audio,
+                &self.player_status,
+                &time_status,
+                &mut frame_info,
+            )?;
         }
     }
-
-    fn respond(&mut self, _s: String) {
-    }
-
-    fn command(&mut self) -> Option<Command> {
-        None
-    }
-
-    fn query(&mut self) -> Option<Query> {
-        None
-    }
-
-    fn wants_quit(&self) -> bool {
-        self.quit
-    }
 }
-

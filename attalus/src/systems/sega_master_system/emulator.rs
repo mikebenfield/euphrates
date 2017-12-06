@@ -5,38 +5,49 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std;
-use std::collections::VecDeque;
-use std::time::{Duration, Instant};
-use std::thread;
 use std::io::{Read, Write};
+use std::time::{Duration, Instant};
+use std;
 
-use failure::ResultExt;
 use bincode::{self, Infinite};
+use failure::ResultExt;
 
-use ::errors::{Error, SimpleKind, CommonKind};
-use ::memo::NothingInbox;
-use ::has::Has;
-use ::memo::{Pausable, Inbox};
-use ::hardware::irq::Irq;
-use ::hardware::vdp;
-use ::hardware::memory_16_8;
-use ::hardware::z80;
-use ::hardware::sn76489;
-use ::hardware::io_16_8;
-use ::host_multimedia::SimpleAudio;
-
-use super::UserInterface;
+use errors::{Error, SimpleKind};
+use hardware::io_16_8;
+use hardware::irq::Irq;
+use hardware::memory_16_8;
+use hardware::sn76489;
+use hardware::vdp;
+use hardware::z80;
+use has::Has;
+use host_multimedia::SimpleAudio;
+use memo::NothingInbox;
+use memo::{Inbox, Pausable};
+use utilities::{self, FrameInfo, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
-pub trait MasterSystem: z80::Machine + vdp::Machine + memory_16_8::Machine + Encode
-{}
+pub trait MasterSystem
+    : z80::Machine
+    + vdp::Machine
+    + memory_16_8::Machine
+    + Has<io_16_8::sms2::Component>
+    + Has<sn76489::real::Component>
+    + Pausable
+    + Encode {
+}
 
 impl<T> MasterSystem for T
 where
-    T: z80::Machine + vdp::Machine + memory_16_8::Machine + Encode
-{}
+    T: z80::Machine
+        + vdp::Machine
+        + memory_16_8::Machine
+        + Has<io_16_8::sms2::Component>
+        + Has<sn76489::real::Component>
+        + Pausable
+        + Encode,
+{
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Hardware<M> {
@@ -55,10 +66,7 @@ pub struct System<I, M> {
 
 impl<I, M> System<I, M> {
     pub fn new(inbox: I, hardware: Hardware<M>) -> Self {
-        System {
-            inbox,
-            hardware,
-        }
+        System { inbox, hardware }
     }
 }
 
@@ -100,8 +108,10 @@ macro_rules! impl_encode_decode {
 
 impl_encode_decode!{super::DebuggingInbox, memory_16_8::sega::Component, "debugging,sega"}
 impl_encode_decode!{NothingInbox, memory_16_8::sega::Component, "nothing,sega"}
-impl_encode_decode!{super::DebuggingInbox, memory_16_8::codemasters::Component, "debugging,codemasters"}
-impl_encode_decode!{NothingInbox, memory_16_8::codemasters::Component, "nothing,codemasters"}
+impl_encode_decode!{super::DebuggingInbox, memory_16_8::codemasters::Component,
+"debugging,codemasters"}
+impl_encode_decode!{NothingInbox, memory_16_8::codemasters::Component,
+"nothing,codemasters"}
 
 macro_rules! impl_has {
     ($typename: ty, $component_name: ident) => {
@@ -159,14 +169,14 @@ where
 
 impl<I, M> io_16_8::MachineImpl for System<I, M>
 where
-    I: Inbox<vdp::Memo> + Inbox<io_16_8::sms2::Memo>
+    I: Inbox<vdp::Memo> + Inbox<io_16_8::sms2::Memo>,
 {
     type C = io_16_8::sms2::Component;
 }
 
 impl<I, M> Pausable for System<I, M>
 where
-    I: Pausable
+    I: Pausable,
 {
     #[inline(always)]
     fn wants_pause(&self) -> bool {
@@ -181,7 +191,7 @@ where
 
 impl<I, M, T> Inbox<T> for System<I, M>
 where
-    I: Inbox<T>
+    I: Inbox<T>,
 {
     #[inline(always)]
     fn receive(&mut self, id: u32, memo: T) {
@@ -189,13 +199,12 @@ where
     }
 }
 
-impl<I, M> Irq for System<I, M>
-{
+impl<I, M> Irq for System<I, M> {
     #[inline(always)]
     fn requesting_mi(&self) -> Option<u8> {
-        self.hardware.vdp.requesting_mi().or_else(||
+        self.hardware.vdp.requesting_mi().or_else(|| {
             self.hardware.io.requesting_mi()
-        )
+        })
     }
 
     #[inline(always)]
@@ -218,6 +227,26 @@ impl<I, M> sn76489::MachineImpl for System<I, M> {
     type C = sn76489::real::Component;
 }
 
+//// Builders and other useful types
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum Frequency {
+    Ntsc,
+    Pal,
+    MasterFrequency(u64),
+    Z80Frequency(u64),
+    Unlimited,
+}
+
+impl Default for Frequency {
+    fn default() -> Self {
+        Frequency::Ntsc
+    }
+}
+
+pub const NTSC_MASTER_FREQUENCY: u64 = 10738580;
+
+pub const PAL_MASTER_FREQUENCY: u64 = 10640685;
 #[derive(Copy, Clone, Debug, Default)]
 pub struct HardwareBuilder {
     vdp_kind: vdp::Kind,
@@ -264,8 +293,7 @@ impl HardwareBuilder {
         self
     }
 
-    pub fn build<M>(&self, memory: M) -> Hardware<M>
-    {
+    pub fn build<M>(&self, memory: M) -> Hardware<M> {
         let mut vdp = vdp::Component::new();
         vdp.kind = self.vdp_kind;
         vdp.tv_system = self.vdp_tv_system;
@@ -280,23 +308,67 @@ impl HardwareBuilder {
 
     pub fn build_from_rom<M>(&self, rom: &[u8]) -> Result<Hardware<M>>
     where
-        M: memory_16_8::sega::MasterSystemMemory
+        M: memory_16_8::sega::MasterSystemMemory,
     {
         let memory = M::new(rom)?;
-        Ok(
-            self.build(memory)
-        )
+        Ok(self.build(memory))
     }
 
     pub fn build_from_file<M>(&self, filename: &str) -> Result<Hardware<M>>
     where
-        M: memory_16_8::sega::MasterSystemMemory
+        M: memory_16_8::sega::MasterSystemMemory,
     {
         let memory = M::new_from_file(filename)?;
-        Ok(
-            self.build(memory)
-        )
+        Ok(self.build(memory))
     }
+}
+
+//// The Emulator and types it needs
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct PlayerStatus {
+    pub joypad_a: u8,
+    pub joypad_b: u8,
+    pub pause: bool,
+}
+
+impl Default for PlayerStatus {
+    fn default() -> Self {
+        PlayerStatus {
+            joypad_a: 0xFF,
+            joypad_b: 0xFF,
+            pause: false,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct TimeStatus {
+    pub cycles_start: u64,
+    pub start_time: Instant,
+    pub hold_duration: Duration,
+}
+
+impl Default for TimeStatus {
+    fn default() -> Self {
+        TimeStatus::new(0)
+    }
+}
+
+impl TimeStatus {
+    pub fn new(cycles_start: u64) -> Self {
+        TimeStatus {
+            cycles_start,
+            start_time: Instant::now(),
+            hold_duration: Duration::from_millis(0),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum EmulationResult {
+    FrameCompleted,
+    FrameInterrupted,
 }
 
 #[derive(Copy, Clone, Default, Debug, Eq, PartialEq, Hash)]
@@ -311,7 +383,7 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
         frequency: Frequency,
         z80_emulator: Z80Emulator,
         vdp_emulator: VdpEmulator,
-    ) -> Emulator<Z80Emulator, VdpEmulator>{
+    ) -> Emulator<Z80Emulator, VdpEmulator> {
         use self::Frequency::*;
         let z80_frequency = match frequency {
             Ntsc => Some(NTSC_MASTER_FREQUENCY / 3),
@@ -326,195 +398,102 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
             vdp_emulator,
         }
     }
-}
 
-impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
-    pub fn run<I, M, HostGraphics>(
-        &mut self,
-        master_system: &mut System<I, M>,
-        graphics: &mut HostGraphics,
-        audio: &mut SimpleAudio,
-        user_interface: &mut UserInterface,
-    ) -> Result<()>
+    pub fn configure_audio<A>(&self, audio: &mut A) -> Result<()>
     where
-        System<I, M>: MasterSystem,
-        Z80Emulator: z80::Emulator<System<I, M>>,
-        // System<I, M>: z80::Machine,
-        VdpEmulator: vdp::Emulator<HostGraphics>,
-        I: Pausable,
+        A: SimpleAudio,
     {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
 
         if let Some(frequency) = self.z80_frequency {
-            audio.configure(
-                frequency as u32 / 16,
-                AUDIO_BUFFER_SIZE,
-            ).map_err(|s| 
-                SimpleKind(
-                    format!("Master System emulation: error configuring audio: {}", s)
-                )
-            )?;
-
-            audio.play().with_context(|e|
-                SimpleKind(
-                    format!("Master System emulation: error playing audio: {}", e)
-                )
-            )?;
+            audio
+                .configure(frequency as u32 / 16, AUDIO_BUFFER_SIZE)
+                .map_err(|s| {
+                    SimpleKind(format!(
+                        "Master System emulation: error configuring audio: {}",
+                        s
+                    ))
+                })?;
         }
+        Ok(())
+    }
 
-        let start_time = Instant::now();
-        let z80_cycles_start = master_system.hardware.z80.cycles;
-        let mut frame_info: FrameInfo = Default::default();
+    pub fn run_frame<S, HostGraphics>(
+        &mut self,
+        master_system: &mut S,
+        graphics: &mut HostGraphics,
+        audio: &mut SimpleAudio,
+        player_status: &PlayerStatus,
+        time_status: &TimeStatus,
+        frame_info: &mut FrameInfo,
+    ) -> Result<EmulationResult>
+    where
+        S: MasterSystem,
+        Z80Emulator: z80::Emulator<S>,
+        VdpEmulator: vdp::Emulator<HostGraphics>,
+    {
+        // audio already configured, start time, etc
 
-        let mut sn76489_emulator = <sn76489::real::Emulator as Default>::default();
+        <S as Has<io_16_8::sms2::Component>>::get_mut(master_system)
+            .set_joypad_a(player_status.joypad_a);
+        <S as Has<io_16_8::sms2::Component>>::get_mut(master_system)
+            .set_joypad_b(player_status.joypad_b);
+        <S as Has<io_16_8::sms2::Component>>::get_mut(master_system).set_pause(player_status.pause);
+
+        // XXX - probably should change to have the sn76489 emulator be a
+        // field of the emulator
+        let mut sn76489_emulator: sn76489::real::Emulator = Default::default();
 
         loop {
-            if master_system.inbox.wants_pause() {
-                unimplemented!();
+            if master_system.wants_pause() {
+                return Ok(EmulationResult::FrameInterrupted);
             }
 
             self.vdp_emulator
-                .draw_line(&mut master_system.hardware.vdp, graphics).with_context(|e|
-                    SimpleKind(
-                        format!("Master System emulation: VDP error {}", e)
-                    )
-                )?;
+                .draw_line(<S as Has<vdp::Component>>::get_mut(master_system), graphics)
+                .with_context(|e| {
+                    SimpleKind(format!("Master System emulation: VDP error {}", e))
+                })?;
 
-            let vdp_cycles = master_system.hardware.vdp.cycles;
+            let vdp_cycles = <S as Has<vdp::Component>>::get(master_system).cycles;
             let z80_target_cycles = 2 * vdp_cycles / 3;
 
-            while master_system.hardware.z80.cycles < z80_target_cycles {
-                self.z80_emulator
-                    .run(master_system, z80_target_cycles);
+            while <S as Has<z80::Component>>::get(master_system).cycles < z80_target_cycles {
+                self.z80_emulator.run(master_system, z80_target_cycles);
+                if master_system.wants_pause() {
+                    return Ok(EmulationResult::FrameInterrupted);
+                }
             }
 
-            if master_system.hardware.vdp.v == 0 {
+            if <S as Has<vdp::Component>>::get(master_system).v == 0 {
                 if let Some(_) = self.z80_frequency {
-                    let sound_target_cycles = master_system.hardware.z80.cycles / 16;
+                    let sound_target_cycles = <S as Has<z80::Component>>::get(master_system)
+                        .cycles / 16;
                     sn76489::Emulator::queue(
                         &mut sn76489_emulator,
-                        &mut master_system.hardware.sn76489,
+                        <S as Has<sn76489::real::Component>>::get_mut(master_system),
                         sound_target_cycles,
                         audio,
-                    ).with_context(|e|
-                        SimpleKind(
-                            format!("Master System emulation: error queueing audio {}", e)
-                        )
-                    )?;
+                    ).with_context(|e| {
+                        SimpleKind(format!(
+                            "Master System emulation: error queueing audio {}",
+                            e
+                        ))
+                    })?;
                 }
-
-                if let Err(e) = user_interface.update(master_system) {
-                    match e.kind() {
-                        CommonKind::Dead(_) => {
-                            Err(
-                                SimpleKind(
-                                    format!("Master System emulation error from user interface: {}", e)
-                                )
-                            )?
-                        }
-                        _ => {
-                            eprintln!("Non-fatal error during Master System emulation: {}", e)
-                        }
-                    }
-                }
-
-                if user_interface.wants_quit() {
-                    return Ok(())
-                }
-
-                let player_status = user_interface.player_status();
-                master_system.hardware.io.set_joypad_a(player_status.joypad_a);
-                master_system.hardware.io.set_joypad_b(player_status.joypad_b);
-                master_system.hardware.io.set_pause(player_status.pause);
 
                 let time_info = TimeInfo {
-                    total_cycles: master_system.hardware.z80.cycles,
-                    cycles_start: z80_cycles_start,
+                    total_cycles: <S as Has<z80::Component>>::get(master_system).cycles,
+                    cycles_start: time_status.cycles_start,
                     frequency: self.z80_frequency,
-                    start_time: start_time,
-                    hold_duration: Duration::from_secs(0),
+                    start_time: time_status.start_time,
+                    hold_duration: time_status.hold_duration,
                 };
 
-                frame_info = time_govern(time_info, frame_info);
+                *frame_info = utilities::time_govern(time_info, frame_info.clone());
+
+                return Ok(EmulationResult::FrameCompleted)
             }
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum Frequency {
-    Ntsc,
-    Pal,
-    MasterFrequency(u64),
-    Z80Frequency(u64),
-    Unlimited,
-}
-
-impl Default for Frequency {
-    fn default() -> Self {
-        Frequency::Ntsc
-    }
-}
-
-pub const NTSC_MASTER_FREQUENCY: u64 = 10738580;
-
-pub const PAL_MASTER_FREQUENCY: u64 = 10640685;
-
-const KEEP_FRAMES: usize = 50;
-
-#[derive(Clone, Debug, Default, PartialEq)]
-struct FrameInfo {
-    last_frames: VecDeque<Instant>,
-    fps: f64,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-struct TimeInfo {
-    total_cycles: u64,
-    cycles_start: u64,
-    frequency: Option<u64>,
-    start_time: Instant,
-    hold_duration: Duration,
-}
-
-fn time_govern(time_info: TimeInfo, mut frame_info: FrameInfo) -> FrameInfo {
-    debug_assert!(time_info.cycles_start <= time_info.total_cycles);
-
-    let now = Instant::now();
-
-    let new_fps = if frame_info.last_frames.len() < KEEP_FRAMES {
-        0.0
-    } else {
-        let first_instant = frame_info.last_frames[0];
-        let duration = now.duration_since(first_instant);
-        let duration_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-        KEEP_FRAMES as f64 / duration_secs
-    };
-
-    frame_info.last_frames.push_back(now);
-    if frame_info.last_frames.len() > KEEP_FRAMES {
-        frame_info.last_frames.pop_front();
-    }
-
-    if let Some(frequency) = time_info.frequency {
-        let guest_cycles = time_info.total_cycles - time_info.cycles_start;
-        let guest_duration_seconds = guest_cycles / frequency;
-        let guest_cycles_remaining = guest_cycles % frequency;
-        let guest_duration_subsec_nanos = (1000000000 * guest_cycles_remaining) / frequency;
-        let guest_duration =
-            Duration::new(guest_duration_seconds, guest_duration_subsec_nanos as u32);
-
-        let host_total_duration = now.duration_since(time_info.start_time);
-        debug_assert!(host_total_duration >= time_info.hold_duration);
-        let host_active_duration = host_total_duration - time_info.hold_duration;
-
-        if let Some(diff_duration) = guest_duration.checked_sub(host_active_duration) {
-            thread::sleep(diff_duration);
-        }
-    }
-
-    FrameInfo {
-        last_frames: frame_info.last_frames,
-        fps: new_fps,
     }
 }

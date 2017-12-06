@@ -7,6 +7,7 @@
 
 extern crate sdl2;
 extern crate clap;
+#[macro_use]
 extern crate failure;
 extern crate attalus;
 
@@ -42,37 +43,18 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         <vdp::SimpleEmulator as Default>::default(),
     );
 
-    let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-    win.set_size(768, 576);
-    win.set_texture_size(256, 192);
-    win.set_title("Attalus");
-
-    let mut audio = sdl_wrap::simple_audio::Audio::new(&sdl)?;
-
-    let mut user_interface = sdl_wrap::master_system_user_interface::SdlMasterSystemUserInterface::new(&sdl, save_directory).unwrap();
+    let mut user_interface = sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory)?;
 
     if memory_map == "sega" {
         let master_system_hardware = HardwareBuilder::new().build_from_file::<memory_16_8::sega::Component>(filename).unwrap();
         let mut master_system = System::new(NothingInbox, master_system_hardware);
-        emulator.run(
-            &mut master_system,
-            &mut win,
-            &mut audio,
-            &mut user_interface,
-        )?;
+        user_interface.run(&sdl, &mut emulator, &mut master_system)?;
     } else if memory_map == "codemasters" {
         let master_system_hardware = HardwareBuilder::new().build_from_file::<memory_16_8::codemasters::Component>(filename).unwrap();
         let mut master_system = System::new(NothingInbox, master_system_hardware);
-        emulator.run(
-            &mut master_system,
-            &mut win,
-            &mut audio,
-            &mut user_interface,
-        )?;
+        user_interface.run(&sdl, &mut emulator, &mut master_system)?;
     } else {
-        Err(
-            failure::err_msg(format!("Can't happen: Unknown memory map {}", memory_map))
-        )?;
+        Err(format_err!("Can't happen: Unknown memory map {}", memory_map))?;
     }
 
     Ok(())
@@ -93,27 +75,16 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
         <vdp::SimpleEmulator as Default>::default(),
     );
 
-    let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-    win.set_size(768, 576);
-    win.set_texture_size(256, 192);
-    win.set_title("Attalus");
-
-    let mut audio = sdl_wrap::simple_audio::Audio::new(&sdl)?;
-
-    let mut user_interface = sdl_wrap::master_system_user_interface::SdlMasterSystemUserInterface::new(&sdl, save_directory).unwrap();
+    let mut user_interface = sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory)?;
 
     let mut load_file = BufReader::with_capacity(1024, File::open(load_filename).unwrap());
 
     let mut nothing = String::new();
-    load_file.read_line(&mut nothing).unwrap();
+    load_file.read_line(&mut nothing)?;
 
-    let mut master_system = <System<NothingInbox, memory_16_8::sega::Component> as Decode>::decode(&mut load_file).unwrap();
-    emulator.run(
-        &mut master_system,
-        &mut win,
-        &mut audio,
-        &mut user_interface,
-    )?;
+    let mut master_system = <System<NothingInbox, memory_16_8::sega::Component> as Decode>::decode(&mut load_file)?;
+    
+    user_interface.run(&sdl, &mut emulator, &mut master_system)?;
 
     Ok(())
 }
