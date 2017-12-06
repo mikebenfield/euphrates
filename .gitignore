@@ -4,5 +4,6 @@ target/
 .DS_Store
 tmp/
 attalus/Cargo.lock
+attalus_cli/Cargo.lock
 attalus_derive/Cargo.lock
 .projectile
