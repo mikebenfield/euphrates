@@ -33,6 +33,9 @@ bitflags! {
 
 bitflags! {
     struct JoypadPortB: u8 {
+        const B_TH = 0b10000000;
+        const A_TH = 0b01000000;
+        const CONT = 0b00100000;
         const RESET = 0b00010000;
         const JOYPAD2_B = 0b00001000;
         const JOYPAD2_A = 0b00000100;
