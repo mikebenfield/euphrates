@@ -31,3 +31,5 @@ pub mod sdl_wrap;
 pub mod hardware;
 pub mod systems;
 pub mod host_multimedia;
+
+pub use utilities::{FrameInfo, Tag, TimeInfo, time_govern};

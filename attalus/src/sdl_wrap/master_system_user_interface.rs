@@ -5,7 +5,6 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std;
 
@@ -18,18 +17,16 @@ use has::Has;
 use host_multimedia::SimpleAudio;
 use sdl_wrap;
 use systems::sega_master_system::{Emulator, MasterSystem, PlayerStatus, TimeStatus};
-use utilities::FrameInfo;
+use utilities::{FrameInfo, Tag};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-fn save_master_system<P: AsRef<Path>>(path: P, master_system: &MasterSystem) -> Result<()> {
+fn save_master_system<P: AsRef<Path>, T: Tag>(path: P, master_system: &T) -> Result<()> {
     use std::fs::File;
 
     let mut file = File::create(path.as_ref())?;
 
-    file.write(master_system.tag().as_bytes())?;
-    file.write(b"\n")?;
-    master_system.encode(&mut file)?;
+    master_system.write(&mut file)?;
 
     Ok(())
 }

@@ -424,7 +424,7 @@ pub trait MasterSystemMemory: Sized {
                 format!("Unable to open ROM file {}: {}", filename, e)
             )
         )?;
-        
+
         let mut buf: Vec<u8> = Vec::new();
 
         f.read_to_end(&mut buf).with_context(|e|

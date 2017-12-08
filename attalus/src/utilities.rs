@@ -7,9 +7,13 @@
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::io::{BufRead, Write};
 use std::marker::PhantomData;
 use std::thread;
 use std::time::{Duration, Instant};
+
+use bincode;
+use failure::Error;
 
 pub fn to16(lo: u8, hi: u8) -> u16 {
     ((hi as u16) << 8) | (lo as u16)
@@ -27,10 +31,13 @@ pub fn clear_bit(dest: &mut u8, bit: u8) {
     *dest &= !(1 << bit);
 }
 
-use serde::de::{Deserialize, Deserializer, Error, SeqAccess, Visitor};
+use serde::de::{Deserialize, Deserializer, DeserializeOwned, Error as DeError, SeqAccess, Visitor};
 use serde::ser::{Serialize, Serializer};
 
-/// A VecArrayWrap<Vec<[T; len]>> can be serialized, at least if `vec_array_serialize!{len}` has been called.
+//// Serializing and deserializing arrays
+
+/// A VecArrayWrap<Vec<[T; len]>> can be serialized, at least if
+/// `vec_array_serialize!{len}` has been called.
 pub struct VecArrayWrap<'a, T: 'a>(pub &'a T);
 
 macro_rules! vec_array_serialize {
@@ -136,7 +143,8 @@ macro_rules! vec_array_deserialize {
                 D: Deserializer<'de>
             {
                 use std::mem;
-                let result = <Vec<ArrayWrap<[T; $array_len]>> as Deserialize>::deserialize(deserializer)?;
+                let result =
+                    <Vec<ArrayWrap<[T; $array_len]>> as Deserialize>::deserialize(deserializer)?;
                 Ok(
                     unsafe {
                         mem::transmute(result)
@@ -189,7 +197,7 @@ macro_rules! serde_struct_arrays {
             {
                 #[allow(non_camel_case_types)]
                 #[derive(Eq, PartialEq, Deserialize)]
-                enum Field { 
+                enum Field {
                     $($plain_field,)*
                     $($array_field,)*
                     $($vec_of_arrays_field,)*
@@ -236,11 +244,14 @@ macro_rules! serde_struct_arrays {
                         )*
 
                         $(
-                            let $array_field = extract!(utilities::ArrayWrap<[$array_ty; $array_len]>);
+                            let $array_field =
+                                extract!(utilities::ArrayWrap<[$array_ty; $array_len]>);
                         )*
 
                         $(
-                            let $vec_of_arrays_field = extract!(utilities::ArrayWrap<Vec<[$vec_of_arrays_ty; $vec_of_arrays_len]>>);
+                            let $vec_of_arrays_field =
+                                extract!(utilities::ArrayWrap<Vec<[$vec_of_arrays_ty;
+                                                                   $vec_of_arrays_len]>>);
                         )*
 
                         Ok(
@@ -274,7 +285,8 @@ macro_rules! serde_struct_arrays {
 
                         $(
                             let mut $vec_of_arrays_field:
-                                Option<utilities::ArrayWrap<Vec<[$vec_of_arrays_ty; $vec_of_arrays_len]>>> = None;
+                            Option<utilities::ArrayWrap<Vec<[$vec_of_arrays_ty;
+                                                             $vec_of_arrays_len]>>> = None;
                         )*
 
                         macro_rules! branch {
@@ -382,6 +394,34 @@ macro_rules! serde_struct_arrays {
         }
     }
 }}
+
+//// Serializing and Deserializing
+
+pub trait Tag: Serialize + DeserializeOwned {
+    const TAG: &'static str;
+
+    fn write<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+        w.write_all(Self::TAG.as_bytes())?;
+        w.write_all(b"\n")?;
+        bincode::serialize_into(w, &self, bincode::Infinite)?;
+        Ok(())
+    }
+
+    fn read<R: BufRead>(r: &mut R) -> Result<Self, Error> {
+        let mut s = String::with_capacity(Self::TAG.len());
+        r.read_line(&mut s)?;
+        s.pop();
+        if <String as AsRef<str>>::as_ref(&s) == Self::TAG {
+            Ok(bincode::deserialize_from(r, bincode::Infinite)?)
+        } else {
+            Err(format_err!(
+                "Incorrect tag {} for this type (should be {})",
+                s,
+                Self::TAG
+            ))
+        }
+    }
+}
 
 //// Things that are immediately helpful for an emulator
 

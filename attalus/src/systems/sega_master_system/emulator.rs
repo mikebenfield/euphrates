@@ -5,12 +5,12 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 use std;
 
-use bincode::{self, Infinite};
 use failure::ResultExt;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use errors::{Error, SimpleKind};
 use hardware::io_16_8;
@@ -23,7 +23,7 @@ use has::Has;
 use host_multimedia::SimpleAudio;
 use memo::NothingInbox;
 use memo::{Inbox, Pausable};
-use utilities::{self, FrameInfo, TimeInfo};
+use utilities::{self, FrameInfo, Tag, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
@@ -34,7 +34,9 @@ pub trait MasterSystem
     + Has<io_16_8::sms2::Component>
     + Has<sn76489::real::Component>
     + Pausable
-    + Encode {
+    + Tag
+    + Serialize
+    + DeserializeOwned {
 }
 
 impl<T> MasterSystem for T
@@ -45,7 +47,9 @@ where
         + Has<io_16_8::sms2::Component>
         + Has<sn76489::real::Component>
         + Pausable
-        + Encode,
+        + Tag
+        + Serialize
+        + DeserializeOwned,
 {
 }
 
@@ -70,47 +74,19 @@ impl<I, M> System<I, M> {
     }
 }
 
-pub trait Encode {
-    fn tag(&self) -> &'static str;
-    fn encode(&self, writer: &mut Write) -> Result<()>;
-}
-
-pub trait Decode: Encode + Sized {
-    fn decode(reader: &mut Read) -> Result<Self>;
-}
-
-macro_rules! impl_encode_decode {
+macro_rules! impl_tag {
     ($i: ty, $m: ty, $tag: expr) => {
-        impl Encode for System<$i, $m> {
-            fn tag(&self) -> &'static str {
-                $tag
-            }
-
-            fn encode(&self, writer: &mut Write) -> Result<()> {
-                bincode::serialize_into(writer, self, Infinite).with_context(|e|
-                    SimpleKind(format!("Serialization error {}", e))
-                )?;
-                Ok(())
-            }
-        }
-
-        impl Decode for System<$i, $m> {
-            fn decode(reader: &mut Read) -> Result<Self> {
-                Ok(
-                    bincode::deserialize_from(reader, Infinite).with_context(|e|
-                        SimpleKind(format!("Serialization error {}", e))
-                    )?
-                )
-            }
+        impl Tag for System<$i, $m> {
+            const TAG: &'static str = $tag;
         }
     }
 }
 
-impl_encode_decode!{super::DebuggingInbox, memory_16_8::sega::Component, "debugging,sega"}
-impl_encode_decode!{NothingInbox, memory_16_8::sega::Component, "nothing,sega"}
-impl_encode_decode!{super::DebuggingInbox, memory_16_8::codemasters::Component,
+impl_tag!{super::DebuggingInbox, memory_16_8::sega::Component, "debugging,sega"}
+impl_tag!{NothingInbox, memory_16_8::sega::Component, "nothing,sega"}
+impl_tag!{super::DebuggingInbox, memory_16_8::codemasters::Component,
 "debugging,codemasters"}
-impl_encode_decode!{NothingInbox, memory_16_8::codemasters::Component,
+impl_tag!{NothingInbox, memory_16_8::codemasters::Component,
 "nothing,codemasters"}
 
 macro_rules! impl_has {
@@ -492,7 +468,7 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
 
                 *frame_info = utilities::time_govern(time_info, frame_info.clone());
 
-                return Ok(EmulationResult::FrameCompleted)
+                return Ok(EmulationResult::FrameCompleted);
             }
         }
     }
