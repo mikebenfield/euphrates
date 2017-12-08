@@ -21,12 +21,12 @@ use utilities::{FrameInfo, Tag};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-fn save_master_system<P: AsRef<Path>, T: Tag>(path: P, master_system: &T) -> Result<()> {
+fn save_tag<P: AsRef<Path>, T: Tag>(path: P, tag: &T) -> Result<()> {
     use std::fs::File;
 
     let mut file = File::create(path.as_ref())?;
 
-    master_system.write(&mut file)?;
+    tag.write(&mut file)?;
 
     Ok(())
 }
@@ -57,14 +57,93 @@ bitflags! {
     }
 }
 
-pub struct UserInterface {
+/// Contains a saved recording of gameplay, together with the initial state of
+/// the Master System. This is what is written when gameplay is saved to a file.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Recording<S> {
+    pub master_system: S,
+    pub player_statuses: Vec<PlayerStatus>,
+}
+
+impl<S: Tag> Tag for Recording<S> {
+    const TAG: &'static str = S::TAG;
+}
+
+/// Internal type for UserInterface to record gameplay
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+struct RecordingStatus<S>(Option<Box<Recording<S>>>);
+
+impl<S> Default for RecordingStatus<S> {
+    fn default() -> Self {
+        RecordingStatus(None)
+    }
+}
+
+impl<S> RecordingStatus<S> {
+    /// Call this every frame, after reading player's status but before
+    /// emulating the frame
+    fn update(&mut self, player_status: PlayerStatus) {
+        if let Some(ref mut recording) = self.0 {
+            recording.player_statuses.push(player_status)
+        }
+    }
+
+    fn begin_recording(&mut self, master_system: &S)
+    where
+        S: MasterSystem,
+    {
+        self.0 = Some(Box::new(Recording {
+            master_system: Clone::clone(master_system),
+            player_statuses: Vec::with_capacity(256),
+        }))
+    }
+
+    #[allow(dead_code)]
+    fn end_recording(&mut self) {
+        self.0 = None
+    }
+
+    fn recording(&self) -> Option<&Recording<S>> {
+        match self.0 {
+            None => None,
+            Some(ref r) => Some(r),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct PlaybackStatus(Vec<PlayerStatus>);
+
+impl PlaybackStatus {
+    fn from_recorded(player_statuses: &[PlayerStatus]) -> PlaybackStatus {
+        let mut v = player_statuses.to_vec();
+        v.reverse();
+        PlaybackStatus(v)
+    }
+
+    fn pop(&mut self) -> Option<PlayerStatus> {
+        self.0.pop()
+    }
+
+    fn end_playback(&mut self) {
+        self.0 = Vec::new();
+    }
+}
+
+pub struct UserInterface<S> {
     save_directory: Option<PathBuf>,
     player_status: PlayerStatus,
     event_pump: sdl2::EventPump,
+    recording_status: RecordingStatus<S>,
+    playback_status: PlaybackStatus,
 }
 
-impl UserInterface {
-    pub fn new(sdl: &sdl2::Sdl, save_directory: Option<PathBuf>) -> Result<Self> {
+impl<S> UserInterface<S> {
+    pub fn new(
+        sdl: &sdl2::Sdl,
+        save_directory: Option<PathBuf>,
+        player_statuses: &[PlayerStatus],
+    ) -> Result<Self> {
         sdl.event().map_err(|s| {
             format_err!("Error initializing the SDL event subsystem {}", s)
         })?;
@@ -77,10 +156,12 @@ impl UserInterface {
             save_directory: save_directory,
             player_status: Default::default(),
             event_pump: event_pump,
+            recording_status: Default::default(),
+            playback_status: PlaybackStatus::from_recorded(player_statuses),
         })
     }
 
-    fn frame_update<S>(&mut self, master_system: &S) -> bool
+    fn frame_update(&mut self, master_system: &S) -> bool
     where
         S: MasterSystem,
     {
@@ -91,15 +172,36 @@ impl UserInterface {
 
             match event {
                 sdl2::event::Event::Quit { .. } => return false,
-                sdl2::event::Event::KeyDown { scancode: Some(k), .. } => {
-                    match k {
-                        P => self.player_status.pause = true,
-                        Z => {
+                sdl2::event::Event::KeyDown {
+                    scancode: Some(k),
+                    keymod,
+                    ..
+                } => {
+                    match (
+                        k,
+                        keymod.contains(sdl2::keyboard::LSHIFTMOD) ||
+                            keymod.contains(sdl2::keyboard::RSHIFTMOD),
+                    ) {
+                        (P, _) => self.player_status.pause = true,
+                        (R, false) => self.recording_status.begin_recording(master_system),
+                        (R, true) => {
+                            if let (&Some(ref path), Some(recording)) =
+                                (&self.save_directory, self.recording_status.recording())
+                            {
+                                let z80: &z80::Component = master_system.get();
+                                let mut path2 = path.clone();
+                                path2.push(format!("{:>0width$X}.record", z80.cycles, width = 20));
+                                if let Err(e) = save_tag(path2, recording) {
+                                    eprintln!("Error saving file: {:?}", e);
+                                }
+                            }
+                        }
+                        (Z, _) => {
                             if let Some(ref path) = self.save_directory {
                                 let z80: &z80::Component = master_system.get();
                                 let mut path2 = path.clone();
                                 path2.push(format!("{:>0width$X}.state", z80.cycles, width = 20));
-                                if let Err(e) = save_master_system(path2, master_system) {
+                                if let Err(e) = save_tag(path2, master_system) {
                                     eprintln!("Error saving file: {:?}", e);
                                 }
                             }
@@ -158,10 +260,18 @@ impl UserInterface {
         }
         self.player_status.joypad_b = joypad_b.bits;
 
+        if self.player_status != Default::default() {
+            self.playback_status.end_playback();
+        } else if let Some(player_status) = self.playback_status.pop() {
+            self.player_status = player_status;
+        }
+
+        self.recording_status.update(self.player_status);
+
         true
     }
 
-    pub fn run<Z80Emulator, VdpEmulator, S>(
+    pub fn run<Z80Emulator, VdpEmulator>(
         &mut self,
         sdl: &sdl2::Sdl,
         emulator: &mut Emulator<Z80Emulator, VdpEmulator>,

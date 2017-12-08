@@ -11,20 +11,21 @@ extern crate clap;
 extern crate failure;
 extern crate attalus;
 
-use std::path::PathBuf;
 use std::fs::File;
-use std::io::{BufReader, BufRead};
+use std::io::BufReader;
+use std::path::PathBuf;
 
+use clap::{App, Arg, ArgMatches, SubCommand};
 use failure::Error;
-use clap::{Arg, ArgMatches, App, SubCommand};
 
 use attalus::Tag;
-use attalus::hardware::z80;
-use attalus::systems::sega_master_system::{self, HardwareBuilder, System};
 use attalus::hardware::memory_16_8;
 use attalus::hardware::vdp;
-use attalus::sdl_wrap;
+use attalus::hardware::z80;
 use attalus::memo::NothingInbox;
+use attalus::sdl_wrap::master_system_user_interface::Recording;
+use attalus::sdl_wrap;
+use attalus::systems::sega_master_system::{self, HardwareBuilder, System};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -44,16 +45,17 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         <vdp::SimpleEmulator as Default>::default(),
     );
 
-    let mut user_interface =
-        sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory)?;
-
     if memory_map == "sega" {
+        let mut user_interface =
+            sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
         let master_system_hardware = HardwareBuilder::new()
             .build_from_file::<memory_16_8::sega::Component>(filename)
             .unwrap();
         let mut master_system = System::new(NothingInbox, master_system_hardware);
         user_interface.run(&sdl, &mut emulator, &mut master_system)?;
     } else if memory_map == "codemasters" {
+        let mut user_interface =
+            sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
         let master_system_hardware = HardwareBuilder::new()
             .build_from_file::<memory_16_8::codemasters::Component>(filename)
             .unwrap();
@@ -85,7 +87,7 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
     );
 
     let mut user_interface =
-        sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory)?;
+        sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
 
     let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
 
@@ -93,6 +95,43 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
         <System<NothingInbox, memory_16_8::sega::Component> as Tag>::read(&mut load_file)?;
 
     user_interface.run(&sdl, &mut emulator, &mut master_system)?;
+
+    Ok(())
+}
+
+fn run_record(matches: &ArgMatches) -> Result<()> {
+    let load_filename = matches.value_of("loadfile").unwrap();
+    let save_directory = match matches.value_of("savedirectory") {
+        None => None,
+        Some(s) => Some(PathBuf::from(s)),
+    };
+
+    let sdl = sdl2::init().unwrap();
+
+    let mut emulator = sega_master_system::Emulator::new(
+        sega_master_system::Frequency::Ntsc,
+        <z80::Interpreter as Default>::default(),
+        <vdp::SimpleEmulator as Default>::default(),
+    );
+
+    let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
+
+    let mut recording =
+        <Recording<System<NothingInbox, memory_16_8::sega::Component>> as Tag>::read(
+            &mut load_file
+        )?;
+
+    let mut user_interface = sdl_wrap::master_system_user_interface::UserInterface::new(
+        &sdl,
+        save_directory,
+        &recording.player_statuses,
+    )?;
+
+    user_interface.run(
+        &sdl,
+        &mut emulator,
+        &mut recording.master_system,
+    )?;
 
     Ok(())
 }
@@ -141,12 +180,26 @@ fn run() -> Result<()> {
                         .takes_value(true)
                         .required(true),
                 ),
+        )
+        .subcommand(
+            SubCommand::with_name("loadrecord")
+                .about("Load recorded gameplay")
+                .arg(save_directory_arg.clone())
+                .arg(
+                    Arg::with_name("loadfile")
+                        .long("loadfile")
+                        .value_name("FILE")
+                        .help("Specify the saved state file")
+                        .takes_value(true)
+                        .required(true),
+                ),
         );
     let matches = app.get_matches();
 
     return match matches.subcommand() {
         ("rom", Some(sub)) => run_rom(&sub),
         ("load", Some(sub)) => run_load(&sub),
+        ("loadrecord", Some(sub)) => run_record(&sub),
         (x, _) => {
             eprintln!("Unknown subcommand {}", x);
             eprintln!("{}", matches.usage());

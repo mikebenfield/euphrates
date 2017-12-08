@@ -34,6 +34,7 @@ pub trait MasterSystem
     + Has<io_16_8::sms2::Component>
     + Has<sn76489::real::Component>
     + Pausable
+    + Clone
     + Tag
     + Serialize
     + DeserializeOwned {
@@ -47,13 +48,14 @@ where
         + Has<io_16_8::sms2::Component>
         + Has<sn76489::real::Component>
         + Pausable
+        + Clone
         + Tag
         + Serialize
         + DeserializeOwned,
 {
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Hardware<M> {
     pub z80: z80::Component,
     pub memory: M,
@@ -62,7 +64,7 @@ pub struct Hardware<M> {
     pub sn76489: sn76489::real::Component,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct System<I, M> {
     pub inbox: I,
     pub hardware: Hardware<M>,
@@ -301,7 +303,7 @@ impl HardwareBuilder {
 
 //// The Emulator and types it needs
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct PlayerStatus {
     pub joypad_a: u8,
     pub joypad_b: u8,
