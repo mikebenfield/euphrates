@@ -24,7 +24,6 @@ pub mod errors;
 mod runtime_pattern;
 #[macro_use]
 mod utilities;
-pub mod has;
 pub mod memo;
 pub mod sdl_wrap;
 #[macro_use]

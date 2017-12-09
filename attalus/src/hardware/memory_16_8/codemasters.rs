@@ -7,9 +7,8 @@
 
 use std;
 
-use ::errors::{Error, SimpleKind};
-use ::has::Has;
-use ::memo::{Inbox, Outbox};
+use errors::{Error, SimpleKind};
+use memo::{Inbox, Outbox};
 
 use super::*;
 use super::sega::{Memo, MasterSystemMemory};
@@ -62,17 +61,14 @@ impl Outbox for Component {
     }
 }
 
-fn write_check_register<T>(
-    t: &mut T,
-    logical_address: u16,
-    value: u8,
-) where
-    T: Inbox<Memo> + Has<Component>,
+fn write_check_register<T>(t: &mut T, logical_address: u16, value: u8)
+where
+    T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
 {
     macro_rules! receive {
         ($x: expr) => {
             {
-                let id = t.get().id();
+                let id = t.as_ref().id();
                 let __y = $x;
                 t.receive(id, __y);
             }
@@ -81,12 +77,12 @@ fn write_check_register<T>(
 
     fn swap_slot<T>(t: &mut T, sega_slot: usize, value: u8)
     where
-        T: Inbox<Memo> + Has<Component>,
+        T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
     {
         macro_rules! receive {
             ($x: expr) => {
                 {
-                    let id = t.get().id();
+                    let id = t.as_ref().id();
                     let __y = $x;
                     t.receive(id, __y);
                 }
@@ -97,10 +93,10 @@ fn write_check_register<T>(
         let (upper_bit_set, lower_bits) = ((0x80 & value) != 0, 0x7F & value);
         let impl_slot0 = 2 * sega_slot;
         let impl_slot1 = impl_slot0 + 1;
-        let rom_impl_page_count = if t.get().cartridge_ram_allocated {
-            t.get().memory.len() - 2
+        let rom_impl_page_count = if t.as_ref().cartridge_ram_allocated {
+            t.as_ref().memory.len() - 2
         } else {
-            t.get().memory.len() - 1
+            t.as_ref().memory.len() - 1
         };
         let rom_sega_page_count = (rom_impl_page_count / 2) as u8;
         let sega_page = if rom_sega_page_count == 0 {
@@ -108,69 +104,59 @@ fn write_check_register<T>(
         } else {
             lower_bits % rom_sega_page_count
         };
-        receive! (
-            Memo::MapRom {
-                slot: sega_slot as u8,
-                page: sega_page,
-            }
-        );
+        receive!(Memo::MapRom {
+            slot: sega_slot as u8,
+            page: sega_page,
+        });
         let impl_page = (sega_page as u16) * 2 + 1;
         if upper_bit_set {
             // RAM goes into the second implementation-slot
-            if !t.get().cartridge_ram_allocated {
+            if !t.as_ref().cartridge_ram_allocated {
                 receive!(Memo::AllocateFirstPage);
-                t.get_mut().memory.push([0; 0x2000]);
-                t.get_mut().memory.shrink_to_fit();
+                t.as_mut().memory.push([0; 0x2000]);
+                t.as_mut().memory.shrink_to_fit();
             }
-            receive!(
-                Memo::MapCartridgeRam {
-                    slot: sega_slot as u8,
-                    page: sega_page,
-                }
-            );
-            let cmm = t.get_mut();
+            receive!(Memo::MapCartridgeRam {
+                slot: sega_slot as u8,
+                page: sega_page,
+            });
+            let cmm = t.as_mut();
             cmm.pages[impl_slot1] = (cmm.memory.len() - 1) as u16;
             cmm.slot_writable |= 1 << impl_slot1;
         } else {
-            let cmm = t.get_mut();
+            let cmm = t.as_mut();
             cmm.pages[impl_slot1] = impl_page + 1;
             cmm.slot_writable &= !(1 << impl_slot1);
         }
-        t.get_mut().pages[impl_slot0] = impl_page;
+        t.as_mut().pages[impl_slot0] = impl_page;
         // even impl_slots will never be marked as writable anyway
     }
 
     let slot = match logical_address {
         0 => {
-            receive!(
-                Memo::RegisterWrite {
-                    register: 0,
-                    value: value,
-                }
-            );
-            t.get_mut().reg_0000 = value;
+            receive!(Memo::RegisterWrite {
+                register: 0,
+                value: value,
+            });
+            t.as_mut().reg_0000 = value;
             0
-        },
+        }
         0x4000 => {
-            receive!(
-                Memo::RegisterWrite {
-                    register: 0x4000,
-                    value: value,
-                }
-            );
-            t.get_mut().reg_4000 = value;
+            receive!(Memo::RegisterWrite {
+                register: 0x4000,
+                value: value,
+            });
+            t.as_mut().reg_4000 = value;
             1
-        },
+        }
         0x8000 => {
-            receive!(
-                Memo::RegisterWrite {
-                    register: 0x8000,
-                    value: value,
-                }
-            );
-            t.get_mut().reg_8000 = value;
+            receive!(Memo::RegisterWrite {
+                register: 0x8000,
+                value: value,
+            });
+            t.as_mut().reg_8000 = value;
             2
-        },
+        }
         _ => return,
     };
 
@@ -179,13 +165,13 @@ fn write_check_register<T>(
 
 impl<T> ComponentOf<T> for Component
 where
-    T: Inbox<Memo> + Has<Component>
+    T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
 {
     fn read(t: &mut T, logical_address: u16) -> u8 {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        let impl_page = t.get().pages[impl_slot as usize];
-        let result = t.get().memory[impl_page as usize][physical_address as usize];
+        let impl_page = t.as_ref().pages[impl_slot as usize];
+        let result = t.as_ref().memory[impl_page as usize][physical_address as usize];
         result
     }
 
@@ -196,9 +182,9 @@ where
         }
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        if t.get().slot_writable & (1 << impl_slot) != 0 {
-            let impl_page = t.get().pages[impl_slot as usize];
-            t.get_mut().memory[impl_page as usize][physical_address as usize] = value;
+        if t.as_ref().slot_writable & (1 << impl_slot) != 0 {
+            let impl_page = t.as_ref().pages[impl_slot as usize];
+            t.as_mut().memory[impl_page as usize][physical_address as usize] = value;
         } else {
         }
     }
@@ -207,11 +193,11 @@ where
 impl MasterSystemMemory for Component {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
-            Err(
-                SimpleKind(
-                    format!("Invalid Sega Master System ROM size 0x{:0>6X} (should be a positive multiple of 0x2000)", rom.len())
-                )
-            )?
+            Err(SimpleKind(format!(
+                "Invalid Sega Master System ROM size 0x{:0>6X} \
+                         (should be a positive multiple of 0x2000)",
+                rom.len()
+            )))?
         }
 
         let rom_impl_page_count = rom.len() / 0x2000;
@@ -228,22 +214,20 @@ impl MasterSystemMemory for Component {
             memory.push(impl_page);
         }
 
-        Ok(
-            Component {
-                memory: memory,
-                cartridge_ram_allocated: false,
-                // according to smspower.org, the mapper is initialized with
-                // sega_slot 0 mapped to sega_page 0, slot 1 mapped to 1, and
-                // slot 2 mapped to 0
-                pages: [1, 2, 3, 4, 1, 2, 0, 0],
-                reg_0000: 0,
-                reg_4000: 1,
-                reg_8000: 0,
-                // only the system RAM is writable
-                slot_writable: 0b11000000,
-                id: 0,
-            }
-        )
+        Ok(Component {
+            memory: memory,
+            cartridge_ram_allocated: false,
+            // according to smspower.org, the mapper is initialized with
+            // sega_slot 0 mapped to sega_page 0, slot 1 mapped to 1, and
+            // slot 2 mapped to 0
+            pages: [1, 2, 3, 4, 1, 2, 0, 0],
+            reg_0000: 0,
+            reg_4000: 1,
+            reg_8000: 0,
+            // only the system RAM is writable
+            slot_writable: 0b11000000,
+            id: 0,
+        })
     }
 }
 

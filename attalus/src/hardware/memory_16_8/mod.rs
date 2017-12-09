@@ -23,7 +23,7 @@
 pub mod sega;
 pub mod codemasters;
 
-use ::has::Has;
+use std::convert::{AsMut, AsRef};
 
 /// A machine that has a memory map with 16 bit addresses and 8 bit data.
 pub trait Machine {
@@ -33,20 +33,19 @@ pub trait Machine {
 
 pub trait ComponentOf<T>
 where
-    T: ?Sized
+    T: ?Sized,
 {
     fn read(&mut T, logical_address: u16) -> u8;
     fn write(&mut T, logical_address: u16, value: u8);
 }
 
-pub trait MachineImpl
-{
+pub trait MachineImpl {
     type C: ComponentOf<Self>;
 }
 
 impl<T> Machine for T
 where
-    T: MachineImpl
+    T: MachineImpl,
 {
     #[inline(always)]
     fn read(&mut self, logical_address: u16) -> u8 {
@@ -59,21 +58,20 @@ where
     }
 }
 
-impl<T> ComponentOf<T>  for [u8; 0x10000]
+impl<T> ComponentOf<T> for [u8; 0x10000]
 where
-    T: Has<[u8; 0x10000]>
+    T: AsMut<[u8; 0x10000]> + AsRef<[u8; 0x10000]>,
 {
     fn read(t: &mut T, logical_address: u16) -> u8 {
-        t.get()[logical_address as usize]
+        t.as_ref()[logical_address as usize]
     }
 
     fn write(t: &mut T, logical_address: u16, value: u8) {
-        t.get_mut()[logical_address as usize] = value
+        t.as_mut()[logical_address as usize] = value
     }
 }
 
-impl Machine for [u8; 0x10000]
-{
+impl Machine for [u8; 0x10000] {
     fn read(&mut self, logical_address: u16) -> u8 {
         self[logical_address as usize]
     }
@@ -81,5 +79,4 @@ impl Machine for [u8; 0x10000]
     fn write(&mut self, logical_address: u16, value: u8) {
         self[logical_address as usize] = value
     }
-
 }

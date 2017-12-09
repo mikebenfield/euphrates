@@ -5,9 +5,10 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::errors::{Error, CommonKind};
-use ::has::Has;
-use ::host_multimedia::SimpleAudio;
+use std::convert::AsMut;
+
+use errors::{CommonKind, Error};
+use host_multimedia::SimpleAudio;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Component {
@@ -35,12 +36,11 @@ impl Default for Component {
             cycles: 0,
         }
     }
-
 }
 
 impl<T> super::ComponentOf<T> for Component
 where
-    T: Has<Component>
+    T: AsMut<Component>,
 {
     /// If bit 7 is 1, this is a latch byte. In this case,
     /// bits 0-3 are data to be written,
@@ -51,7 +51,7 @@ where
     /// If bit 7 is 0, this is a data byte. In this case, we write up
     /// to 6 bits in the upper bits of the latched register.
     fn write_sound(t: &mut T, data: u8) {
-        let sn = t.get_mut();
+        let sn = t.as_mut();
         if data & 0x80 != 0 {
             // latch
             sn.latch = (data & 0x70) >> 4;
@@ -95,7 +95,7 @@ macro_rules! min_nonzero {
 
 impl<A> super::Emulator<A, Component> for Emulator
 where
-    A: SimpleAudio + ?Sized
+    A: SimpleAudio + ?Sized,
 {
     fn queue(
         &mut self,
@@ -157,10 +157,10 @@ where
                     component.counters[3]
                 );
                 let last_idx = count as usize + i;
-                for j in i .. last_idx as usize {
+                for j in i..last_idx as usize {
                     buffer[j] = sum;
                 }
-                for j in 0 .. 3 {
+                for j in 0..3 {
                     component.counters[j] -= count;
                     let tone_reg = component.registers[2 * j];
                     if tone_reg == 0 || tone_reg == 1 {

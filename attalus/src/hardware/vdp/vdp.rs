@@ -5,39 +5,48 @@
 // kind. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std::convert::{AsMut, AsRef};
 use std;
 
-use ::has::Has;
-use ::hardware::irq::Irq;
-use ::memo::{Inbox, Outbox};
+use hardware::irq::Irq;
+use memo::{Inbox, Outbox};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum TvSystem {
-    Ntsc, Pal,
+    Ntsc,
+    Pal,
 }
 
 impl Default for TvSystem {
-    fn default() -> TvSystem { Ntsc }
+    fn default() -> TvSystem {
+        Ntsc
+    }
 }
 
 use self::TvSystem::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Kind {
-    Sms, Sms2, Gg,
+    Sms,
+    Sms2,
+    Gg,
 }
 
 use self::Kind::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Resolution {
-    Low = 192, Medium = 224, High = 240,
+    Low = 192,
+    Medium = 224,
+    High = 240,
 }
 
 use self::Resolution::*;
 
 impl Default for Kind {
-    fn default() -> Kind { Sms }
+    fn default() -> Kind {
+        Sms
+    }
 }
 
 bitflags! {
@@ -104,15 +113,9 @@ pub enum VdpQuery {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Memo {
-    ReadV {
-        actual: u16,
-        reported: u8,
-    },
+    ReadV { actual: u16, reported: u8 },
 
-    ReadH {
-        actual: u16,
-        reported: u8,
-    },
+    ReadH { actual: u16, reported: u8 },
 
     ReadData(u8),
 
@@ -310,18 +313,18 @@ impl Component {
     pub fn sprite_x(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
         let address = if self.kind == Sms {
-            (2*i) as usize | (self.sprite_address() as usize)
+            (2 * i) as usize | (self.sprite_address() as usize)
         } else {
-            ((2*i + 128) as usize) | (self.sprite_address() as usize)
+            ((2 * i + 128) as usize) | (self.sprite_address() as usize)
         };
         self.vram[address]
     }
     pub fn sprite_n(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
         let address = if self.kind == Sms {
-            (2*i) as usize | (self.sprite_address() as usize)
+            (2 * i) as usize | (self.sprite_address() as usize)
         } else {
-            ((2*i + 128) as usize) | (self.sprite_address() as usize)
+            ((2 * i + 128) as usize) | (self.sprite_address() as usize)
         } + 1;
         self.vram[address]
     }
@@ -387,7 +390,7 @@ impl Component {
         let mut bitplane2 = self.vram[bitplanes_address + 2] as usize;
         let mut bitplane3 = self.vram[bitplanes_address + 3] as usize;
         let mut result = [0usize; 8];
-        for i in 0 .. 8 {
+        for i in 0..8 {
             result[i] |= (bitplane0 & 0x80) >> 7;
             result[i] |= (bitplane1 & 0x80) >> 6;
             result[i] |= (bitplane2 & 0x80) >> 5;
@@ -404,40 +407,42 @@ impl Component {
 impl Irq for Component {
     fn requesting_mi(&self) -> Option<u8> {
         if (self.status_flags.contains(FRAME_INTERRUPT) && self.frame_irq_enable()) ||
-            (self.status_flags.contains(LINE_INTERRUPT) && self.line_irq_enable()) {
-                Some(0xFF)
+            (self.status_flags.contains(LINE_INTERRUPT) && self.line_irq_enable())
+        {
+            Some(0xFF)
         } else {
             None
         }
     }
 }
 
-pub trait Machine: Has<Component> + Inbox<Memo>
-{
-    fn read_v(&mut self) -> u8
-    {
-        let result =
-            match (self.get().tv_system, self.get().resolution(), self.get().v) {
-                (Ntsc, Low, 0...0xDA) => self.get().v,
-                (Ntsc, Low, _) => self.get().v-6,
-                (Ntsc, Medium, 0...0xEA) => self.get().v,
-                (Ntsc, Medium, _) => self.get().v-6,
-                (Ntsc, High, 0...0xFF) => self.get().v,
-                (Ntsc, High, _) => self.get().v-0x100,
-                (Pal, Low, 0...0xF2) => self.get().v,
-                (Pal, Low, _) => self.get().v-57,
-                (Pal, Medium, 0...0xFF) => self.get().v,
-                (Pal, Medium, 0x100...0x102) => self.get().v-0x100,
-                (Pal, Medium, _) => self.get().v-57,
-                (Pal, High, 0...0xFF) => self.get().v,
-                (Pal, High, 0x100...0x10A) => self.get().v-0x100,
-                (Pal, High, _) => self.get().v-57,
-            };
-        let id = self.get().id();
-        let v = self.get().v;
+pub trait Machine: AsMut<Component> + AsRef<Component> + Inbox<Memo> {
+    fn read_v(&mut self) -> u8 {
+        let result = match (
+            self.as_ref().tv_system,
+            self.as_ref().resolution(),
+            self.as_ref().v,
+        ) {
+            (Ntsc, Low, 0...0xDA) => self.as_ref().v,
+            (Ntsc, Low, _) => self.as_ref().v - 6,
+            (Ntsc, Medium, 0...0xEA) => self.as_ref().v,
+            (Ntsc, Medium, _) => self.as_ref().v - 6,
+            (Ntsc, High, 0...0xFF) => self.as_ref().v,
+            (Ntsc, High, _) => self.as_ref().v - 0x100,
+            (Pal, Low, 0...0xF2) => self.as_ref().v,
+            (Pal, Low, _) => self.as_ref().v - 57,
+            (Pal, Medium, 0...0xFF) => self.as_ref().v,
+            (Pal, Medium, 0x100...0x102) => self.as_ref().v - 0x100,
+            (Pal, Medium, _) => self.as_ref().v - 57,
+            (Pal, High, 0...0xFF) => self.as_ref().v,
+            (Pal, High, 0x100...0x10A) => self.as_ref().v - 0x100,
+            (Pal, High, _) => self.as_ref().v - 57,
+        };
+        let id = self.as_ref().id();
+        let v = self.as_ref().v;
         self.receive(
             id,
-            Memo::ReadV{
+            Memo::ReadV {
                 actual: v,
                 reported: result as u8,
             },
@@ -445,75 +450,58 @@ pub trait Machine: Has<Component> + Inbox<Memo>
         result as u8
     }
 
-    fn read_h(&mut self) -> u8
-    {
-        let result = (self.get().h >> 1) as u8;
-        let id = self.get().id();
-        let h = self.get().h;
+    fn read_h(&mut self) -> u8 {
+        let result = (self.as_ref().h >> 1) as u8;
+        let id = self.as_ref().id();
+        let h = self.as_ref().h;
         self.receive(
             id,
             Memo::ReadH {
                 actual: h,
                 reported: result,
-            }
+            },
         );
         result
     }
 
-    fn read_data(&mut self) -> u8
-    {
-        let current_buffer = self.get().buffer;
-        self.get_mut().buffer = self.get().cram[(self.get().address() % 32) as usize];
-        self.get_mut().inc_address();
-        self.get_mut().status_flags.remove(CONTROL_FLAG);
-        let id = self.get().id();
-        self.receive(
-            id,
-            Memo::ReadData(current_buffer),
-        );
+    fn read_data(&mut self) -> u8 {
+        let current_buffer = self.as_ref().buffer;
+        self.as_mut().buffer = self.as_ref().cram[(self.as_ref().address() % 32) as usize];
+        self.as_mut().inc_address();
+        self.as_mut().status_flags.remove(CONTROL_FLAG);
+        let id = self.as_ref().id();
+        self.receive(id, Memo::ReadData(current_buffer));
         current_buffer
     }
 
-    fn read_control(&mut self) -> u8
-    {
-        let current_status = self.get().status_flags.bits;
-        self.get_mut().status_flags.bits = 0;
-        let id = self.get().id();
-        self.receive(
-            id,
-            Memo::ReadControl(current_status),
-        );
+    fn read_control(&mut self) -> u8 {
+        let current_status = self.as_ref().status_flags.bits;
+        self.as_mut().status_flags.bits = 0;
+        let id = self.as_ref().id();
+        self.receive(id, Memo::ReadControl(current_status));
         current_status
     }
 
-    fn write_data(&mut self, x: u8)
-    {
-        let id = self.get().id();
-        self.receive(
-            id,
-            Memo::WriteData(x),
-        );
-        match (self.get().code(), self.get().kind) {
+    fn write_data(&mut self, x: u8) {
+        let id = self.as_ref().id();
+        self.receive(id, Memo::WriteData(x));
+        match (self.as_ref().code(), self.as_ref().kind) {
             // XXX - no Game Gear yet
             (3, _) => {
-                self.get_mut().cram[(self.get().address() % 32) as usize] = x;
-            },
-            _      => {
-                self.get_mut().vram[self.get().address() as usize] = x;
+                self.as_mut().cram[(self.as_ref().address() % 32) as usize] = x;
+            }
+            _ => {
+                self.as_mut().vram[self.as_ref().address() as usize] = x;
             }
         }
-        self.get_mut().inc_address();
-        self.get_mut().status_flags.remove(CONTROL_FLAG);
+        self.as_mut().inc_address();
+        self.as_mut().status_flags.remove(CONTROL_FLAG);
     }
 
-    fn write_control(&mut self, x: u8)
-    {
-        let id = self.get().id();
-        self.receive(
-            id,
-            Memo::WriteControl(x),
-        );
-        let vdp = self.get_mut();
+    fn write_control(&mut self, x: u8) {
+        let id = self.as_ref().id();
+        self.receive(id, Memo::WriteControl(x));
+        let vdp = self.as_mut();
         if vdp.status_flags.contains(CONTROL_FLAG) {
             vdp.address0 = vdp.address0 & 0x00FF | (x as u16) << 8;
             if vdp.code() == 0 {
@@ -534,5 +522,6 @@ pub trait MachineImpl {}
 
 impl<T> Machine for T
 where
-    T: Has<Component> + Inbox<Memo> + MachineImpl
-{}
+    T: AsMut<Component> + AsRef<Component> + Inbox<Memo> + MachineImpl,
+{
+}

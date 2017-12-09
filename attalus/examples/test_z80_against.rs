@@ -51,6 +51,7 @@ extern crate rand;
 #[macro_use]
 extern crate attalus;
 
+use std::convert::{AsMut, AsRef};
 use std::fmt;
 use std::path::Path;
 use std::os::raw::{c_int, c_long};
@@ -63,7 +64,6 @@ use failure::Error;
 
 use rand::{Rng, SeedableRng};
 
-use attalus::has::Has;
 use attalus::memo::{Inbox, Pausable};
 use attalus::hardware::z80::{self, Reg8, Reg16, Changeable, Interpreter, Emulator};
 use attalus::hardware::z80::Reg8::*;
@@ -95,22 +95,26 @@ impl fmt::Display for Z80System {
     }
 }
 
-impl Has<z80::Component> for Z80System {
-    fn get(&self) -> &z80::Component {
+impl AsRef<z80::Component> for Z80System {
+    fn as_ref(&self) -> &z80::Component {
         &self.z80
     }
+}
 
-    fn get_mut(&mut self) -> &mut z80::Component {
+impl AsMut<z80::Component> for Z80System {
+    fn as_mut(&mut self) -> &mut z80::Component {
         &mut self.z80
     }
 }
 
-impl Has<[u8; 0x10000]> for Z80System {
-    fn get(&self) -> &[u8; 0x10000] {
+impl AsRef<[u8; 0x10000]> for Z80System {
+    fn as_ref(&self) -> &[u8; 0x10000] {
         &self.memory
     }
+}
 
-    fn get_mut(&mut self) -> &mut [u8; 0x10000] {
+impl AsMut<[u8; 0x10000]> for Z80System {
+    fn as_mut(&mut self) -> &mut [u8; 0x10000] {
         &mut self.memory
     }
 }
@@ -153,7 +157,7 @@ impl Z80System {
 
 fn random_system<R>(mem_start: &[u8], rng: &mut R) -> Z80System
 where
-    R: Rng
+    R: Rng,
 {
     // 0x76: HALT
     let mut mem = [0x76u8; 0x10000];
@@ -163,10 +167,26 @@ where
     mem[0..mem_start.len()].copy_from_slice(mem_start);
     let mut z = z80::Component::new();
     for reg in [
-        B, C, D, E, A, H, L,
-        B0, C0, D0, E0, A0, L0, H0,
-        IXH, IXL, IYH, IYL,
-    ].iter() {
+        B,
+        C,
+        D,
+        E,
+        A,
+        H,
+        L,
+        B0,
+        C0,
+        D0,
+        E0,
+        A0,
+        L0,
+        H0,
+        IXH,
+        IXL,
+        IYH,
+        IYL,
+    ].iter()
+    {
         z.set_reg8(*reg, rng.gen());
     }
     Z80System {
@@ -175,15 +195,11 @@ where
     }
 }
 
-fn write_core<P: AsRef<Path>>(
-    path: P,
-    z80: &Z80System
-) -> Result<()> {
+fn write_core<P: AsRef<Path>>(path: P, z80: &Z80System) -> Result<()> {
     use std::fs::File;
     use std::io::Write;
 
-    let z80_size: usize =
-        16 + 2*4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
+    let z80_size: usize = 16 + 2 * 4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
 
     let mut buf: Vec<u8> = Vec::with_capacity(z80_size);
 
@@ -217,7 +233,11 @@ fn write_core<P: AsRef<Path>>(
 
     write_from(z80.get_reg8(I), &mut buf);
 
-    let iff1: u8 = if z80.z80.iff1 == 0xFFFFFFFFFFFFFFFF { 0 } else { 1 };
+    let iff1: u8 = if z80.z80.iff1 == 0xFFFFFFFFFFFFFFFF {
+        0
+    } else {
+        1
+    };
     let iff2: u8 = if z80.z80.iff2 { 2 } else { 0 };
     write_from(iff1 | iff2, &mut buf);
 
@@ -237,7 +257,7 @@ fn write_core<P: AsRef<Path>>(
 
 fn read_core<P>(path: P) -> Result<Z80System>
 where
-    P: AsRef<Path>
+    P: AsRef<Path>,
 {
     use std::fs::File;
     use std::io::Read;
@@ -248,8 +268,8 @@ where
     // it seems the multi-byte registers are in the native byte order
     // (this should be a global const, but can't be due to call of
     // size_of)
-    let correct_core_size: usize =
-        0x10000 + 16 + 2*4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
+    let correct_core_size: usize = 0x10000 + 16 + 2 * 4 + 2 * mem::size_of::<c_int>() +
+        mem::size_of::<c_long>();
 
     let mut z80: Z80System = Default::default();
 
@@ -260,15 +280,11 @@ where
     }
 
     if buf.len() != correct_core_size {
-        return Err(
-            failure::err_msg(
-                format!(
-                    "Core file of wrong length {} (should be {})",
-                    buf.len(),
-                    correct_core_size
-                )
-            )
-        );
+        return Err(failure::err_msg(format!(
+            "Core file of wrong length {} (should be {})",
+            buf.len(),
+            correct_core_size
+        )));
     }
 
     let mut i: usize = 0;
@@ -347,13 +363,32 @@ where
 ///
 /// Actually, doesn't check I or R registers. Doesn't check undefined bits in F
 /// or F0.
-fn z80_same_state(lhs: &Z80System, rhs: &Z80System) -> bool  {
+fn z80_same_state(lhs: &Z80System, rhs: &Z80System) -> bool {
     for reg in [
-        B, C, D, E, A, H, L,
-        B0, C0, D0, E0, A0, L0, H0,
-        IXH, IXL, IYH, IYL,
-        SPH, SPL, PCH, PCL,
-    ].iter() {
+        B,
+        C,
+        D,
+        E,
+        A,
+        H,
+        L,
+        B0,
+        C0,
+        D0,
+        E0,
+        A0,
+        L0,
+        H0,
+        IXH,
+        IXL,
+        IYH,
+        IYL,
+        SPH,
+        SPL,
+        PCH,
+        PCL,
+    ].iter()
+    {
         if lhs.z80.get_reg8(*reg) != rhs.z80.get_reg8(*reg) {
             println!("diff register {:?}", reg);
             return false;
@@ -382,7 +417,12 @@ fn z80_same_state(lhs: &Z80System, rhs: &Z80System) -> bool  {
     if lhs_slice != rhs_slice {
         for i in 0..lhs_slice.len() {
             if lhs_slice[i] != rhs_slice[i] {
-                println!("diff memory at {:x}, {:x}, {:x}", i, lhs_slice[i], rhs_slice[i]);
+                println!(
+                    "diff memory at {:x}, {:x}, {:x}",
+                    i,
+                    lhs_slice[i],
+                    rhs_slice[i]
+                );
             }
         }
         return false;
@@ -433,8 +473,20 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
     macro_rules! process_instruction {
 
         // strangely, z80sim doesn't implement these two...
-        ([0xED, 0x6B, n, n] ; $mnemonic: ident ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ([0xED, 0x63, n, n] ; $mnemonic: ident ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
+        (
+            [0xED, 0x6B, n, n] ;
+            $mnemonic: ident ;
+            $args: tt ;
+            $t_states: expr ;
+            $is_undoc: expr
+        ) => {};
+        (
+            [0xED, 0x63, n, n] ;
+            $mnemonic: ident ;
+            $args: tt ;
+            $t_states: expr ;
+            $is_undoc: expr
+        ) => {};
 
         // avoid these two so we don't write over our own code
         ($codes: tt; lddr ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
@@ -479,25 +531,49 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
         ($codes: tt; otir ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
         ($codes: tt; otdr ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
 
-        ([0xDD, $code: expr] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xDD, $code: expr] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             let opcodes = vec![0xDD, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        ([0xDD, $code: expr, d] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xDD, $code: expr, d] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xDD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xDD, $code: expr, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xDD, $code: expr, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xDD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xDD, $code: expr, n, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xDD, $code: expr, n, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 // avoid low addresses so we don't write over our own instruction
                 let n11: u8 = r.gen();
@@ -507,7 +583,13 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xDD, $code: expr, d, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xDD, $code: expr, d, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -516,25 +598,49 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xFD, $code: expr] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xFD, $code: expr] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             let opcodes = vec![0xFD, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        ([0xFD, $code: expr, d] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xFD, $code: expr, d] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xFD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xFD, $code: expr, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xFD, $code: expr, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xFD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xFD, $code: expr, n, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xFD, $code: expr, n, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -543,7 +649,13 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xFD, $code: expr, d, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xFD, $code: expr, d, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -555,24 +667,47 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
 
         // need a patched version of z80sim for these instructions. z80sim has
         // buffer overflows in these instructions
-        ([0xDD, 0xCB, d, $code: expr] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xDD, 0xCB, d, $code: expr] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             let n: u8 = r.gen();
             let opcodes = vec![0xDD, 0xCB, n, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        ([0xFD, 0xCB, d, $code: expr] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xFD, 0xCB, d, $code: expr] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xFD, 0xCB, n, $code];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-
-        ([0xCB, $code: expr] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xCB, $code: expr] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             let opcodes = vec![0xCB, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        ([0xED, $code: expr, n, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xED, $code: expr, n, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -581,25 +716,49 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([0xED, $code: expr] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [0xED, $code: expr] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             let opcodes = vec![0xED, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        ([$code: expr, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [$code: expr, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![$code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([$code: expr, e] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [$code: expr, e] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![$code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([$code: expr, n, n] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [$code: expr, n, n] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -608,7 +767,13 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        ([$code: expr] ; $mnemonic: ident ; $arguments: tt ; $t_states: expr ; false ) => {
+        (
+            [$code: expr] ;
+            $mnemonic: ident ;
+            $arguments: tt ;
+            $t_states: expr ;
+            false
+        ) => {
             let opcodes = vec![$code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
@@ -628,10 +793,10 @@ fn generate_instructions_sequence<R>(
     instructions: &[InstructionSequence],
     count: usize,
     size: usize,
-    rng: &mut R
+    rng: &mut R,
 ) -> Vec<InstructionSequence>
 where
-    R: Rng
+    R: Rng,
 {
 
     use rand::distributions::range::Range;
@@ -702,10 +867,10 @@ use self::TestResult::*;
 fn test_instruction_sequence<R>(
     instruction_sequence: &InstructionSequence,
     count: usize,
-    rng: &mut R
+    rng: &mut R,
 ) -> Result<TestResult>
 where
-    R: Rng
+    R: Rng,
 {
     use std::io::{Read, Write};
     use std::process::{Command, Stdio, ChildStdout, Child};
@@ -725,11 +890,7 @@ where
                 return Ok(());
             }
         }
-        Err(
-            failure::err_msg(
-                "z80sim won't give a prompt"
-            )
-        )
+        Err(failure::err_msg("z80sim won't give a prompt"))
     }
 
     fn wait_for_exit(child: &mut Child) -> Result<()> {
@@ -740,9 +901,7 @@ where
                     if status.success() {
                         return Ok(());
                     } else {
-                        return Err (
-                            failure::err_msg("exit failure from z80sim")
-                        );
+                        return Err(failure::err_msg("exit failure from z80sim"));
                     }
                 }
                 _ => {}
@@ -751,9 +910,7 @@ where
         }
         child.kill()?;
 
-        Err (
-            failure::err_msg("z80sim would not exit")
-        )
+        Err(failure::err_msg("z80sim would not exit"))
     }
 
     let instructions = instruction_sequence.opcodes.clone();
@@ -791,16 +948,12 @@ where
         attalus_z80.set_reg16(PC, pc + 1);
 
         if !z80_same_state(&attalus_z80, &sim_z80) {
-            return Ok(
-                TestFailed(
-                    TestFailure {
-                        mnemonics: instruction_sequence.mnemonics.clone(),
-                        original_z80: z80,
-                        sim_z80: sim_z80,
-                        attalus_z80: attalus_z80,
-                    }
-                )
-            );
+            return Ok(TestFailed(TestFailure {
+                mnemonics: instruction_sequence.mnemonics.clone(),
+                original_z80: z80,
+                sim_z80: sim_z80,
+                attalus_z80: attalus_z80,
+            }));
         }
         println!("Test passed\n");
     }
@@ -811,18 +964,14 @@ pub fn test_against<R>(
     count: usize,
     n_instructions: usize,
     trials: usize,
-    rng: &mut R
+    rng: &mut R,
 ) -> Result<TestResult>
 where
-    R: Rng
+    R: Rng,
 {
     let instructions = generate_instructions(5, rng);
-    let all_instructions = generate_instructions_sequence(
-        &instructions,
-        count,
-        n_instructions,
-        rng
-    );
+    let all_instructions =
+        generate_instructions_sequence(&instructions, count, n_instructions, rng);
     for inst in all_instructions.iter() {
         match test_instruction_sequence(inst, trials, rng)? {
             TestOk => continue,
@@ -846,14 +995,16 @@ fn print_usage_and_exit() -> ! {
 
 fn parse_or_die<F>(s: Option<String>) -> F
 where
-    F: FromStr
+    F: FromStr,
 {
     match s {
-        Some(t) => match t.parse() {
-            Ok(f) => f,
-            _ => print_usage_and_exit()
-        },
-        _ => print_usage_and_exit()
+        Some(t) => {
+            match t.parse() {
+                Ok(f) => f,
+                _ => print_usage_and_exit(),
+            }
+        }
+        _ => print_usage_and_exit(),
     }
 }
 
@@ -881,11 +1032,11 @@ fn main() {
         Ok(TestResult::TestFailed(x)) => {
             println!("test failure {:?}", x);
             return;
-        },
+        }
         Ok(TestOk) => {
             println!("All tests passed");
             return;
-        },
+        }
         Err(e) => {
             eprintln!("Unable to conduct tests: {}", e);
             exit(1);

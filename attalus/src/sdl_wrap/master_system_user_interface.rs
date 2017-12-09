@@ -5,6 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std::convert::AsRef;
 use std::path::{Path, PathBuf};
 use std;
 
@@ -13,7 +14,6 @@ use sdl2;
 
 use hardware::vdp;
 use hardware::z80;
-use has::Has;
 use host_multimedia::SimpleAudio;
 use sdl_wrap;
 use systems::sega_master_system::{Emulator, MasterSystem, PlayerStatus, TimeStatus};
@@ -188,7 +188,7 @@ impl<S> UserInterface<S> {
                             if let (&Some(ref path), Some(recording)) =
                                 (&self.save_directory, self.recording_status.recording())
                             {
-                                let z80: &z80::Component = master_system.get();
+                                let z80: &z80::Component = master_system.as_ref();
                                 let mut path2 = path.clone();
                                 path2.push(format!("{:>0width$X}.record", z80.cycles, width = 20));
                                 if let Err(e) = save_tag(path2, recording) {
@@ -198,7 +198,7 @@ impl<S> UserInterface<S> {
                         }
                         (Z, _) => {
                             if let Some(ref path) = self.save_directory {
-                                let z80: &z80::Component = master_system.get();
+                                let z80: &z80::Component = master_system.as_ref();
                                 let mut path2 = path.clone();
                                 path2.push(format!("{:>0width$X}.state", z80.cycles, width = 20));
                                 if let Err(e) = save_tag(path2, master_system) {
@@ -293,7 +293,8 @@ impl<S> UserInterface<S> {
         emulator.configure_audio(&mut audio)?;
         audio.play()?;
 
-        let time_status = TimeStatus::new(<S as Has<z80::Component>>::get(master_system).cycles);
+        let time_status =
+            TimeStatus::new(<S as AsRef<z80::Component>>::as_ref(master_system).cycles);
 
         loop {
             if !self.frame_update(master_system) {

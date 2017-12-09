@@ -5,6 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+use std::convert::{AsMut, AsRef};
 use std::time::{Duration, Instant};
 use std;
 
@@ -19,7 +20,6 @@ use hardware::memory_16_8;
 use hardware::sn76489;
 use hardware::vdp;
 use hardware::z80;
-use has::Has;
 use host_multimedia::SimpleAudio;
 use memo::NothingInbox;
 use memo::{Inbox, Pausable};
@@ -31,8 +31,8 @@ pub trait MasterSystem
     : z80::Machine
     + vdp::Machine
     + memory_16_8::Machine
-    + Has<io_16_8::sms2::Component>
-    + Has<sn76489::real::Component>
+    + AsMut<io_16_8::sms2::Component>
+    + AsMut<sn76489::real::Component>
     + Pausable
     + Clone
     + Tag
@@ -45,8 +45,8 @@ where
     T: z80::Machine
         + vdp::Machine
         + memory_16_8::Machine
-        + Has<io_16_8::sms2::Component>
-        + Has<sn76489::real::Component>
+        + AsMut<io_16_8::sms2::Component>
+        + AsMut<sn76489::real::Component>
         + Pausable
         + Clone
         + Tag
@@ -91,45 +91,50 @@ impl_tag!{super::DebuggingInbox, memory_16_8::codemasters::Component,
 impl_tag!{NothingInbox, memory_16_8::codemasters::Component,
 "nothing,codemasters"}
 
-macro_rules! impl_has {
+macro_rules! impl_as_ref {
     ($typename: ty, $component_name: ident) => {
-        impl<I, M> Has<$typename> for System<I, M> {
+        impl<I, M> AsRef<$typename> for System<I, M> {
             #[inline(always)]
-            fn get(&self) -> &$typename {
+            fn as_ref(&self) -> &$typename {
                 &self.hardware.$component_name
             }
+        }
 
+        impl<I, M> AsMut<$typename> for System<I, M> {
             #[inline(always)]
-            fn get_mut(&mut self) -> &mut $typename {
+            fn as_mut(&mut self) -> &mut $typename {
                 &mut self.hardware.$component_name
             }
         }
     }
 }
 
-impl_has!{io_16_8::sms2::Component, io}
-impl_has!{sn76489::real::Component, sn76489}
-impl_has!{vdp::Component, vdp}
-impl_has!{z80::Component, z80}
+impl_as_ref!{io_16_8::sms2::Component, io}
+impl_as_ref!{sn76489::real::Component, sn76489}
+impl_as_ref!{vdp::Component, vdp}
+impl_as_ref!{z80::Component, z80}
 
-macro_rules! impl_has_memory_map {
+macro_rules! impl_as_ref_memory_map {
     ($typename: ty) => {
-        impl<I> Has<$typename> for System<I, $typename> {
+        impl<I> AsRef<$typename> for System<I, $typename> {
             #[inline(always)]
-            fn get(&self) -> &$typename {
+            fn as_ref(&self) -> &$typename {
                 &self.hardware.memory
             }
 
+        }
+
+        impl<I> AsMut<$typename> for System<I, $typename> {
             #[inline(always)]
-            fn get_mut(&mut self) -> &mut $typename {
+            fn as_mut(&mut self) -> &mut $typename {
                 &mut self.hardware.memory
             }
         }
     }
 }
 
-impl_has_memory_map!{memory_16_8::sega::Component}
-impl_has_memory_map!{memory_16_8::codemasters::Component}
+impl_as_ref_memory_map!{memory_16_8::sega::Component}
+impl_as_ref_memory_map!{memory_16_8::codemasters::Component}
 
 impl<I> memory_16_8::MachineImpl for System<I, memory_16_8::sega::Component>
 where
@@ -412,11 +417,12 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
     {
         // audio already configured, start time, etc
 
-        <S as Has<io_16_8::sms2::Component>>::get_mut(master_system)
+        <S as AsMut<io_16_8::sms2::Component>>::as_mut(master_system)
             .set_joypad_a(player_status.joypad_a);
-        <S as Has<io_16_8::sms2::Component>>::get_mut(master_system)
+        <S as AsMut<io_16_8::sms2::Component>>::as_mut(master_system)
             .set_joypad_b(player_status.joypad_b);
-        <S as Has<io_16_8::sms2::Component>>::get_mut(master_system).set_pause(player_status.pause);
+        <S as AsMut<io_16_8::sms2::Component>>::as_mut(master_system)
+            .set_pause(player_status.pause);
 
         // XXX - probably should change to have the sn76489 emulator be a
         // field of the emulator
@@ -428,28 +434,31 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
             }
 
             self.vdp_emulator
-                .draw_line(<S as Has<vdp::Component>>::get_mut(master_system), graphics)
+                .draw_line(
+                    <S as AsMut<vdp::Component>>::as_mut(master_system),
+                    graphics,
+                )
                 .with_context(|e| {
                     SimpleKind(format!("Master System emulation: VDP error {}", e))
                 })?;
 
-            let vdp_cycles = <S as Has<vdp::Component>>::get(master_system).cycles;
+            let vdp_cycles = <S as AsRef<vdp::Component>>::as_ref(master_system).cycles;
             let z80_target_cycles = 2 * vdp_cycles / 3;
 
-            while <S as Has<z80::Component>>::get(master_system).cycles < z80_target_cycles {
+            while <S as AsRef<z80::Component>>::as_ref(master_system).cycles < z80_target_cycles {
                 self.z80_emulator.run(master_system, z80_target_cycles);
                 if master_system.wants_pause() {
                     return Ok(EmulationResult::FrameInterrupted);
                 }
             }
 
-            if <S as Has<vdp::Component>>::get(master_system).v == 0 {
+            if <S as AsRef<vdp::Component>>::as_ref(master_system).v == 0 {
                 if let Some(_) = self.z80_frequency {
-                    let sound_target_cycles = <S as Has<z80::Component>>::get(master_system)
-                        .cycles / 16;
+                    let sound_target_cycles =
+                        <S as AsRef<z80::Component>>::as_ref(master_system).cycles / 16;
                     sn76489::Emulator::queue(
                         &mut sn76489_emulator,
-                        <S as Has<sn76489::real::Component>>::get_mut(master_system),
+                        <S as AsMut<sn76489::real::Component>>::as_mut(master_system),
                         sound_target_cycles,
                         audio,
                     ).with_context(|e| {
@@ -461,7 +470,7 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
                 }
 
                 let time_info = TimeInfo {
-                    total_cycles: <S as Has<z80::Component>>::get(master_system).cycles,
+                    total_cycles: <S as AsRef<z80::Component>>::as_ref(master_system).cycles,
                     cycles_start: time_status.cycles_start,
                     frequency: self.z80_frequency,
                     start_time: time_status.start_time,

@@ -5,17 +5,17 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use ::utilities;
-use ::memo::{Inbox, Outbox};
-use ::has::Has;
+use std::convert::AsRef;
 
+use memo::{Inbox, Outbox};
 use super::*;
+use utilities;
 
 fn receive<Z>(z: &mut Z, memo: Memo)
 where
-    Z: Inbox<Memo> + Has<Component> + ?Sized
+    Z: Inbox<Memo> + AsRef<Component> + ?Sized,
 {
-    let id = z.get().id();
+    let id = z.as_ref().id();
     z.receive(id, memo);
 }
 
@@ -80,7 +80,7 @@ macro_rules! rotate_shift_functions_impl {
 
 pub fn rst<Z>(z: &mut Z, p: u16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let sp = SP.view(z);
     let pch = PCH.view(z);
@@ -93,16 +93,16 @@ where
 
 pub fn nonmaskable_interrupt<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     // The Z80 manual implies that IFF2 is set to IFF1, but this
     // is false (see Young 5.3)
     receive(z, Memo::NonmaskableInterrupt);
-    z.get_mut().inc_r();
-    z.get_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
+    z.as_mut().inc_r();
+    z.as_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
     z.clear_nmi();
-    z.get_mut().cycles += 11;
-    if z.get().halted {
+    z.as_mut().cycles += 11;
+    if z.as_ref().halted {
         let pc = PC.view(z);
         PC.change(z, pc.wrapping_add(1));
     }
@@ -111,32 +111,32 @@ where
 
 pub fn maskable_interrupt<Z>(z: &mut Z, x: u8) -> bool
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    if z.get().iff1 < z.get().cycles {
+    if z.as_ref().iff1 < z.as_ref().cycles {
         receive(z, Memo::MaskableInterruptAllowed);
 
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
 
-        z.get_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
-        z.get_mut().iff2 = false;
+        z.as_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
+        z.as_mut().iff2 = false;
 
-        if z.get().halted {
+        if z.as_ref().halted {
             let pc = PC.view(z);
             PC.change(z, pc.wrapping_add(1));
         }
 
-        let im = z.get().interrupt_mode;
+        let im = z.as_ref().interrupt_mode;
         match im {
             Im1 => {
                 rst(z, 0x38);
-                z.get_mut().cycles += 13;
-            },
+                z.as_mut().cycles += 13;
+            }
             Im2 => {
                 let i = I.view(z);
                 let new_pc = utilities::to16(x, i);
                 rst(z, new_pc);
-                z.get_mut().cycles += 19;
+                z.as_mut().cycles += 19;
             }
             _ => unimplemented!(),
         }
@@ -163,17 +163,17 @@ where
 // XXX text about interrupts in manual
 pub fn ld_ir<Z>(z: &mut Z, arg1: Reg8, arg2: Reg8)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let val = arg2.view(z);
     arg1.change(z, val);
-    let iff2 = z.get().iff2;
-    let mut f = z.get().flags();
+    let iff2 = z.as_ref().iff2;
+    let mut f = z.as_ref().flags();
     f.set_sign(val);
     f.set_zero(val);
     f.remove(NF | HF);
     f.set(PF, iff2);
-    z.get_mut().set_flags(f);
+    z.as_mut().set_flags(f);
 }
 
 //// 16-Bit Load Group
@@ -191,7 +191,7 @@ where
 
 pub fn push<Z>(z: &mut Z, reg: Reg16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let (lo, hi) = utilities::to8(reg.view(z));
     let sp = SP.view(z);
@@ -202,7 +202,7 @@ where
 
 pub fn pop<Z>(z: &mut Z, reg: Reg16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let sp = SP.view(z);
     let lo = Address(sp).view(z);
@@ -227,7 +227,7 @@ where
 
 pub fn exx<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     for &(reg1, reg2) in [(BC, BC0), (DE, DE0), (HL, HL0)].iter() {
         let val1 = reg1.view(z);
@@ -239,7 +239,7 @@ where
 
 pub fn ldid<Z>(z: &mut Z, inc: u16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let hl = HL.view(z);
     let de = DE.view(z);
@@ -252,7 +252,7 @@ where
     DE.change(z, de.wrapping_add(inc));
     BC.change(z, bc.wrapping_sub(1));
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.remove(HF | NF);
     f.set(PF, bc != 1);
     F.change(z, f.bits());
@@ -260,29 +260,29 @@ where
 
 pub fn ldi<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     ldid(z, 1);
 }
 
 pub fn ldd<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     ldid(z, 0xFFFF);
 }
 
 pub fn ldir<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     loop {
         ldi(z);
         if BC.view(z) == 0 {
-            z.get_mut().cycles += 17;
+            z.as_mut().cycles += 17;
             return;
         }
-        z.get_mut().cycles += 21;
+        z.as_mut().cycles += 21;
 
         // check the possibility that we have overwritten our own opcode
         let pc = PC.view(z);
@@ -292,22 +292,22 @@ where
             PC.change(z, pc.wrapping_sub(2));
             return;
         }
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 }
 
 pub fn lddr<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     loop {
         ldd(z);
         if BC.view(z) == 0 {
-            z.get_mut().cycles += 17;
+            z.as_mut().cycles += 17;
             return;
         }
-        z.get_mut().cycles += 21;
+        z.as_mut().cycles += 21;
 
         // check the possibility that we have overwritten our own opcode
         let pc = PC.view(z);
@@ -317,14 +317,14 @@ where
             PC.change(z, pc.wrapping_sub(1));
             return;
         }
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 }
 
 pub fn cpid<Z>(z: &mut Z, inc: u16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let bc = BC.view(z);
     let a = A.view(z);
@@ -336,7 +336,7 @@ where
     HL.change(z, hl.wrapping_add(inc));
     BC.change(z, bc.wrapping_sub(1));
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_sign(result);
     f.set_zero(result);
     f.set(HF, phl & 0xF > a & 0xF);
@@ -347,50 +347,52 @@ where
 
 pub fn cpi<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     cpid(z, 1);
 }
 
 pub fn cpir<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     while {
         cpi(z);
-        z.get_mut().cycles += 21;
-        BC.view(z) != 0 && !z.get().flags().contains(ZF)
-    } {
+        z.as_mut().cycles += 21;
+        BC.view(z) != 0 && !z.as_ref().flags().contains(ZF)
+    }
+    {
         // r was already incremented twice by `run`
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 
-    z.get_mut().cycles += 17;
+    z.as_mut().cycles += 17;
 }
 
 pub fn cpd<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     cpid(z, 0xFFFF);
 }
 
 pub fn cpdr<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     while {
         cpd(z);
-        z.get_mut().cycles += 21;
-        BC.view(z) != 0 && !z.get().flags().contains(ZF)
-    } {
+        z.as_mut().cycles += 21;
+        BC.view(z) != 0 && !z.as_ref().flags().contains(ZF)
+    }
+    {
         // r was already incremented twice by `run`
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 
-    z.get_mut().cycles += 17;
+    z.as_mut().cycles += 17;
 }
 
 //// 8-Bit Arithmetic Group
@@ -398,13 +400,13 @@ where
 
 fn add_impl<Z>(z: &mut Z, a: u8, x: u8, cf: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     // XXX optimize?
     let result16 = (x as u16).wrapping_add(a as u16).wrapping_add(cf as u16);
     let result8 = result16 as u8;
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_zero(result8);
     f.set_sign(result8);
 
@@ -448,7 +450,11 @@ where
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.get().flags().contains(CF) { 1u8 } else { 0u8 };
+    let cf = if z.as_ref().flags().contains(CF) {
+        1u8
+    } else {
+        0u8
+    };
     let a = arg1.view(z);
     let x = arg2.view(z);
     let (result, f) = add_impl(z, a, x, cf);
@@ -458,7 +464,7 @@ where
 
 fn sub_impl<Z>(z: &mut Z, a: u8, x: u8, cf: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let (result, mut f) = add_impl(z, a, !x, 1 ^ cf);
     f.toggle(CF | HF);
@@ -485,7 +491,11 @@ where
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.get().flags().contains(CF) { 1u8 } else { 0u8 };
+    let cf = if z.as_ref().flags().contains(CF) {
+        1u8
+    } else {
+        0u8
+    };
     let a = arg1.view(z);
     let x = arg2.view(z);
     let (result, f) = sub_impl(z, a, x, cf);
@@ -495,13 +505,13 @@ where
 
 fn andor_impl<Z>(z: &mut Z, result: u8) -> Flags
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     A.change(z, result);
 
     // note that for AND and OR, the manual says PF is set according to whether
     // there is overflow. I'm betting that is a mistake.
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_parity(result);
     f.set_sign(result);
     f.set_zero(result);
@@ -560,7 +570,7 @@ where
     let x = arg.view(z);
     let result = x.wrapping_add(1);
     arg.change(z, result);
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_zero(result);
     f.set_sign(result);
     f.set(HF, x & 0xF == 0xF);
@@ -577,7 +587,7 @@ where
     let x = arg.view(z);
     let result = x.wrapping_sub(1);
     arg.change(z, result);
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_zero(result);
     f.set_sign(result);
     f.set(HF, x & 0xF == 0);
@@ -591,13 +601,13 @@ where
 
 pub fn daa<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     // see the table in Young
     let a = A.view(z);
-    let cf = z.get().flags().contains(CF);
-    let hf = z.get().flags().contains(HF);
-    let nf = z.get().flags().contains(NF);
+    let cf = z.as_ref().flags().contains(CF);
+    let hf = z.as_ref().flags().contains(HF);
+    let nf = z.as_ref().flags().contains(NF);
     let diff = match (cf, a >> 4, hf, a & 0xF) {
         (false, 0...9, false, 0...9) => 0,
         (false, 0...9, true, 0...9) => 0x6,
@@ -626,7 +636,7 @@ where
     };
     A.change(z, new_a);
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_parity(new_a);
     f.set_zero(new_a);
     f.set_sign(new_a);
@@ -637,18 +647,18 @@ where
 
 pub fn cpl<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let a = A.view(z);
     A.change(z, !a);
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.insert(HF | NF);
     F.change(z, f.bits());
 }
 
 pub fn neg<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     // subtracts A from 0
     let a = A.view(z);
@@ -661,9 +671,9 @@ where
 
 pub fn ccf<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     let cf = f.contains(CF);
     f.set(HF, cf);
     f.toggle(CF);
@@ -673,9 +683,9 @@ where
 
 pub fn scf<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.remove(HF | NF);
     f.insert(CF);
     F.change(z, f.bits());
@@ -683,57 +693,57 @@ where
 
 pub fn nop<Z>(_z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
 }
 
 pub fn halt<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    z.get_mut().halted = true;
+    z.as_mut().halted = true;
 }
 
 pub fn di<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    z.get_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
-    z.get_mut().iff2 = false;
+    z.as_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
+    z.as_mut().iff2 = false;
 }
 
 pub fn ei<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    z.get_mut().iff1 = z.get_mut().cycles + 4;
-    z.get_mut().iff2 = true;
+    z.as_mut().iff1 = z.as_mut().cycles + 4;
+    z.as_mut().iff2 = true;
 }
 
 pub fn im<Z>(z: &mut Z, m: u8)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     match m {
-        0 => z.get_mut().interrupt_mode = Im0,
-        1 => z.get_mut().interrupt_mode = Im1,
-        2 => z.get_mut().interrupt_mode = Im2,
+        0 => z.as_mut().interrupt_mode = Im0,
+        1 => z.as_mut().interrupt_mode = Im1,
+        2 => z.as_mut().interrupt_mode = Im2,
         _ => panic!("Z80: Invalid interrupt mode"),
     }
 }
 
 pub fn im1<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    z.get_mut().interrupt_mode = Im1;
+    z.as_mut().interrupt_mode = Im1;
 }
 
 pub fn im2<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    z.get_mut().interrupt_mode = Im2;
+    z.as_mut().interrupt_mode = Im2;
 }
 
 //// 16-Bit Arithmetic Group
@@ -741,13 +751,13 @@ where
 
 fn add16_impl<Z>(z: &mut Z, x: u16, y: u16, cf: u16) -> (u16, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     // XXX optimize?
     let result32 = (x as u32).wrapping_add(y as u32).wrapping_add(cf as u32);
     let result16 = result32 as u16;
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(CF, result32 & (1 << 16) != 0);
 
     // carry from bit 11 happened if:
@@ -763,7 +773,7 @@ where
 
 pub fn add16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
@@ -774,7 +784,7 @@ where
 
 fn adc16_impl<Z>(z: &mut Z, x: u16, y: u16, cf: u16) -> (u16, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let (result, mut f) = add16_impl(z, x, y, cf as u16);
 
@@ -794,11 +804,15 @@ where
 
 pub fn adc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.get().flags().contains(CF) { 1u8 } else { 0u8 };
+    let cf = if z.as_ref().flags().contains(CF) {
+        1u8
+    } else {
+        0u8
+    };
     let (result, f) = adc16_impl(z, x, y, cf as u16);
     arg1.change(z, result);
     F.change(z, f.bits());
@@ -806,11 +820,15 @@ where
 
 pub fn sbc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.get().flags().contains(CF) { 1u8 } else { 0u8 };
+    let cf = if z.as_ref().flags().contains(CF) {
+        1u8
+    } else {
+        0u8
+    };
     let (result, mut f) = adc16_impl(z, x, !y, (1 ^ cf) as u16);
     arg1.change(z, result);
     f.toggle(CF | HF);
@@ -820,7 +838,7 @@ where
 
 pub fn inc16<Z>(z: &mut Z, arg: Reg16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let val = arg.view(z);
     arg.change(z, val.wrapping_add(1));
@@ -828,7 +846,7 @@ where
 
 pub fn dec16<Z>(z: &mut Z, arg: Reg16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let val = arg.view(z);
     arg.change(z, val.wrapping_sub(1));
@@ -839,9 +857,9 @@ where
 
 fn rlc_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(CF, x & 0x80 != 0);
     (x.rotate_left(1), f)
 }
@@ -852,9 +870,9 @@ rotate_shift_functions_impl!{
 
 fn rl_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     let mut result = x << 1;
     if f.contains(CF) {
         result |= 1;
@@ -871,9 +889,9 @@ rotate_shift_functions_impl!{
 
 fn rrc_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(CF, x & 1 != 0);
     (x.rotate_right(1), f)
 }
@@ -884,9 +902,9 @@ rotate_shift_functions_impl!{
 
 fn rr_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     let mut result = x >> 1;
     if f.contains(CF) {
         result |= 0x80;
@@ -903,9 +921,9 @@ rotate_shift_functions_impl!{
 
 fn sla_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(CF, x & 0x80 != 0);
     (x << 1, f)
 }
@@ -917,9 +935,9 @@ rotate_shift_functions_noa_impl!{
 // SLL is undocumented; see Young
 fn sll_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(CF, x & 0x80 != 0);
     let mut result = x << 1;
     result |= 1;
@@ -932,9 +950,9 @@ rotate_shift_functions_noa_impl!{
 
 fn sra_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(CF, x & 1 != 0);
     let result = ((x as i8) >> 1) as u8;
     (result, f)
@@ -946,9 +964,9 @@ rotate_shift_functions_noa_impl!{
 
 fn srl_impl<Z>(z: &mut Z, x: u8) -> (u8, Flags)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(CF, x & 1 != 0);
     (x >> 1, f)
 }
@@ -970,7 +988,7 @@ where
     A.change(z, hl_hi >> 4 | a_hi);
     let a = A.view(z);
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_parity(a);
     f.set_sign(a);
     f.set_zero(a);
@@ -991,7 +1009,7 @@ where
     A.change(z, hl_lo | a_hi);
     let a = A.view(z);
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_parity(a);
     f.set_sign(a);
     f.set_zero(a);
@@ -1011,7 +1029,7 @@ where
     let bitflag = 1 << b;
     let x_contains = x & bitflag != 0;
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set(ZF | PF, !x_contains);
     f.insert(HF);
     f.remove(NF);
@@ -1073,7 +1091,7 @@ where
 
 pub fn jpcc<Z>(z: &mut Z, cc: ConditionCode, arg: u16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     if cc.view(z) {
         jp(z, arg);
@@ -1082,7 +1100,7 @@ where
 
 pub fn jr<Z>(z: &mut Z, e: i8)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let pc = PC.view(z);
     let new_pc = pc.wrapping_add(e as i16 as u16);
@@ -1091,28 +1109,28 @@ where
 
 pub fn jrcc<Z>(z: &mut Z, cc: ConditionCode, e: i8)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     if cc.view(z) {
         jr(z, e);
-        z.get_mut().cycles += 12;
+        z.as_mut().cycles += 12;
     } else {
-        z.get_mut().cycles += 7;
+        z.as_mut().cycles += 7;
     }
 }
 
 pub fn djnz<Z>(z: &mut Z, e: i8)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let b = B.view(z);
     let new_b = b.wrapping_sub(1);
     B.change(z, new_b);
     if new_b != 0 {
         jr(z, e);
-        z.get_mut().cycles += 13;
+        z.as_mut().cycles += 13;
     } else {
-        z.get_mut().cycles += 8;
+        z.as_mut().cycles += 8;
     }
 }
 
@@ -1121,7 +1139,7 @@ where
 
 pub fn call<Z>(z: &mut Z, nn: u16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let pch = PCH.view(z);
     let pcl = PCL.view(z);
@@ -1134,19 +1152,19 @@ where
 
 pub fn callcc<Z>(z: &mut Z, cc: ConditionCode, nn: u16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     if cc.view(z) {
         call(z, nn);
-        z.get_mut().cycles += 17;
+        z.as_mut().cycles += 17;
     } else {
-        z.get_mut().cycles += 10;
+        z.as_mut().cycles += 10;
     }
 }
 
 pub fn ret<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let sp = SP.view(z);
     let n1 = Address(sp).view(z);
@@ -1158,29 +1176,29 @@ where
 
 pub fn retcc<Z>(z: &mut Z, cc: ConditionCode)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     if cc.view(z) {
         ret(z);
-        z.get_mut().cycles += 11;
+        z.as_mut().cycles += 11;
     } else {
-        z.get_mut().cycles += 5;
+        z.as_mut().cycles += 5;
     }
 }
 
 pub fn reti<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     retn(z);
 }
 
 pub fn retn<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
-    let iff2 = z.get().iff2;
-    z.get_mut().iff1 = if iff2 { 0 } else { 0xFFFFFFFFFFFFFFFF };
+    let iff2 = z.as_ref().iff2;
+    z.as_mut().iff1 = if iff2 { 0 } else { 0xFFFFFFFFFFFFFFFF };
 
     let sp = SP.view(z);
     let pcl = Address(sp).view(z);
@@ -1202,9 +1220,9 @@ where
     let address_lo = arg2.view(z);
     let address_hi = arg1.view(z);
     let address = utilities::to16(address_lo, address_hi);
-    z.get_mut().address = address;
+    z.as_mut().address = address;
     let x = z.input(address);
-    z.get_mut().data = x;
+    z.as_mut().data = x;
     arg1.change(z, x);
 }
 
@@ -1216,11 +1234,11 @@ where
     let address_lo = arg.view(z);
     let address_hi = B.view(z);
     let address = utilities::to16(address_lo, address_hi);
-    z.get_mut().address = address;
+    z.as_mut().address = address;
     let x = z.input(address);
-    z.get_mut().data = x;
+    z.as_mut().data = x;
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_parity(x);
     f.set_sign(x);
     f.set_zero(x);
@@ -1245,7 +1263,7 @@ where
     T2: Viewable<u8>,
 {
     let (x, f) = in_impl(z, arg2);
-    z.get_mut().data = x;
+    z.as_mut().data = x;
     arg1.change(z, x);
     F.change(z, f.bits());
 }
@@ -1254,14 +1272,14 @@ where
 /// It sets
 pub fn in0<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let addr = BC.view(z);
-    z.get_mut().address = addr;
+    z.as_mut().address = addr;
     let x = z.input(addr);
-    z.get_mut().data = x;
+    z.as_mut().data = x;
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_parity(x);
     f.set_sign(x);
     f.set_zero(x);
@@ -1271,14 +1289,14 @@ where
 
 fn inid_impl<Z>(z: &mut Z, inc: u16) -> u8
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let b = B.view(z);
     let hl = HL.view(z);
     let addr = BC.view(z);
-    z.get_mut().address = addr;
+    z.as_mut().address = addr;
     let x = z.input(addr);
-    z.get_mut().data = x;
+    z.as_mut().data = x;
     Address(hl).change(z, x);
     B.change(z, b.wrapping_sub(1));
     HL.change(z, hl.wrapping_add(inc));
@@ -1287,11 +1305,11 @@ where
 
 pub fn ini<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let new_b = inid_impl(z, 1);
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_zero(new_b);
     f.insert(NF);
     F.change(z, f.bits());
@@ -1299,31 +1317,32 @@ where
 
 pub fn inir<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     while {
-        z.get_mut().cycles += 21;
+        z.as_mut().cycles += 21;
         inid_impl(z, 1) != 0
-    } {
+    }
+    {
         // r was already incremented twice by `run`
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.insert(ZF | NF);
     F.change(z, f.bits());
 
-    z.get_mut().cycles += 16;
+    z.as_mut().cycles += 16;
 }
 
 pub fn ind<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let new_b = inid_impl(z, 0xFFFF);
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_zero(new_b);
     f.insert(NF);
     F.change(z, f.bits());
@@ -1331,22 +1350,23 @@ where
 
 pub fn indr<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     while {
-        z.get_mut().cycles += 21;
+        z.as_mut().cycles += 21;
         inid_impl(z, 0xFFFF) != 0
-    } {
+    }
+    {
         // r was already incremented twice by `run`
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.insert(ZF | NF);
     F.change(z, f.bits());
 
-    z.get_mut().cycles += 16;
+    z.as_mut().cycles += 16;
 }
 
 pub fn out_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
@@ -1359,8 +1379,8 @@ where
     let address_hi = A.view(z);
     let address = utilities::to16(address_lo, address_hi);
     let x = arg2.view(z);
-    z.get_mut().address = address;
-    z.get_mut().data = x;
+    z.as_mut().address = address;
+    z.as_mut().data = x;
     z.output(address, x);
 }
 
@@ -1374,35 +1394,35 @@ where
     let address_hi = B.view(z);
     let address = utilities::to16(address_lo, address_hi);
     let x = arg2.view(z);
-    z.get_mut().address = address;
-    z.get_mut().data = x;
+    z.as_mut().address = address;
+    z.as_mut().data = x;
     z.output(address, x);
 }
 
 fn outid_impl<Z>(z: &mut Z, inc: u16)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     let b = B.view(z);
     let new_b = b.wrapping_sub(1);
     B.change(z, new_b);
     let addr = BC.view(z);
-    z.get_mut().address = addr;
+    z.as_mut().address = addr;
     let hl = HL.view(z);
     let x = Address(hl).view(z);
-    z.get_mut().data = x;
+    z.as_mut().data = x;
     z.output(addr, x);
     HL.change(z, hl.wrapping_add(inc));
 }
 
 pub fn outi<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     outid_impl(z, 1);
     let new_b = B.view(z);
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_zero(new_b);
     f.insert(NF);
     F.change(z, f.bits());
@@ -1410,33 +1430,34 @@ where
 
 pub fn otir<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     while {
-        z.get_mut().cycles += 21;
+        z.as_mut().cycles += 21;
         outid_impl(z, 1);
         B.view(z) != 0
-    } {
+    }
+    {
         // r was already incremented twice by `run`
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.insert(ZF | NF);
     F.change(z, f.bits());
 
-    z.get_mut().cycles += 16;
+    z.as_mut().cycles += 16;
 }
 
 pub fn outd<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     outid_impl(z, 0xFFFF);
     let new_b = B.view(z);
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.set_zero(new_b);
     f.insert(NF);
     F.change(z, f.bits());
@@ -1444,21 +1465,22 @@ where
 
 pub fn otdr<Z>(z: &mut Z)
 where
-    Z: Machine + ?Sized
+    Z: Machine + ?Sized,
 {
     while {
-        z.get_mut().cycles += 21;
+        z.as_mut().cycles += 21;
         outid_impl(z, 0xFFFF);
         B.view(z) != 0
-    } {
+    }
+    {
         // r was already incremented twice by `run`
-        z.get_mut().inc_r();
-        z.get_mut().inc_r();
+        z.as_mut().inc_r();
+        z.as_mut().inc_r();
     }
 
-    let mut f = z.get().flags();
+    let mut f = z.as_ref().flags();
     f.insert(ZF | NF);
     F.change(z, f.bits());
 
-    z.get_mut().cycles += 16;
+    z.as_mut().cycles += 16;
 }
