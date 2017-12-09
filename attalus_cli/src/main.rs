@@ -23,9 +23,8 @@ use attalus::hardware::memory_16_8;
 use attalus::hardware::vdp;
 use attalus::hardware::z80;
 use attalus::memo::NothingInbox;
-use attalus::sdl_wrap::master_system_user_interface::Recording;
 use attalus::sdl_wrap;
-use attalus::systems::sega_master_system::{self, HardwareBuilder, System};
+use attalus::systems::sega_master_system::{self, HardwareBuilder, Recording, System};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -67,6 +66,47 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
             memory_map
         ))?;
     }
+
+    Ok(())
+}
+
+fn run_playback(matches: &ArgMatches) -> Result<()> {
+    let load_filename = matches.value_of("loadfile").unwrap();
+
+    let sdl = sdl2::init().unwrap();
+
+    let mut emulator = sega_master_system::Emulator::new(
+        sega_master_system::Frequency::Unlimited,
+        <z80::Interpreter as Default>::default(),
+        <vdp::SimpleEmulator as Default>::default(),
+    );
+
+    let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
+
+    let mut recording =
+        <Recording<System<NothingInbox, memory_16_8::sega::Component>> as Tag>::read(
+            &mut load_file
+        )?;
+
+    let mut user_interface =
+        sdl_wrap::master_system_user_interface::PlaybackInterface::new(&recording.player_statuses);
+
+    let start_cycles = <AsRef<z80::Component>>::as_ref(&recording.master_system).cycles;
+    let time = user_interface.run(
+        &sdl,
+        &mut emulator,
+        &mut recording.master_system,
+    )?;
+
+    let end_cycles = <AsRef<z80::Component>>::as_ref(&recording.master_system).cycles;
+
+    let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 10e-9;
+    println!("Total cycles: {}", end_cycles - start_cycles);
+    println!("Time: {} secs", sec_time);
+    println!(
+        "Frequency: {} Hz",
+        (end_cycles - start_cycles) as f64 / sec_time
+    );
 
     Ok(())
 }
@@ -189,7 +229,19 @@ fn run() -> Result<()> {
                     Arg::with_name("loadfile")
                         .long("loadfile")
                         .value_name("FILE")
-                        .help("Specify the saved state file")
+                        .help("Specify the recorded gameplay file")
+                        .takes_value(true)
+                        .required(true),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("playback")
+                .about("Play back and time recorded gameplay")
+                .arg(
+                    Arg::with_name("loadfile")
+                        .long("loadfile")
+                        .value_name("FILE")
+                        .help("Specify the recorded gameplay file")
                         .takes_value(true)
                         .required(true),
                 ),
@@ -200,6 +252,7 @@ fn run() -> Result<()> {
         ("rom", Some(sub)) => run_rom(&sub),
         ("load", Some(sub)) => run_load(&sub),
         ("loadrecord", Some(sub)) => run_record(&sub),
+        ("playback", Some(sub)) => run_playback(&sub),
         (x, _) => {
             eprintln!("Unknown subcommand {}", x);
             eprintln!("{}", matches.usage());

@@ -7,6 +7,7 @@
 
 use std::convert::AsRef;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use std;
 
 use failure::Error;
@@ -16,7 +17,8 @@ use hardware::vdp;
 use hardware::z80;
 use host_multimedia::SimpleAudio;
 use sdl_wrap;
-use systems::sega_master_system::{Emulator, MasterSystem, PlayerStatus, TimeStatus};
+use systems::sega_master_system::{Emulator, MasterSystem, PlaybackStatus, PlayerStatus,
+                                  RecordingStatus, TimeStatus};
 use utilities::{FrameInfo, Tag};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -57,76 +59,57 @@ bitflags! {
     }
 }
 
-/// Contains a saved recording of gameplay, together with the initial state of
-/// the Master System. This is what is written when gameplay is saved to a file.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Recording<S> {
-    pub master_system: S,
-    pub player_statuses: Vec<PlayerStatus>,
+pub struct PlaybackInterface {
+    playback_status: PlaybackStatus,
 }
 
-impl<S: Tag> Tag for Recording<S> {
-    const TAG: &'static str = S::TAG;
-}
-
-/// Internal type for UserInterface to record gameplay
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-struct RecordingStatus<S>(Option<Box<Recording<S>>>);
-
-impl<S> Default for RecordingStatus<S> {
-    fn default() -> Self {
-        RecordingStatus(None)
-    }
-}
-
-impl<S> RecordingStatus<S> {
-    /// Call this every frame, after reading player's status but before
-    /// emulating the frame
-    fn update(&mut self, player_status: PlayerStatus) {
-        if let Some(ref mut recording) = self.0 {
-            recording.player_statuses.push(player_status)
+impl PlaybackInterface {
+    pub fn new(player_statuses: &[PlayerStatus]) -> Self {
+        PlaybackInterface {
+            playback_status: PlaybackStatus::from_recorded(player_statuses)
         }
     }
 
-    fn begin_recording(&mut self, master_system: &S)
+    pub fn run<Z80Emulator, VdpEmulator, S>(
+        &mut self,
+        sdl: &sdl2::Sdl,
+        emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
+        master_system: &mut S,
+    ) -> Result<Duration>
     where
         S: MasterSystem,
+        Z80Emulator: z80::Emulator<S>,
+        VdpEmulator: vdp::Emulator<sdl_wrap::simple_graphics::Window>,
     {
-        self.0 = Some(Box::new(Recording {
-            master_system: Clone::clone(master_system),
-            player_statuses: Vec::with_capacity(256),
-        }))
-    }
+        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
+        win.set_size(768, 576);
+        win.set_texture_size(256, 192);
+        win.set_title("Attalus");
 
-    #[allow(dead_code)]
-    fn end_recording(&mut self) {
-        self.0 = None
-    }
+        let mut frame_info = FrameInfo::default();
+        let start = Instant::now();
 
-    fn recording(&self) -> Option<&Recording<S>> {
-        match self.0 {
-            None => None,
-            Some(ref r) => Some(r),
+        // XXX - replace with a fake audio object?
+        let mut audio = sdl_wrap::simple_audio::Audio::new(&sdl)?;
+        emulator.configure_audio(&mut audio)?;
+        audio.play()?;
+
+        let time_status =
+            TimeStatus::new(<S as AsRef<z80::Component>>::as_ref(master_system).cycles);
+
+        while let Some(player_status) = self.playback_status.pop() {
+            emulator.run_frame(
+                master_system,
+                &mut win,
+                &mut audio,
+                &player_status,
+                &time_status,
+                &mut frame_info,
+            )?;
         }
-    }
-}
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct PlaybackStatus(Vec<PlayerStatus>);
-
-impl PlaybackStatus {
-    fn from_recorded(player_statuses: &[PlayerStatus]) -> PlaybackStatus {
-        let mut v = player_statuses.to_vec();
-        v.reverse();
-        PlaybackStatus(v)
-    }
-
-    fn pop(&mut self) -> Option<PlayerStatus> {
-        self.0.pop()
-    }
-
-    fn end_playback(&mut self) {
-        self.0 = Vec::new();
+        let end = Instant::now();
+        Ok(end.duration_since(start))
     }
 }
 
