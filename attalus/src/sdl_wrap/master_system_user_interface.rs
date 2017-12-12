@@ -65,9 +65,7 @@ pub struct PlaybackInterface {
 
 impl PlaybackInterface {
     pub fn new(player_statuses: &[PlayerStatus]) -> Self {
-        PlaybackInterface {
-            playback_status: PlaybackStatus::from_recorded(player_statuses)
-        }
+        PlaybackInterface { playback_status: PlaybackStatus::from_recorded(player_statuses) }
     }
 
     pub fn run<Z80Emulator, VdpEmulator, S>(

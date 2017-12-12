@@ -129,9 +129,12 @@ pub enum Memo {
 impl Outbox for Component {
     type Memo = Memo;
 
+    #[inline]
     fn id(&self) -> u32 {
         self.id
     }
+
+    #[inline]
     fn set_id(&mut self, id: u32) {
         self.id = id;
     }
@@ -443,26 +446,31 @@ impl MasterSystemMemory for Component {
 }
 
 impl AsRef<Component> for Component {
+    #[inline]
     fn as_ref(&self) -> &Component {
         self
     }
 }
 
 impl AsMut<Component> for Component {
+    #[inline]
     fn as_mut(&mut self) -> &mut Component {
         self
     }
 }
 
 impl Pausable for Component {
+    #[inline]
     fn wants_pause(&self) -> bool {
         false
     }
 
+    #[inline]
     fn clear_pause(&mut self) {}
 }
 
 impl<M> Inbox<M> for Component {
+    #[inline]
     fn receive(&mut self, _id: u32, _memo: M) {}
 }
 

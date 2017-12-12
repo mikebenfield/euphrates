@@ -28,6 +28,7 @@ pub trait Emulator<HostGraphics> {
 #[derive(Copy, Clone, Default, Debug, Eq, PartialEq, Hash)]
 pub struct SimpleEmulator;
 
+#[inline]
 pub fn vdp_color_to_simple_color(color: u8) -> SimpleColor {
     let blue = (0x30 & color) << 2;
     let green = (0x0C & color) << 4;

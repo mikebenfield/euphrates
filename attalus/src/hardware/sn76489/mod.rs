@@ -31,7 +31,7 @@ impl<T> Machine for T
 where
     T: MachineImpl
 {
-    #[inline(always)]
+    #[inline]
     fn write_sound(&mut self, data: u8) {
         <<T as MachineImpl>::C as ComponentOf<Self>>::write_sound(self, data)
     }

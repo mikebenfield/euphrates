@@ -6,12 +6,12 @@
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
 pub trait Irq {
-    #[inline(always)]
+    #[inline]
     fn requesting_mi(&self) -> Option<u8> {
         None
     }
 
-    #[inline(always)]
+    #[inline]
     fn requesting_nmi(&self) -> bool {
         false
     }
@@ -21,7 +21,7 @@ pub trait Irq {
     /// interrupts when the voltage is held low. In software, that means we need
     /// to tell the device the interrupt is being executed and to stop requesting
     /// it.
-    #[inline(always)]
+    #[inline]
     fn clear_nmi(&mut self) {
     }
 }

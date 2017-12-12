@@ -14,7 +14,7 @@ impl<T> super::ComponentOf<T> for Component
 where
     T: ?Sized,
 {
-    #[inline(always)]
+    #[inline]
     fn write_sound(_t: &mut T, _data: u8) {}
 }
 
@@ -22,7 +22,7 @@ where
 pub struct Emulator;
 
 impl<HostAudio, Comp> super::Emulator<HostAudio, Comp> for Emulator {
-    #[inline(always)]
+    #[inline]
     fn queue(
         &mut self,
         _component: &mut Comp,

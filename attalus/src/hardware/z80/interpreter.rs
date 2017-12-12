@@ -598,6 +598,7 @@ impl<Z> Emulator<Z> for Interpreter
 where
     Z: Machine + ?Sized,
 {
+    #[inline]
     fn run(&mut self, z: &mut Z, cycles: u64) {
         run(z, cycles);
     }

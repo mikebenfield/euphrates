@@ -8,12 +8,12 @@
 use std::collections::VecDeque;
 use std::fmt::Write;
 
-use runtime_pattern::{Matchable, WholePattern};
-use memo::{Inbox, NothingInbox, Pausable};
-use hardware::z80::{self, Opcode};
-use hardware::memory_16_8;
 use hardware::io_16_8;
+use hardware::memory_16_8;
 use hardware::vdp;
+use hardware::z80::{self, Opcode};
+use memo::{Inbox, NothingInbox, Pausable};
+use runtime_pattern::{Matchable, WholePattern};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Memo {
@@ -46,16 +46,16 @@ pub trait MasterSystemInbox
     + Inbox<vdp::Memo>
     + Inbox<memory_16_8::sega::Memo>
     + Inbox<io_16_8::sms2::Memo>
-    + Default
-{
+    + Default {
     fn command(&mut self, command: Command);
     fn query(&mut self, query: Query) -> String;
 }
 
 impl MasterSystemInbox for NothingInbox {
-    #[inline(always)]
+    #[inline]
     fn command(&mut self, _command: Command) {}
-    #[inline(always)]
+
+    #[inline]
     fn query(&mut self, _query: Query) -> String {
         String::new()
     }
@@ -102,16 +102,19 @@ impl Default for DebuggingInbox {
 }
 
 impl Pausable for DebuggingInbox {
+    #[inline]
     fn wants_pause(&self) -> bool {
         self.hold
     }
+
+    #[inline]
     fn clear_pause(&mut self) {}
 }
 
 macro_rules! impl_inbox {
     ($typename: ty, $variant: ident) => {
         impl Inbox<$typename> for DebuggingInbox {
-            #[inline(always)]
+            #[inline]
             fn receive(&mut self, _id: u32, memo: $typename) {
                 self.receive_general(
                     Memo::$variant(memo)
@@ -127,7 +130,7 @@ impl_inbox!{io_16_8::sms2::Memo, Io}
 impl_inbox!{vdp::Memo, Vdp}
 
 impl Inbox<Memo> for DebuggingInbox {
-    #[inline(always)]
+    #[inline]
     fn receive(&mut self, _id: u32, memo: Memo) {
         self.receive_general(memo)
     }
@@ -153,7 +156,8 @@ impl DebuggingInbox {
         if self.memo_patterns.iter().any(|pattern| {
             let mut patt: WholePattern<Memo, MemoPattern> = WholePattern::Patt(pattern.clone());
             message.matc(&mut patt)
-        }) {
+        })
+        {
             self.hold = true;
         }
         self.recent_memos.push_back(message);
@@ -232,7 +236,7 @@ impl MasterSystemInbox for DebuggingInbox {
                     writeln!(result, "{:?}", memo).unwrap();
                 }
                 result
-            },
+            }
             Disassemble(pc) => format!("{}", self.disassembly_around(pc)),
         }
     }

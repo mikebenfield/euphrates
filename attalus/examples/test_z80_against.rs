@@ -108,12 +108,14 @@ impl AsMut<z80::Component> for Z80System {
 }
 
 impl AsRef<[u8; 0x10000]> for Z80System {
+    #[inline]
     fn as_ref(&self) -> &[u8; 0x10000] {
         &self.memory
     }
 }
 
 impl AsMut<[u8; 0x10000]> for Z80System {
+    #[inline]
     fn as_mut(&mut self) -> &mut [u8; 0x10000] {
         &mut self.memory
     }

@@ -47,12 +47,12 @@ impl<T> Machine for T
 where
     T: MachineImpl,
 {
-    #[inline(always)]
+    #[inline]
     fn read(&mut self, logical_address: u16) -> u8 {
         <T::C as ComponentOf<Self>>::read(self, logical_address)
     }
 
-    #[inline(always)]
+    #[inline]
     fn write(&mut self, logical_address: u16, value: u8) {
         <T::C as ComponentOf<Self>>::write(self, logical_address, value)
     }
@@ -62,20 +62,24 @@ impl<T> ComponentOf<T> for [u8; 0x10000]
 where
     T: AsMut<[u8; 0x10000]> + AsRef<[u8; 0x10000]>,
 {
+    #[inline]
     fn read(t: &mut T, logical_address: u16) -> u8 {
         t.as_ref()[logical_address as usize]
     }
 
+    #[inline]
     fn write(t: &mut T, logical_address: u16, value: u8) {
         t.as_mut()[logical_address as usize] = value
     }
 }
 
 impl Machine for [u8; 0x10000] {
+    #[inline]
     fn read(&mut self, logical_address: u16) -> u8 {
         self[logical_address as usize]
     }
 
+    #[inline]
     fn write(&mut self, logical_address: u16, value: u8) {
         self[logical_address as usize] = value
     }

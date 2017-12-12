@@ -10,8 +10,8 @@ use std;
 use failure::ResultExt;
 use sdl2;
 
-use ::errors::{CommonKind, SimpleKind, Error};
-use ::host_multimedia::{SimpleColor, SimpleGraphics, Result};
+use errors::{CommonKind, Error, SimpleKind};
+use host_multimedia::{Result, SimpleColor, SimpleGraphics};
 
 const DEFAULT_SIZE: usize = 256;
 
@@ -34,60 +34,47 @@ pub struct Window {
 
 impl Window {
     pub fn new(sdl: &sdl2::Sdl) -> std::result::Result<Window, Error<SimpleKind>> {
-        let vid = sdl.video().map_err(|s|
-            SimpleKind(
-                format!("Unable to initialize SDL video subsystem: {}", s)
-            )
-        )?;
+        let vid = sdl.video().map_err(|s| {
+            SimpleKind(format!("Unable to initialize SDL video subsystem: {}", s))
+        })?;
         let win = vid.window(&"", DEFAULT_SIZE as u32, DEFAULT_SIZE as u32)
-            .build().with_context(|e|
-                SimpleKind(
-                    format!(
-                        "Error building SDL window {} by {}: {}",
-                        DEFAULT_SIZE,
-                        DEFAULT_SIZE,
-                        e
-                    )
-                )
-            )?;
+            .build()
+            .with_context(|e| {
+                SimpleKind(format!(
+                    "Error building SDL window {} by {}: {}",
+                    DEFAULT_SIZE,
+                    DEFAULT_SIZE,
+                    e
+                ))
+            })?;
 
-        let canvas = win.into_canvas()
-            .accelerated()
-            .build().with_context(|e|
-                SimpleKind(
-                    format!("Error creating canvas: {}", e)
-                )
-            )?;
+        let canvas = win.into_canvas().accelerated().build().with_context(|e| {
+            SimpleKind(format!("Error creating canvas: {}", e))
+        })?;
         let texture_creator = canvas.texture_creator();
         let texture = {
-            let texture_tmp = texture_creator.create_texture_static(
-                Some(sdl2::pixels::PixelFormatEnum::ARGB8888),
-                DEFAULT_SIZE as u32,
-                DEFAULT_SIZE as u32,
-            ).with_context(|e|
-                SimpleKind(
-                    format!("Error creating texture: {}", e)
+            let texture_tmp =
+                texture_creator
+                    .create_texture_static(
+                        Some(sdl2::pixels::PixelFormatEnum::ARGB8888),
+                        DEFAULT_SIZE as u32,
+                        DEFAULT_SIZE as u32,
+                    )
+                    .with_context(|e| SimpleKind(format!("Error creating texture: {}", e)))?;
 
-                )
-            )?;
-
-            unsafe {
-                std::mem::transmute(texture_tmp)
-            }
+            unsafe { std::mem::transmute(texture_tmp) }
         };
         let pixels = vec![0; 4 * DEFAULT_SIZE * DEFAULT_SIZE].into_boxed_slice();
-        Ok(
-            Window {
-                canvas: canvas,
-                texture_creator: texture_creator,
-                texture: texture,
-                pixels: pixels,
-                width: DEFAULT_SIZE,
-                height: DEFAULT_SIZE,
-                texture_width: DEFAULT_SIZE,
-                texture_height: DEFAULT_SIZE,
-            }
-        )
+        Ok(Window {
+            canvas: canvas,
+            texture_creator: texture_creator,
+            texture: texture,
+            pixels: pixels,
+            width: DEFAULT_SIZE,
+            height: DEFAULT_SIZE,
+            texture_width: DEFAULT_SIZE,
+            texture_height: DEFAULT_SIZE,
+        })
     }
 
     pub fn set_title(&mut self, title: &str) {
@@ -117,13 +104,17 @@ impl Window {
         let max_size = 20000;
         let use_width = if width > max_size { max_size } else { width };
         let use_height = if height > max_size { max_size } else { height };
-        let result = self.canvas.window_mut().set_size(use_width as u32, use_height as u32);
+        let result = self.canvas.window_mut().set_size(
+            use_width as u32,
+            use_height as u32,
+        );
         debug_assert!(result.is_ok());
 
         self.width = use_width;
         self.height = use_height;
     }
 
+    #[inline]
     pub fn texture_size(&self) -> (usize, usize) {
         (self.texture_width, self.texture_height)
     }
@@ -133,14 +124,14 @@ impl Window {
             return;
         }
         let texture = {
-            let texture_tmp = self.texture_creator.create_texture_static(
-                Some(sdl2::pixels::PixelFormatEnum::ARGB8888),
-                texture_width as u32,
-                texture_height as u32,
-            ).expect("Unable to create a texture");
-            unsafe {
-                std::mem::transmute(texture_tmp)
-            }
+            let texture_tmp = self.texture_creator
+                .create_texture_static(
+                    Some(sdl2::pixels::PixelFormatEnum::ARGB8888),
+                    texture_width as u32,
+                    texture_height as u32,
+                )
+                .expect("Unable to create a texture");
+            unsafe { std::mem::transmute(texture_tmp) }
         };
 
         self.texture = texture;
@@ -154,22 +145,28 @@ impl Window {
 }
 
 impl SimpleGraphics for Window {
+    #[inline]
     fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
         self.set_texture_size(width as usize, height as usize);
         Ok(())
     }
 
+    #[inline]
     fn resolution(&self) -> (u32, u32) {
         let (x, y) = self.texture_size();
         (x as u32, y as u32)
     }
 
+    #[inline]
     fn paint(&mut self, x: u32, y: u32, color: SimpleColor) {
         let (w, h) = self.resolution();
         if x >= w || y >= h {
             panic!(
                 "Point ({}, {}) out of bounds for texture size ({}, {})",
-                x, y, w, h
+                x,
+                y,
+                w,
+                h
             );
         }
         let idx = 4 * (y as usize * self.texture_width + x as usize);
@@ -181,12 +178,16 @@ impl SimpleGraphics for Window {
         }
     }
 
+    #[inline]
     fn get(&self, x: u32, y: u32) -> SimpleColor {
         let (w, h) = self.resolution();
         if x >= w || y >= h {
             panic!(
                 "Point ({}, {}) out of bounds for texture size ({}, {})",
-                x, y, w, h
+                x,
+                y,
+                w,
+                h
             );
         }
         let idx = 4 * (y as usize * self.texture_width + x as usize);
@@ -199,18 +200,15 @@ impl SimpleGraphics for Window {
         }
     }
 
+    #[inline]
     fn render(&mut self) -> Result<()> {
         self.canvas.clear();
-        self.texture.update(
-            None,
-            &self.pixels,
-            self.texture_width * 4,
-        ).with_context(|e|
-            CommonKind::Dead(format!("SDL rendering error {}", e))
-        )?;
-        self.canvas.copy(&self.texture, None, None).map_err(|s|
+        self.texture
+            .update(None, &self.pixels, self.texture_width * 4)
+            .with_context(|e| CommonKind::Dead(format!("SDL rendering error {}", e)))?;
+        self.canvas.copy(&self.texture, None, None).map_err(|s| {
             CommonKind::Dead(format!("SDL rendering error {}", s))
-        )?;
+        })?;
         self.canvas.present();
         Ok(())
     }

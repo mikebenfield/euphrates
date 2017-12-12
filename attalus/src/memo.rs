@@ -5,11 +5,10 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::ser::{Serialize};
-use serde::de::{DeserializeOwned};
+use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
 
-pub trait Outbox
-{
+pub trait Outbox {
     type Memo: DeserializeOwned + Serialize;
 
     fn id(&self) -> u32;
@@ -18,12 +17,12 @@ pub trait Outbox
 }
 
 pub trait Pausable {
-    #[inline(always)]
+    #[inline]
     fn wants_pause(&self) -> bool {
         false
     }
 
-    #[inline(always)]
+    #[inline]
     fn clear_pause(&mut self) {}
 }
 
@@ -35,14 +34,16 @@ pub trait Inbox<M>: Pausable {
 pub struct NothingInbox;
 
 impl Pausable for NothingInbox {
-    #[inline(always)]
-    fn wants_pause(&self) -> bool { false }
+    #[inline]
+    fn wants_pause(&self) -> bool {
+        false
+    }
 
-    #[inline(always)]
+    #[inline]
     fn clear_pause(&mut self) {}
 }
 
 impl<M> Inbox<M> for NothingInbox {
-    #[inline(always)]
+    #[inline]
     fn receive(&mut self, _id: u32, _memo: M) {}
 }

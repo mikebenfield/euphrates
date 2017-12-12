@@ -94,14 +94,14 @@ impl_tag!{NothingInbox, memory_16_8::codemasters::Component,
 macro_rules! impl_as_ref {
     ($typename: ty, $component_name: ident) => {
         impl<I, M> AsRef<$typename> for System<I, M> {
-            #[inline(always)]
+            #[inline]
             fn as_ref(&self) -> &$typename {
                 &self.hardware.$component_name
             }
         }
 
         impl<I, M> AsMut<$typename> for System<I, M> {
-            #[inline(always)]
+            #[inline]
             fn as_mut(&mut self) -> &mut $typename {
                 &mut self.hardware.$component_name
             }
@@ -117,7 +117,7 @@ impl_as_ref!{z80::Component, z80}
 macro_rules! impl_as_ref_memory_map {
     ($typename: ty) => {
         impl<I> AsRef<$typename> for System<I, $typename> {
-            #[inline(always)]
+            #[inline]
             fn as_ref(&self) -> &$typename {
                 &self.hardware.memory
             }
@@ -125,7 +125,7 @@ macro_rules! impl_as_ref_memory_map {
         }
 
         impl<I> AsMut<$typename> for System<I, $typename> {
-            #[inline(always)]
+            #[inline]
             fn as_mut(&mut self) -> &mut $typename {
                 &mut self.hardware.memory
             }
@@ -161,12 +161,12 @@ impl<I, M> Pausable for System<I, M>
 where
     I: Pausable,
 {
-    #[inline(always)]
+    #[inline]
     fn wants_pause(&self) -> bool {
         self.inbox.wants_pause()
     }
 
-    #[inline(always)]
+    #[inline]
     fn clear_pause(&mut self) {
         self.inbox.clear_pause()
     }
@@ -176,26 +176,26 @@ impl<I, M, T> Inbox<T> for System<I, M>
 where
     I: Inbox<T>,
 {
-    #[inline(always)]
+    #[inline]
     fn receive(&mut self, id: u32, memo: T) {
         self.inbox.receive(id, memo)
     }
 }
 
 impl<I, M> Irq for System<I, M> {
-    #[inline(always)]
+    #[inline]
     fn requesting_mi(&self) -> Option<u8> {
         self.hardware.vdp.requesting_mi().or_else(|| {
             self.hardware.io.requesting_mi()
         })
     }
 
-    #[inline(always)]
+    #[inline]
     fn requesting_nmi(&self) -> bool {
         self.hardware.vdp.requesting_nmi() || self.hardware.io.requesting_nmi()
     }
 
-    #[inline(always)]
+    #[inline]
     fn clear_nmi(&mut self) {
         self.hardware.vdp.clear_nmi();
         self.hardware.io.clear_nmi();

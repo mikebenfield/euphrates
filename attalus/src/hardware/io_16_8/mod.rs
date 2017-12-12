@@ -22,21 +22,20 @@ where
     fn output(t: &mut T, address: u16, value: u8);
 }
 
-pub trait MachineImpl
-{
+pub trait MachineImpl {
     type C: ComponentOf<Self>;
 }
 
 impl<T> Machine for T
 where
-    T: MachineImpl
+    T: MachineImpl,
 {
-    #[inline(always)]
+    #[inline]
     fn input(&mut self, address: u16) -> u8 {
         <T::C as ComponentOf<Self>>::input(self, address)
     }
 
-    #[inline(always)]
+    #[inline]
     fn output(&mut self, address: u16, value: u8) {
         <T::C as ComponentOf<Self>>::output(self, address, value)
     }
@@ -60,6 +59,5 @@ where
         0
     }
 
-    fn output(_t: &mut T, _address: u16, _value: u8) {
-    }
+    fn output(_t: &mut T, _address: u16, _value: u8) {}
 }

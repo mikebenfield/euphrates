@@ -52,10 +52,12 @@ serde_struct_arrays!{
 impl Outbox for Component {
     type Memo = Memo;
 
+    #[inline]
     fn id(&self) -> u32 {
         self.id
     }
 
+    #[inline]
     fn set_id(&mut self, id: u32) {
         self.id = id;
     }

@@ -37,9 +37,12 @@ pub struct Component {
 impl Outbox for Component {
     type Memo = Memo;
 
+    #[inline]
     fn id(&self) -> u32 {
         self.id
     }
+
+    #[inline]
     fn set_id(&mut self, id: u32) {
         self.id = id;
     }
@@ -63,30 +66,44 @@ impl Component {
         Default::default()
     }
 
+    #[inline]
     pub fn joypad_a(&self) -> u8 {
         self.joypad_a
     }
+
+    #[inline]
     pub fn set_joypad_a(&mut self, x: u8) {
         self.joypad_a = x;
     }
+
+    #[inline]
     pub fn joypad_b(&self) -> u8 {
         self.joypad_b
     }
+
+    #[inline]
     pub fn set_joypad_b(&mut self, x: u8) {
         self.joypad_b = x;
     }
+
+    #[inline]
     pub fn pause(&self) -> bool {
         self.pause
     }
+
+    #[inline]
     pub fn set_pause(&mut self, x: bool) {
         self.pause = x;
     }
 }
 
 impl Irq for Component {
+    #[inline]
     fn requesting_nmi(&self) -> bool {
         self.pause
     }
+
+    #[inline]
     fn clear_nmi(&mut self) {
         self.pause = false
     }

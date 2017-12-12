@@ -234,14 +234,17 @@ bitflags! {
 }
 
 impl Flags {
+    #[inline]
     pub fn set_sign(&mut self, x: u8) {
         self.set(Flags::SF, x & 0x80 != 0);
     }
 
+    #[inline]
     pub fn set_zero(&mut self, x: u8) {
         self.set(Flags::ZF, x == 0);
     }
 
+    #[inline]
     pub fn set_parity(&mut self, x: u8) {
         let parity = x.count_ones() % 2 == 0;
         self.set(Flags::PF, parity);
@@ -853,10 +856,12 @@ pub enum Memo {
 impl Outbox for Component {
     type Memo = Memo;
 
+    #[inline]
     fn id(&self) -> u32 {
         self.id
     }
 
+    #[inline]
     fn set_id(&mut self, id: u32) {
         self.id = id;
     }
@@ -887,38 +892,46 @@ impl Component {
         }
     }
 
+    #[inline]
     pub fn toggle_flags(&mut self, flags: Flags) {
         let mut f = Flags::from_bits_truncate(self.get_reg8(F));
         f.toggle(flags);
         self.set_reg8(F, f.bits());
     }
 
+    #[inline]
     pub fn get_reg8(&self, reg8: Reg8) -> u8 {
         let byte_array: &[u8; 26] = unsafe { std::mem::transmute(&self.registers) };
         byte_array[reg8 as usize]
     }
 
+    #[inline]
     pub fn set_reg8(&mut self, reg8: Reg8, x: u8) {
         let byte_array: &mut [u8; 26] = unsafe { std::mem::transmute(&mut self.registers) };
         byte_array[reg8 as usize] = x
     }
 
+    #[inline]
     pub fn get_reg16(&self, reg16: Reg16) -> u16 {
         self.registers[reg16 as usize]
     }
 
+    #[inline]
     pub fn set_reg16(&mut self, reg16: Reg16, x: u16) {
         self.registers[reg16 as usize] = x;
     }
 
+    #[inline]
     pub fn flags(&self) -> Flags {
         Flags::from_bits_truncate(self.get_reg8(F))
     }
 
+    #[inline]
     pub fn set_flags(&mut self, f: Flags) {
         self.set_reg8(F, f.bits());
     }
 
+    #[inline]
     pub fn inc_r(&mut self) {
         let r = self.get_reg8(R);
         let ir = r.wrapping_add(1) & 0x7F;
