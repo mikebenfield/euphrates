@@ -33,7 +33,7 @@ macro_rules! rotate_shift_functions_noa_impl {
             let a = arg.view(z);
             let (result, mut f) = $fn_impl(z, a);
             arg.change(z, result);
-            f.remove(HF | NF);
+            f.remove(Flags::HF | Flags::NF);
             (result, f)
         }
 
@@ -171,8 +171,8 @@ where
     let mut f = z.as_ref().flags();
     f.set_sign(val);
     f.set_zero(val);
-    f.remove(NF | HF);
-    f.set(PF, iff2);
+    f.remove(Flags::NF | Flags::HF);
+    f.set(Flags::PF, iff2);
     z.as_mut().set_flags(f);
 }
 
@@ -253,8 +253,8 @@ where
     BC.change(z, bc.wrapping_sub(1));
 
     let mut f = z.as_ref().flags();
-    f.remove(HF | NF);
-    f.set(PF, bc != 1);
+    f.remove(Flags::HF | Flags::NF);
+    f.set(Flags::PF, bc != 1);
     F.change(z, f.bits());
 }
 
@@ -339,9 +339,9 @@ where
     let mut f = z.as_ref().flags();
     f.set_sign(result);
     f.set_zero(result);
-    f.set(HF, phl & 0xF > a & 0xF);
-    f.set(PF, bc != 1);
-    f.insert(NF);
+    f.set(Flags::HF, phl & 0xF > a & 0xF);
+    f.set(Flags::PF, bc != 1);
+    f.insert(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -359,7 +359,7 @@ where
     while {
         cpi(z);
         z.as_mut().cycles += 21;
-        BC.view(z) != 0 && !z.as_ref().flags().contains(ZF)
+        BC.view(z) != 0 && !z.as_ref().flags().contains(Flags::ZF)
     }
     {
         // r was already incremented twice by `run`
@@ -384,7 +384,7 @@ where
     while {
         cpd(z);
         z.as_mut().cycles += 21;
-        BC.view(z) != 0 && !z.as_ref().flags().contains(ZF)
+        BC.view(z) != 0 && !z.as_ref().flags().contains(Flags::ZF)
     }
     {
         // r was already incremented twice by `run`
@@ -410,13 +410,13 @@ where
     f.set_zero(result8);
     f.set_sign(result8);
 
-    f.set(CF, result16 & (1 << 8) != 0);
+    f.set(Flags::CF, result16 & (1 << 8) != 0);
 
     // carry from bit 3 happened if:
     // x and a have same bit 4 AND result is set OR
     // x and a have different bit 4 AND result is clear
     let hf = (x ^ a ^ result8) & (1 << 4) != 0;
-    f.set(HF, hf);
+    f.set(Flags::HF, hf);
 
     // overflow happened if:
     // x and a both have bit 7 AND result does not OR
@@ -424,9 +424,9 @@ where
     // in other words, x and y have the same bit 7 and
     // result is different
     let overflow = !(x ^ a) & (x ^ result8) & (1 << 7) != 0;
-    f.set(PF, overflow);
+    f.set(Flags::PF, overflow);
 
-    f.remove(NF);
+    f.remove(Flags::NF);
 
     (result8, f)
 }
@@ -450,7 +450,7 @@ where
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.as_ref().flags().contains(CF) {
+    let cf = if z.as_ref().flags().contains(Flags::CF) {
         1u8
     } else {
         0u8
@@ -467,8 +467,8 @@ where
     Z: Machine + ?Sized,
 {
     let (result, mut f) = add_impl(z, a, !x, 1 ^ cf);
-    f.toggle(CF | HF);
-    f.insert(NF);
+    f.toggle(Flags::CF | Flags::HF);
+    f.insert(Flags::NF);
     (result, f)
 }
 
@@ -491,7 +491,7 @@ where
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.as_ref().flags().contains(CF) {
+    let cf = if z.as_ref().flags().contains(Flags::CF) {
         1u8
     } else {
         0u8
@@ -509,13 +509,13 @@ where
 {
     A.change(z, result);
 
-    // note that for AND and OR, the manual says PF is set according to whether
+    // note that for AND and OR, the manual says Flags::PF is set according to whether
     // there is overflow. I'm betting that is a mistake.
     let mut f = z.as_ref().flags();
     f.set_parity(result);
     f.set_sign(result);
     f.set_zero(result);
-    f.remove(HF | NF | CF);
+    f.remove(Flags::HF | Flags::NF | Flags::CF);
     f
 }
 
@@ -526,7 +526,7 @@ where
 {
     let result = arg.view(z) & A.view(z);
     let mut f = andor_impl(z, result);
-    f.insert(HF);
+    f.insert(Flags::HF);
     F.change(z, f.bits());
 }
 
@@ -573,9 +573,9 @@ where
     let mut f = z.as_ref().flags();
     f.set_zero(result);
     f.set_sign(result);
-    f.set(HF, x & 0xF == 0xF);
-    f.set(PF, x == 0x7F);
-    f.remove(NF);
+    f.set(Flags::HF, x & 0xF == 0xF);
+    f.set(Flags::PF, x == 0x7F);
+    f.remove(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -590,9 +590,9 @@ where
     let mut f = z.as_ref().flags();
     f.set_zero(result);
     f.set_sign(result);
-    f.set(HF, x & 0xF == 0);
-    f.set(PF, x == 0x80);
-    f.insert(NF);
+    f.set(Flags::HF, x & 0xF == 0);
+    f.set(Flags::PF, x == 0x80);
+    f.insert(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -605,9 +605,9 @@ where
 {
     // see the table in Young
     let a = A.view(z);
-    let cf = z.as_ref().flags().contains(CF);
-    let hf = z.as_ref().flags().contains(HF);
-    let nf = z.as_ref().flags().contains(NF);
+    let cf = z.as_ref().flags().contains(Flags::CF);
+    let hf = z.as_ref().flags().contains(Flags::HF);
+    let nf = z.as_ref().flags().contains(Flags::NF);
     let diff = match (cf, a >> 4, hf, a & 0xF) {
         (false, 0...9, false, 0...9) => 0,
         (false, 0...9, true, 0...9) => 0x6,
@@ -640,8 +640,8 @@ where
     f.set_parity(new_a);
     f.set_zero(new_a);
     f.set_sign(new_a);
-    f.set(CF, new_cf != 0);
-    f.set(HF, new_hf != 0);
+    f.set(Flags::CF, new_cf != 0);
+    f.set(Flags::HF, new_hf != 0);
     F.change(z, f.bits());
 }
 
@@ -652,7 +652,7 @@ where
     let a = A.view(z);
     A.change(z, !a);
     let mut f = z.as_ref().flags();
-    f.insert(HF | NF);
+    f.insert(Flags::HF | Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -664,8 +664,8 @@ where
     let a = A.view(z);
     let (result, mut f) = sub_impl(z, 0, a, 0);
     A.change(z, result);
-    f.set(PF, a == 0x80);
-    f.set(CF, a != 0);
+    f.set(Flags::PF, a == 0x80);
+    f.set(Flags::CF, a != 0);
     F.change(z, f.bits());
 }
 
@@ -674,10 +674,10 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    let cf = f.contains(CF);
-    f.set(HF, cf);
-    f.toggle(CF);
-    f.remove(NF);
+    let cf = f.contains(Flags::CF);
+    f.set(Flags::HF, cf);
+    f.toggle(Flags::CF);
+    f.remove(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -686,8 +686,8 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    f.remove(HF | NF);
-    f.insert(CF);
+    f.remove(Flags::HF | Flags::NF);
+    f.insert(Flags::CF);
     F.change(z, f.bits());
 }
 
@@ -758,15 +758,15 @@ where
     let result16 = result32 as u16;
 
     let mut f = z.as_ref().flags();
-    f.set(CF, result32 & (1 << 16) != 0);
+    f.set(Flags::CF, result32 & (1 << 16) != 0);
 
     // carry from bit 11 happened if:
     // x and y have same bit 12 AND result is set OR
     // x and y have different bit 12 AND result is clear
     let hf = (x ^ y ^ result16) & (1 << 12) != 0;
-    f.set(HF, hf);
+    f.set(Flags::HF, hf);
 
-    f.remove(NF);
+    f.remove(Flags::NF);
 
     (result16, f)
 }
@@ -797,7 +797,7 @@ where
     // in other words, x and y have the same bit 15, which is different from bit
     // 15 of result
     let overflow = !(x ^ y) & (x ^ result) & (1 << 15) != 0;
-    f.set(PF, overflow);
+    f.set(Flags::PF, overflow);
 
     (result, f)
 }
@@ -808,7 +808,7 @@ where
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.as_ref().flags().contains(CF) {
+    let cf = if z.as_ref().flags().contains(Flags::CF) {
         1u8
     } else {
         0u8
@@ -824,15 +824,15 @@ where
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.as_ref().flags().contains(CF) {
+    let cf = if z.as_ref().flags().contains(Flags::CF) {
         1u8
     } else {
         0u8
     };
     let (result, mut f) = adc16_impl(z, x, !y, (1 ^ cf) as u16);
     arg1.change(z, result);
-    f.toggle(CF | HF);
-    f.insert(NF);
+    f.toggle(Flags::CF | Flags::HF);
+    f.insert(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -860,7 +860,7 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    f.set(CF, x & 0x80 != 0);
+    f.set(Flags::CF, x & 0x80 != 0);
     (x.rotate_left(1), f)
 }
 
@@ -874,12 +874,12 @@ where
 {
     let mut f = z.as_ref().flags();
     let mut result = x << 1;
-    if f.contains(CF) {
+    if f.contains(Flags::CF) {
         result |= 1;
     } else {
         result &= !1;
     }
-    f.set(CF, x & 0x80 != 0);
+    f.set(Flags::CF, x & 0x80 != 0);
     (result, f)
 }
 
@@ -892,7 +892,7 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    f.set(CF, x & 1 != 0);
+    f.set(Flags::CF, x & 1 != 0);
     (x.rotate_right(1), f)
 }
 
@@ -906,12 +906,12 @@ where
 {
     let mut f = z.as_ref().flags();
     let mut result = x >> 1;
-    if f.contains(CF) {
+    if f.contains(Flags::CF) {
         result |= 0x80;
     } else {
         result &= !0x80;
     }
-    f.set(CF, x & 1 != 0);
+    f.set(Flags::CF, x & 1 != 0);
     (result, f)
 }
 
@@ -924,7 +924,7 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    f.set(CF, x & 0x80 != 0);
+    f.set(Flags::CF, x & 0x80 != 0);
     (x << 1, f)
 }
 
@@ -938,7 +938,7 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    f.set(CF, x & 0x80 != 0);
+    f.set(Flags::CF, x & 0x80 != 0);
     let mut result = x << 1;
     result |= 1;
     (result, f)
@@ -953,7 +953,7 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    f.set(CF, x & 1 != 0);
+    f.set(Flags::CF, x & 1 != 0);
     let result = ((x as i8) >> 1) as u8;
     (result, f)
 }
@@ -967,7 +967,7 @@ where
     Z: Machine + ?Sized,
 {
     let mut f = z.as_ref().flags();
-    f.set(CF, x & 1 != 0);
+    f.set(Flags::CF, x & 1 != 0);
     (x >> 1, f)
 }
 
@@ -992,7 +992,7 @@ where
     f.set_parity(a);
     f.set_sign(a);
     f.set_zero(a);
-    f.remove(HF | NF);
+    f.remove(Flags::HF | Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -1013,7 +1013,7 @@ where
     f.set_parity(a);
     f.set_sign(a);
     f.set_zero(a);
-    f.remove(HF | NF);
+    f.remove(Flags::HF | Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -1030,10 +1030,10 @@ where
     let x_contains = x & bitflag != 0;
 
     let mut f = z.as_ref().flags();
-    f.set(ZF | PF, !x_contains);
-    f.insert(HF);
-    f.remove(NF);
-    f.set(SF, b == 7 && x_contains);
+    f.set(Flags::ZF | Flags::PF, !x_contains);
+    f.insert(Flags::HF);
+    f.remove(Flags::NF);
+    f.set(Flags::SF, b == 7 && x_contains);
     F.change(z, f.bits());
 }
 
@@ -1242,7 +1242,7 @@ where
     f.set_parity(x);
     f.set_sign(x);
     f.set_zero(x);
-    f.remove(HF | NF);
+    f.remove(Flags::HF | Flags::NF);
 
     (x, f)
 }
@@ -1283,7 +1283,7 @@ where
     f.set_parity(x);
     f.set_sign(x);
     f.set_zero(x);
-    f.remove(HF | NF);
+    f.remove(Flags::HF | Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -1311,7 +1311,7 @@ where
 
     let mut f = z.as_ref().flags();
     f.set_zero(new_b);
-    f.insert(NF);
+    f.insert(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -1330,7 +1330,7 @@ where
     }
 
     let mut f = z.as_ref().flags();
-    f.insert(ZF | NF);
+    f.insert(Flags::ZF | Flags::NF);
     F.change(z, f.bits());
 
     z.as_mut().cycles += 16;
@@ -1344,7 +1344,7 @@ where
 
     let mut f = z.as_ref().flags();
     f.set_zero(new_b);
-    f.insert(NF);
+    f.insert(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -1363,7 +1363,7 @@ where
     }
 
     let mut f = z.as_ref().flags();
-    f.insert(ZF | NF);
+    f.insert(Flags::ZF | Flags::NF);
     F.change(z, f.bits());
 
     z.as_mut().cycles += 16;
@@ -1424,7 +1424,7 @@ where
 
     let mut f = z.as_ref().flags();
     f.set_zero(new_b);
-    f.insert(NF);
+    f.insert(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -1444,7 +1444,7 @@ where
     }
 
     let mut f = z.as_ref().flags();
-    f.insert(ZF | NF);
+    f.insert(Flags::ZF | Flags::NF);
     F.change(z, f.bits());
 
     z.as_mut().cycles += 16;
@@ -1459,7 +1459,7 @@ where
 
     let mut f = z.as_ref().flags();
     f.set_zero(new_b);
-    f.insert(NF);
+    f.insert(Flags::NF);
     F.change(z, f.bits());
 }
 
@@ -1479,7 +1479,7 @@ where
     }
 
     let mut f = z.as_ref().flags();
-    f.insert(ZF | NF);
+    f.insert(Flags::ZF | Flags::NF);
     F.change(z, f.bits());
 
     z.as_mut().cycles += 16;

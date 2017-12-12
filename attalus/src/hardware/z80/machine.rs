@@ -244,14 +244,14 @@ impl Viewable<bool> for ConditionCode {
     {
         let f = z.as_ref().flags();
         match self {
-            NZcc => !f.contains(ZF),
-            Zcc => f.contains(ZF),
-            NCcc => !f.contains(CF),
-            Ccc => f.contains(CF),
-            POcc => !f.contains(PF),
-            PEcc => f.contains(PF),
-            Pcc => !f.contains(SF),
-            Mcc => f.contains(SF),
+            NZcc => !f.contains(Flags::ZF),
+            Zcc => f.contains(Flags::ZF),
+            NCcc => !f.contains(Flags::CF),
+            Ccc => f.contains(Flags::CF),
+            POcc => !f.contains(Flags::PF),
+            PEcc => f.contains(Flags::PF),
+            Pcc => !f.contains(Flags::SF),
+            Mcc => f.contains(Flags::SF),
         }
     }
 }

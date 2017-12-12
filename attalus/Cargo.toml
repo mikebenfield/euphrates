@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 attalus_derive = { path = "../attalus_derive" }
-bitflags = "0.9"
+bitflags = "1.0"
 sdl2 = "0.30"
 rand = "0.3"
 tempdir = "0.3"

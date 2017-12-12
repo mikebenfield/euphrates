@@ -200,46 +200,46 @@ impl<S> UserInterface<S> {
 
         let mut joypad_a = JoypadPortA::all();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::W) {
-            joypad_a.remove(JOYPAD1_UP);
+            joypad_a.remove(JoypadPortA::JOYPAD1_UP);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::A) {
-            joypad_a.remove(JOYPAD1_LEFT);
+            joypad_a.remove(JoypadPortA::JOYPAD1_LEFT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::S) {
-            joypad_a.remove(JOYPAD1_DOWN);
+            joypad_a.remove(JoypadPortA::JOYPAD1_DOWN);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::D) {
-            joypad_a.remove(JOYPAD1_RIGHT);
+            joypad_a.remove(JoypadPortA::JOYPAD1_RIGHT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::F) {
-            joypad_a.remove(JOYPAD1_A);
+            joypad_a.remove(JoypadPortA::JOYPAD1_A);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::G) {
-            joypad_a.remove(JOYPAD1_B);
+            joypad_a.remove(JoypadPortA::JOYPAD1_B);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
-            joypad_a.remove(JOYPAD2_UP);
+            joypad_a.remove(JoypadPortA::JOYPAD2_UP);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::K) {
-            joypad_a.remove(JOYPAD2_DOWN);
+            joypad_a.remove(JoypadPortA::JOYPAD2_DOWN);
         }
         self.player_status.joypad_a = joypad_a.bits;
 
         let mut joypad_b = JoypadPortB::all();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::J) {
-            joypad_b.remove(JOYPAD2_LEFT);
+            joypad_b.remove(JoypadPortB::JOYPAD2_LEFT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::L) {
-            joypad_b.remove(JOYPAD2_RIGHT);
+            joypad_b.remove(JoypadPortB::JOYPAD2_RIGHT);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Semicolon) {
-            joypad_b.remove(JOYPAD2_A);
+            joypad_b.remove(JoypadPortB::JOYPAD2_A);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Apostrophe) {
-            joypad_b.remove(JOYPAD2_B);
+            joypad_b.remove(JoypadPortB::JOYPAD2_B);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Space) {
-            joypad_b.remove(RESET);
+            joypad_b.remove(JoypadPortB::RESET);
         }
         self.player_status.joypad_b = joypad_b.bits;
 

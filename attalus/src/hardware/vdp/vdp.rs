@@ -333,10 +333,10 @@ impl Component {
         self.address0 = (addr.wrapping_add(1) & 0x3FFF) | (addr & 0xC000);
     }
     pub fn trigger_sprite_overflow(&mut self) {
-        self.status_flags.insert(SPRITE_OVERFLOW);
+        self.status_flags.insert(StatusFlags::SPRITE_OVERFLOW);
     }
     pub fn trigger_sprite_collision(&mut self) {
-        self.status_flags.insert(SPRITE_COLLISION);
+        self.status_flags.insert(StatusFlags::SPRITE_COLLISION);
     }
 
     pub fn query(&self, q: VdpQuery) -> VdpQueryResult {
@@ -363,16 +363,16 @@ impl Component {
 
     pub fn drew_line(&mut self) {
         match (self.resolution(), self.v) {
-            (Low, 0xC1) => self.status_flags.insert(FRAME_INTERRUPT),
-            (Medium, 0xE1) => self.status_flags.insert(FRAME_INTERRUPT),
-            (High, 0xF1) => self.status_flags.insert(FRAME_INTERRUPT),
+            (Low, 0xC1) => self.status_flags.insert(StatusFlags::FRAME_INTERRUPT),
+            (Medium, 0xE1) => self.status_flags.insert(StatusFlags::FRAME_INTERRUPT),
+            (High, 0xF1) => self.status_flags.insert(StatusFlags::FRAME_INTERRUPT),
             _ => {}
         }
         if self.v <= self.active_lines() {
             self.line_counter = self.line_counter.wrapping_sub(1);
             if self.line_counter == 0xFF {
                 self.line_counter = self.reg_line_counter();
-                self.status_flags.insert(LINE_INTERRUPT);
+                self.status_flags.insert(StatusFlags::LINE_INTERRUPT);
             }
         } else {
             self.line_counter = self.reg_line_counter();
@@ -406,8 +406,8 @@ impl Component {
 
 impl Irq for Component {
     fn requesting_mi(&self) -> Option<u8> {
-        if (self.status_flags.contains(FRAME_INTERRUPT) && self.frame_irq_enable()) ||
-            (self.status_flags.contains(LINE_INTERRUPT) && self.line_irq_enable())
+        if (self.status_flags.contains(StatusFlags::FRAME_INTERRUPT) && self.frame_irq_enable()) ||
+            (self.status_flags.contains(StatusFlags::LINE_INTERRUPT) && self.line_irq_enable())
         {
             Some(0xFF)
         } else {
@@ -468,7 +468,7 @@ pub trait Machine: AsMut<Component> + AsRef<Component> + Inbox<Memo> {
         let current_buffer = self.as_ref().buffer;
         self.as_mut().buffer = self.as_ref().cram[(self.as_ref().address() % 32) as usize];
         self.as_mut().inc_address();
-        self.as_mut().status_flags.remove(CONTROL_FLAG);
+        self.as_mut().status_flags.remove(StatusFlags::CONTROL_FLAG);
         let id = self.as_ref().id();
         self.receive(id, Memo::ReadData(current_buffer));
         current_buffer
@@ -495,14 +495,14 @@ pub trait Machine: AsMut<Component> + AsRef<Component> + Inbox<Memo> {
             }
         }
         self.as_mut().inc_address();
-        self.as_mut().status_flags.remove(CONTROL_FLAG);
+        self.as_mut().status_flags.remove(StatusFlags::CONTROL_FLAG);
     }
 
     fn write_control(&mut self, x: u8) {
         let id = self.as_ref().id();
         self.receive(id, Memo::WriteControl(x));
         let vdp = self.as_mut();
-        if vdp.status_flags.contains(CONTROL_FLAG) {
+        if vdp.status_flags.contains(StatusFlags::CONTROL_FLAG) {
             vdp.address0 = vdp.address0 & 0x00FF | (x as u16) << 8;
             if vdp.code() == 0 {
                 vdp.buffer = vdp.vram[vdp.address() as usize];
@@ -510,10 +510,10 @@ pub trait Machine: AsMut<Component> + AsRef<Component> + Inbox<Memo> {
             } else if vdp.code() == 2 && (x & 0x0F) <= 10 {
                 vdp.reg[(x & 0x0F) as usize] = vdp.address0 as u8;
             }
-            vdp.status_flags.remove(CONTROL_FLAG);
+            vdp.status_flags.remove(StatusFlags::CONTROL_FLAG);
         } else {
             vdp.address0 = (vdp.address0 & 0xFF00) | x as u16;
-            vdp.status_flags.insert(CONTROL_FLAG);
+            vdp.status_flags.insert(StatusFlags::CONTROL_FLAG);
         }
     }
 }

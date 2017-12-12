@@ -5,11 +5,11 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std;
 use std::fmt;
+use std;
 
-use ::utilities;
-use ::memo::Outbox;
+use memo::Outbox;
+use utilities;
 
 /// The Z80 processor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -57,19 +57,63 @@ impl fmt::Display for Component {
 #[cfg(target_endian = "little")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Reg8 {
-    C, B, E, D, F, A, L, H,
-    C0, B0, E0, D0, F0, A0, L0, H0,
-    IXL, IXH, IYL, IYH,
-    SPL, SPH, PCL, PCH, I, R
+    C,
+    B,
+    E,
+    D,
+    F,
+    A,
+    L,
+    H,
+    C0,
+    B0,
+    E0,
+    D0,
+    F0,
+    A0,
+    L0,
+    H0,
+    IXL,
+    IXH,
+    IYL,
+    IYH,
+    SPL,
+    SPH,
+    PCL,
+    PCH,
+    I,
+    R,
 }
 
 #[cfg(target_endian = "big")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Reg8 {
-    B, C, D, E, A, F, H, L,
-    B0, C0, D0, E0, A0, F0, H0, L0,
-    IXH, IXL, IYH, IYL,
-    SPH, SPL, PCH, PCL, I, R
+    B,
+    C,
+    D,
+    E,
+    A,
+    F,
+    H,
+    L,
+    B0,
+    C0,
+    D0,
+    E0,
+    A0,
+    F0,
+    H0,
+    L0,
+    IXH,
+    IXL,
+    IYH,
+    IYL,
+    SPH,
+    SPL,
+    PCH,
+    PCL,
+    I,
+    R,
 }
 
 impl fmt::Display for Reg8 {
@@ -110,10 +154,18 @@ pub use self::Reg8::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Reg16 {
-    BC, DE, AF, HL,
-    BC0, DE0, AF0, HL0,
-    IX, IY,
-    SP, PC
+    BC,
+    DE,
+    AF,
+    HL,
+    BC0,
+    DE0,
+    AF0,
+    HL0,
+    IX,
+    IY,
+    SP,
+    PC,
 }
 
 impl fmt::Display for Reg16 {
@@ -140,7 +192,14 @@ pub use self::Reg16::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum ConditionCode {
-    NZcc, Zcc, NCcc, Ccc, POcc, PEcc, Pcc, Mcc
+    NZcc,
+    Zcc,
+    NCcc,
+    Ccc,
+    POcc,
+    PEcc,
+    Pcc,
+    Mcc,
 }
 
 pub use self::ConditionCode::*;
@@ -175,33 +234,33 @@ bitflags! {
 }
 
 impl Flags {
-    pub fn set_sign(&mut self, x: u8)
-    {
-        self.set(SF, x & 0x80 != 0);
+    pub fn set_sign(&mut self, x: u8) {
+        self.set(Flags::SF, x & 0x80 != 0);
     }
 
-    pub fn set_zero(&mut self, x: u8)
-    {
-        self.set(ZF, x == 0);
+    pub fn set_zero(&mut self, x: u8) {
+        self.set(Flags::ZF, x == 0);
     }
 
-    pub fn set_parity(&mut self, x: u8)
-    {
+    pub fn set_parity(&mut self, x: u8) {
         let parity = x.count_ones() % 2 == 0;
-        self.set(PF, parity);
+        self.set(Flags::PF, parity);
     }
-
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum InterruptMode {
-    Im0, Im1, Im2
+    Im0,
+    Im1,
+    Im2,
 }
 
 pub use self::InterruptMode::*;
 
 impl Default for InterruptMode {
-    fn default() -> InterruptMode { Im0 }
+    fn default() -> InterruptMode {
+        Im0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
@@ -231,7 +290,8 @@ impl fmt::Display for Shift {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize,
+         Matchable)]
 pub enum Opcode {
     OneByte([u8; 1]),
     TwoBytes([u8; 2]),
@@ -250,17 +310,24 @@ impl fmt::Display for Opcode {
         };
         let mut s = "".to_owned();
         write!(s, "{:0<2X}", slice[0])?;
-        for x in slice[1 ..].iter() {
+        for x in slice[1..].iter() {
             write!(s, " {:0<2X}", x)?;
-        };
+        }
         f.pad(&s)
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Parameter {
-    Reg8(Reg8), Reg16(Reg16), Shift(Shift), AddressReg16(Address<Reg16>),
-    AddressU16(Address<u16>), U8(u8), I8(i8), U16(u16), Cc(ConditionCode),
+    Reg8(Reg8),
+    Reg16(Reg16),
+    Shift(Shift),
+    AddressReg16(Address<Reg16>),
+    AddressU16(Address<u16>),
+    U8(u8),
+    I8(i8),
+    U16(u16),
+    Cc(ConditionCode),
 }
 
 impl fmt::Display for Parameter {
@@ -281,11 +348,74 @@ impl fmt::Display for Parameter {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Mnemonic {
-    Ld, Push, Pop, Ex, Exx, Ldi, Ldir, Ldd, Lddr, Cpi, Cpir, Cpd, Cpdr,
-    Add, Adc, Sub, Sbc, And, Or, Xor, Cp, Inc, Dec, Daa, Cpl, Neg, Ccf,
-    Scf, Nop, Halt, Di, Ei, Im, Rlca, Rla, Rrca, Rra, Rlc, Rl, Rrc, Rr, Sla,
-    Sra, Sll, Srl, Rld, Rrd, Bit, Set, Res, Jp, Jr, Djnz, Call, Ret, Reti, Retn, Rst,
-    In, Ini, Inir, Ind, Indr, Out, Outi, Otir, Outd, Otdr,
+    Ld,
+    Push,
+    Pop,
+    Ex,
+    Exx,
+    Ldi,
+    Ldir,
+    Ldd,
+    Lddr,
+    Cpi,
+    Cpir,
+    Cpd,
+    Cpdr,
+    Add,
+    Adc,
+    Sub,
+    Sbc,
+    And,
+    Or,
+    Xor,
+    Cp,
+    Inc,
+    Dec,
+    Daa,
+    Cpl,
+    Neg,
+    Ccf,
+    Scf,
+    Nop,
+    Halt,
+    Di,
+    Ei,
+    Im,
+    Rlca,
+    Rla,
+    Rrca,
+    Rra,
+    Rlc,
+    Rl,
+    Rrc,
+    Rr,
+    Sla,
+    Sra,
+    Sll,
+    Srl,
+    Rld,
+    Rrd,
+    Bit,
+    Set,
+    Res,
+    Jp,
+    Jr,
+    Djnz,
+    Call,
+    Ret,
+    Reti,
+    Retn,
+    Rst,
+    In,
+    Ini,
+    Inir,
+    Ind,
+    Indr,
+    Out,
+    Outi,
+    Otir,
+    Outd,
+    Otdr,
 }
 
 impl fmt::Display for Mnemonic {
@@ -310,7 +440,9 @@ impl fmt::Display for FullMnemonic {
             &FullMnemonic::ZeroParameters(f) => format!("{}", f),
             &FullMnemonic::OneParameter(f, p1) => format!("{} {}", f, p1),
             &FullMnemonic::TwoParameters(f, p1, p2) => format!("{} {}, {}", f, p1, p2),
-            &FullMnemonic::ThreeParameters(f, p1, p2, p3) => format!("{} {}, {}, {}", f, p1, p2, p3),
+            &FullMnemonic::ThreeParameters(f, p1, p2, p3) => {
+                format!("{} {}, {}, {}", f, p1, p2, p3)
+            }
         };
         f.pad(&s)
     }
@@ -518,14 +650,29 @@ impl Opcode {
         macro_rules! find_code {
             // rst needs to be handled separately, as it's the only one with a u16 literal and
             // this is an easy way to distinguish it from a u8 literal
-            ([$code: expr] ; rst ; [ $arg: expr ] ; $t_states: expr; $is_undoc: expr) => {
+            (
+                [$code: expr] ;
+                rst ;
+                [ $arg: expr ] ;
+                $t_states: expr;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::OneByte(x) = self {
                     if $code == x[0] {
-                        return Some(FullMnemonic::OneParameter(Mnemonic::Rst, Parameter::U16($arg)));
+                        return Some(FullMnemonic::OneParameter(
+                            Mnemonic::Rst,
+                            Parameter::U16($arg)
+                        ));
                     }
                 }
             };
-            ([$code: expr, n, n] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code: expr, n, n] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::ThreeBytes(x) = self {
                     if $code == x[0] {
                         nn = utilities::to16(x[1], x[2]);
@@ -533,7 +680,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code: expr, e] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code: expr, e] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         e = x[1] as i8;
@@ -541,7 +694,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code: expr, d] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code: expr, d] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         d = x[1] as i8;
@@ -549,7 +708,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code: expr, n] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code: expr, n] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         n = x[1];
@@ -557,7 +722,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code1: expr, $code2: expr, n] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code1: expr, $code2: expr, n] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::ThreeBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
                         n = x[2];
@@ -565,7 +736,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code1: expr, $code2: expr, d] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code1: expr, $code2: expr, d] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::ThreeBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
                         d = x[2] as i8;
@@ -573,7 +750,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code1: expr, $code2: expr, d, n] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code1: expr, $code2: expr, d, n] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::FourBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
                         d = x[2] as i8;
@@ -582,7 +765,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code1: expr, $code2: expr, n, n] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code1: expr, $code2: expr, n, n] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::FourBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
                         nn = utilities::to16(x[2], x[3]);
@@ -590,7 +779,13 @@ impl Opcode {
                     }
                 }
             };
-            ([$code1: expr, $code2: expr, d, $code3: expr] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code1: expr, $code2: expr, d, $code3: expr] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::FourBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1]  && $code3 == x[3] {
                         d = x[3] as i8;
@@ -598,14 +793,26 @@ impl Opcode {
                     }
                 }
             };
-            ([$code: expr] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code: expr] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::OneByte(x) = self {
                     if $code == x[0] {
                         return Some(make_full_mnemonic!($mnemonic, $arg_list));
                     }
                 }
             };
-            ([$code1: expr, $code2: expr] ; $mnemonic: ident ; $arg_list: tt ; $t_states: expr ; $is_undoc: expr ) => {
+            (
+                [$code1: expr, $code2: expr] ;
+                $mnemonic: ident ;
+                $arg_list: tt ;
+                $t_states: expr ;
+                $is_undoc: expr
+            ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
                         return Some(make_full_mnemonic!($mnemonic, $arg_list));
@@ -643,13 +850,16 @@ pub enum Memo {
     NonmaskableInterrupt,
 }
 
-impl Outbox for Component
-{
+impl Outbox for Component {
     type Memo = Memo;
 
-    fn id(&self) -> u32 { self.id }
+    fn id(&self) -> u32 {
+        self.id
+    }
 
-    fn set_id(&mut self, id: u32) { self.id = id; }
+    fn set_id(&mut self, id: u32) {
+        self.id = id;
+    }
 }
 
 impl Default for Component {
@@ -684,18 +894,12 @@ impl Component {
     }
 
     pub fn get_reg8(&self, reg8: Reg8) -> u8 {
-        let byte_array: &[u8; 26] =
-            unsafe {
-                std::mem::transmute(&self.registers)
-            };
+        let byte_array: &[u8; 26] = unsafe { std::mem::transmute(&self.registers) };
         byte_array[reg8 as usize]
     }
 
     pub fn set_reg8(&mut self, reg8: Reg8, x: u8) {
-        let byte_array: &mut [u8; 26] =
-            unsafe {
-                std::mem::transmute(&mut self.registers)
-            };
+        let byte_array: &mut [u8; 26] = unsafe { std::mem::transmute(&mut self.registers) };
         byte_array[reg8 as usize] = x
     }
 
