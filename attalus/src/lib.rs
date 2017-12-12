@@ -9,8 +9,6 @@
 extern crate failure;
 #[macro_use]
 extern crate bitflags;
-extern crate rand;
-extern crate tempdir;
 extern crate sdl2;
 extern crate serde;
 #[macro_use]
