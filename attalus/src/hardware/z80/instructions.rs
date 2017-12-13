@@ -1017,7 +1017,7 @@ where
     F.change(z, f.bits());
 }
 
-//// Bit Seteset, and Test Group
+//// Bit set, reset, and Test Group
 ///////////////////////////////////
 
 pub fn bit<Z, T>(z: &mut Z, b: u8, arg: T)
