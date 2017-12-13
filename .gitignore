@@ -6,4 +6,5 @@ tmp/
 attalus/Cargo.lock
 attalus_cli/Cargo.lock
 attalus_derive/Cargo.lock
+attalus_x64/Cargo.lock
 .projectile

@@ -11,6 +11,7 @@ extern crate clap;
 extern crate failure;
 #[macro_use]
 extern crate attalus;
+extern crate attalus_x64;
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -310,6 +311,11 @@ fn run() -> Result<()> {
 }
 
 fn main() {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        attalus_x64::install_pattern_to_palette_indices();
+    }
+
     if let Err(x) = run() {
         eprintln!("{:?}", x);
     }

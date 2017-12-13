@@ -1,0 +1,10 @@
+[package]
+name = "attalus_x64"
+version = "0.1.0"
+authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+
+[dependencies]
+attalus = { path = "../attalus" }
+
+[build-dependencies]
+cc = "1.0"
