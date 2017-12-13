@@ -9,11 +9,13 @@ extern crate sdl2;
 extern crate clap;
 #[macro_use]
 extern crate failure;
+#[macro_use]
 extern crate attalus;
 
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
 use failure::Error;
@@ -44,27 +46,27 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         <vdp::SimpleEmulator as Default>::default(),
     );
 
-    if memory_map == "sega" {
-        let mut user_interface =
-            sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
-        let master_system_hardware = HardwareBuilder::new()
-            .build_from_file::<memory_16_8::sega::Component>(filename)
-            .unwrap();
-        let mut master_system = System::new(NothingInbox, master_system_hardware);
-        user_interface.run(&sdl, &mut emulator, &mut master_system)?;
-    } else if memory_map == "codemasters" {
-        let mut user_interface =
-            sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
-        let master_system_hardware = HardwareBuilder::new()
-            .build_from_file::<memory_16_8::codemasters::Component>(filename)
-            .unwrap();
-        let mut master_system = System::new(NothingInbox, master_system_hardware);
-        user_interface.run(&sdl, &mut emulator, &mut master_system)?;
-    } else {
-        Err(format_err!(
-            "Can't happen: Unknown memory map {}",
-            memory_map
-        ))?;
+    type_select! {
+        match memory_map {
+            "sega" => memory_16_8::sega::Component,
+            "codemasters" => memory_16_8::codemasters::Component,
+        } for M {
+            let mut user_interface =
+                sdl_wrap::master_system_user_interface::UserInterface::new(
+                    &sdl,
+                    save_directory,
+                    &[]
+                )?;
+            let master_system_hardware = HardwareBuilder::new()
+                .build_from_file::<M>(filename)?;
+            let mut master_system = System::new(NothingInbox, master_system_hardware);
+            user_interface.run(&sdl, &mut emulator, &mut master_system)?;
+        } else {
+            Err(format_err!(
+                "Can't happen: Unknown memory map {}",
+                memory_map
+            ))?;
+        }
     }
 
     Ok(())
@@ -82,23 +84,45 @@ fn run_playback(matches: &ArgMatches) -> Result<()> {
     );
 
     let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
+    let mut first_line = String::new();
+    load_file.read_line(&mut first_line)?;
+    first_line.pop(); // remove the newline
+    load_file.seek(SeekFrom::Start(0))?;
 
-    let mut recording =
-        <Recording<System<NothingInbox, memory_16_8::sega::Component>> as Tag>::read(
-            &mut load_file
-        )?;
+    let mut start_cycles = 0u64;
+    let mut end_cycles = 0u64;
+    let mut time = Duration::from_millis(0);
 
-    let mut user_interface =
-        sdl_wrap::master_system_user_interface::PlaybackInterface::new(&recording.player_statuses);
+    type_for! {
+        T in [
+                  Recording<System<NothingInbox, memory_16_8::sega::Component>>,
+                  Recording<System<NothingInbox, memory_16_8::codemasters::Component>>,
+             ];
+        let str_ref: &str = first_line.as_ref();
+        if <T as Tag>::TAG == str_ref {
+            let mut recording = <T as Tag>::read(&mut load_file)?;
+            let mut user_interface =
+                sdl_wrap::master_system_user_interface::PlaybackInterface::new(
+                    &recording.player_statuses
+                );
 
-    let start_cycles = <AsRef<z80::Component>>::as_ref(&recording.master_system).cycles;
-    let time = user_interface.run(
-        &sdl,
-        &mut emulator,
-        &mut recording.master_system,
-    )?;
+            start_cycles = <AsRef<z80::Component>>::as_ref(
+                &recording.master_system
+            ).cycles;
 
-    let end_cycles = <AsRef<z80::Component>>::as_ref(&recording.master_system).cycles;
+            time = user_interface.run(
+                &sdl,
+                &mut emulator,
+                &mut recording.master_system,
+            )?;
+
+            end_cycles = <AsRef<z80::Component>>::as_ref(
+                &recording.master_system
+            ).cycles;
+
+            break;
+        }
+    };
 
     let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 10e-9;
     println!("Total cycles: {}", end_cycles - start_cycles);
@@ -126,15 +150,32 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
         <vdp::SimpleEmulator as Default>::default(),
     );
 
-    let mut user_interface =
-        sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
-
     let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
 
-    let mut master_system =
-        <System<NothingInbox, memory_16_8::sega::Component> as Tag>::read(&mut load_file)?;
+    let mut first_line = String::new();
+    load_file.read_line(&mut first_line)?;
+    first_line.pop(); // remove the newline
+    load_file.seek(SeekFrom::Start(0))?;
 
-    user_interface.run(&sdl, &mut emulator, &mut master_system)?;
+    type_for! {
+        T in [
+                  System<NothingInbox, memory_16_8::sega::Component>,
+                  System<NothingInbox, memory_16_8::codemasters::Component>,
+             ];
+        let str_ref: &str = first_line.as_ref();
+        if <T as Tag>::TAG == str_ref {
+            let mut user_interface =
+                sdl_wrap::master_system_user_interface::UserInterface::new(
+                    &sdl,
+                    save_directory,
+                    &[]
+                )?;
+
+            let mut master_system = <T as Tag>::read(&mut load_file)?;
+            user_interface.run(&sdl, &mut emulator, &mut master_system)?;
+            break;
+        }
+    }
 
     Ok(())
 }
@@ -156,22 +197,29 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
 
     let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
 
-    let mut recording =
-        <Recording<System<NothingInbox, memory_16_8::sega::Component>> as Tag>::read(
-            &mut load_file
-        )?;
+    let mut first_line = String::new();
+    load_file.read_line(&mut first_line)?;
+    first_line.pop(); // remove the newline
+    load_file.seek(SeekFrom::Start(0))?;
 
-    let mut user_interface = sdl_wrap::master_system_user_interface::UserInterface::new(
-        &sdl,
-        save_directory,
-        &recording.player_statuses,
-    )?;
-
-    user_interface.run(
-        &sdl,
-        &mut emulator,
-        &mut recording.master_system,
-    )?;
+    type_for! {
+        T in [
+                  Recording<System<NothingInbox, memory_16_8::sega::Component>>,
+                  Recording<System<NothingInbox, memory_16_8::codemasters::Component>>,
+             ];
+        let str_ref: &str = first_line.as_ref();
+        if <T as Tag>::TAG == str_ref {
+            let mut recording = <T as Tag>::read(&mut load_file)?;
+            let mut user_interface =
+                sdl_wrap::master_system_user_interface::UserInterface::new(
+                    &sdl,
+                    save_directory,
+                    &recording.player_statuses
+                )?;
+            user_interface.run(&sdl, &mut emulator, &mut recording.master_system)?;
+            break;
+        }
+    }
 
     Ok(())
 }
