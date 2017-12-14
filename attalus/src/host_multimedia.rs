@@ -56,3 +56,34 @@ pub trait SimpleAudio {
 
     fn clear(&mut self) -> Result<()>;
 }
+
+#[derive(Clone, Default, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct FakeAudio(Box<[i16]>);
+
+
+impl SimpleAudio for FakeAudio {
+    fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()> {
+        self.0 = vec![0i16; buffer_size as usize].into_boxed_slice();
+        Ok(())
+    }
+
+    fn play(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn pause(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn buffer(&mut self) -> &mut [i16] {
+        &mut self.0
+    }
+
+    fn queue_buffer(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        Ok(())
+    }
+}

@@ -85,15 +85,15 @@ impl PlaybackInterface {
         win.set_title("Attalus");
 
         let mut frame_info = FrameInfo::default();
-        let start = Instant::now();
 
-        // XXX - replace with a fake audio object?
-        let mut audio = sdl_wrap::simple_audio::Audio::new(&sdl)?;
+        let mut audio: ::host_multimedia::FakeAudio = Default::default();
         emulator.configure_audio(&mut audio)?;
         audio.play()?;
 
         let time_status =
             TimeStatus::new(<S as AsRef<z80::Component>>::as_ref(master_system).cycles);
+
+        let start = Instant::now();
 
         while let Some(player_status) = self.playback_status.pop() {
             emulator.run_frame(

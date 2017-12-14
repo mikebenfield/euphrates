@@ -125,7 +125,7 @@ fn run_playback(matches: &ArgMatches) -> Result<()> {
         }
     };
 
-    let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 10e-9;
+    let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
     println!("Total cycles: {}", end_cycles - start_cycles);
     println!("Time: {} secs", sec_time);
     println!(

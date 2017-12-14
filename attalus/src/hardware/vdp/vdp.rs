@@ -230,7 +230,7 @@ pub mod replaceable {
     ///   0,  0,  0,  0,b32,b22,b12,b02
     ///   0,  0,  0,  0,b31,b21,b11,b01
     ///   0,  0,  0,  0,b30,b20,b10,b00
-    /// above, the bits are listed in logical order as they appear in the arrays
+    /// above, the bits are listed in logical order as they appear in the
     /// arrays. If the arrays are reinterpreted as unsigned little endian
     /// integers, the operation looks like this:
     /// b37,b36,b35,b34,b33,b32,b31,b30
@@ -254,39 +254,63 @@ impl Component {
     pub fn new() -> Self {
         Default::default()
     }
+
+    #[inline]
     pub fn code(&self) -> u8 {
         ((self.address0 & 0xC000) >> 14) as u8
     }
+
+    #[inline]
     pub fn address(&self) -> u16 {
         self.address0 & 0x3FFF
     }
+
+    #[inline]
     pub fn disable_vert_scroll(&self) -> bool {
         self.reg[0] & (1 << 7) != 0
     }
+
+    #[inline]
     pub fn disable_horiz_scroll(&self) -> bool {
         self.reg[0] & (1 << 6) != 0
     }
+
+    #[inline]
     pub fn left_column_blank(&self) -> bool {
         self.reg[0] & (1 << 5) != 0
     }
+
+    #[inline]
     pub fn line_irq_enable(&self) -> bool {
         self.reg[0] & (1 << 4) != 0
     }
+
+    #[inline]
     pub fn shift_sprites(&self) -> bool {
         self.reg[0] & (1 << 3) != 0
     }
+
+    #[inline]
     pub fn m4(&self) -> bool {
         self.reg[0] & (1 << 2) != 0
     }
+
+    #[inline]
     pub fn m2(&self) -> bool {
         self.reg[0] & (1 << 1) != 0
     }
+
+    #[inline]
     pub fn nosync(&self) -> bool {
         self.reg[0] & 1 != 0
     }
+
+    #[inline]
     pub fn total_lines(&self) -> u16 {
         if self.tv_system == Ntsc { 262 } else { 313 }
     }
+
+    #[inline]
     pub fn resolution(&self) -> Resolution {
         match (self.kind, self.m1(), self.m2(), self.m3()) {
             (Sms, _, _, _) => Low,
@@ -295,6 +319,8 @@ impl Component {
             (_, _, _, _) => Low,
         }
     }
+
+    #[inline]
     pub fn active_lines(&self) -> u16 {
         match self.resolution() {
             Low => 192,
@@ -302,24 +328,38 @@ impl Component {
             High => 240,
         }
     }
+
+    #[inline]
     pub fn display_visible(&self) -> bool {
         self.reg[1] & (1 << 6) != 0
     }
+
+    #[inline]
     pub fn frame_irq_enable(&self) -> bool {
         self.reg[1] & (1 << 5) != 0
     }
+
+    #[inline]
     pub fn m1(&self) -> bool {
         self.reg[0] & (1 << 4) != 0
     }
+
+    #[inline]
     pub fn m3(&self) -> bool {
         self.reg[0] & (1 << 3) != 0
     }
+
+    #[inline]
     pub fn tall_sprites(&self) -> bool {
         self.reg[1] & 2 != 0
     }
+
+    #[inline]
     pub fn zoom_sprites(&self) -> bool {
         self.reg[0] & 1 != 0
     }
+
+    #[inline]
     pub fn name_table_address(&self) -> u16 {
         if self.kind == Sms {
             ((self.reg[2] as u16) & 0x0F) << 10
@@ -329,6 +369,8 @@ impl Component {
             (((self.reg[2] as u16) & 0x0C) << 10) | 0x0700
         }
     }
+
+    #[inline]
     pub fn tile_address(&self, tile_offset: u16) -> u16 {
         if self.kind == Sms {
             (self.name_table_address() | 0x03FF) & (tile_offset | 0xF800)
@@ -336,6 +378,8 @@ impl Component {
             self.name_table_address() + tile_offset
         }
     }
+
+    #[inline]
     pub fn sprite_address(&self) -> u16 {
         if self.kind == Sms {
             (self.reg[5] as u16 & 0x7F) << 7
@@ -343,6 +387,8 @@ impl Component {
             (self.reg[5] as u16 & 0x7E) << 7
         }
     }
+
+    #[inline]
     pub fn sprite_pattern_base_address(&self) -> u16 {
         // MacDonald's VDP documentation says the Sms Component does something
         // strange, but that doesn't appear to be true. At least, the games
@@ -351,26 +397,40 @@ impl Component {
         // portion of vram
         (self.reg[6] as u16 & 0x04) << 11
     }
+
+    #[inline]
     pub fn sprite_pattern_address(&self, pattern_index: u8) -> u16 {
         self.sprite_pattern_base_address() | (pattern_index as u16 * 32)
     }
+
+    #[inline]
     pub fn backdrop_color(&self) -> u8 {
         self.reg[7] & 0x0F
     }
+
+    #[inline]
     pub fn x_scroll(&self) -> u8 {
         self.reg[8]
     }
+
+    #[inline]
     pub fn y_scroll(&self) -> u8 {
         self.reg[9]
     }
+
+    #[inline]
     pub fn reg_line_counter(&self) -> u8 {
         self.reg[10]
     }
+
+    #[inline]
     pub fn sprite_y(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
         let address = (i as usize) | ((self.sprite_address() & 0xFF00) as usize);
         self.vram[address].wrapping_add(1)
     }
+
+    #[inline]
     pub fn sprite_x(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
         let address = if self.kind == Sms {
@@ -380,6 +440,8 @@ impl Component {
         };
         self.vram[address]
     }
+
+    #[inline]
     pub fn sprite_n(&self, i: u8) -> u8 {
         debug_assert!(i <= 63);
         let address = if self.kind == Sms {
@@ -389,13 +451,19 @@ impl Component {
         } + 1;
         self.vram[address]
     }
+
+    #[inline]
     pub fn inc_address(&mut self) {
         let addr = self.address0;
         self.address0 = (addr.wrapping_add(1) & 0x3FFF) | (addr & 0xC000);
     }
+
+    #[inline]
     pub fn trigger_sprite_overflow(&mut self) {
         self.status_flags.insert(StatusFlags::SPRITE_OVERFLOW);
     }
+
+    #[inline]
     pub fn trigger_sprite_collision(&mut self) {
         self.status_flags.insert(StatusFlags::SPRITE_COLLISION);
     }
