@@ -18,17 +18,7 @@ pub struct Component {
     pub cycles: u64,
     pub address: u16,
     pub data: u8,
-
-    /// Represents the iff1 flag, determining whether maskable interrupts are
-    /// accepted.
-    ///
-    /// The Z80 `ei` instruction is supposed to set iff1, but then interrupts
-    /// aren't supposed to actually be accepted until after the following
-    /// instruction. To emulate this, my `ei` implementation sets the `iff1`
-    /// field to the current value of `cycles`. Then when an interrupt is
-    /// desired, the function `maskable_interrupt` first checks to see if
-    /// `cycles` is larger than `iff1`. `di` sets `iff1` to 0xFFFFFFFFFFFFFFFF.
-    pub iff1: u64,
+    pub iff1: bool,
     pub iff2: bool,
     pub interrupt_mode: InterruptMode,
     pub registers: [u16; 13],
@@ -884,7 +874,7 @@ impl Component {
             cycles: 0,
             address: 0,
             data: 0,
-            iff1: 0xFFFFFFFFFFFFFFFF,
+            iff1: false,
             iff2: false,
             interrupt_mode: Im0,
             registers: registers,

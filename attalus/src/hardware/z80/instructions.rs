@@ -99,7 +99,7 @@ where
     // is false (see Young 5.3)
     receive(z, Memo::NonmaskableInterrupt);
     z.as_mut().inc_r();
-    z.as_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
+    z.as_mut().iff1 = false;
     z.clear_nmi();
     z.as_mut().cycles += 11;
     if z.as_ref().halted {
@@ -113,12 +113,12 @@ pub fn maskable_interrupt<Z>(z: &mut Z, x: u8) -> bool
 where
     Z: Machine + ?Sized,
 {
-    if z.as_ref().iff1 < z.as_ref().cycles {
+    if z.as_ref().iff1 {
         receive(z, Memo::MaskableInterruptAllowed);
 
         z.as_mut().inc_r();
 
-        z.as_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
+        z.as_mut().iff1 = false;
         z.as_mut().iff2 = false;
 
         if z.as_ref().halted {
@@ -708,7 +708,7 @@ pub fn di<Z>(z: &mut Z)
 where
     Z: Machine + ?Sized,
 {
-    z.as_mut().iff1 = 0xFFFFFFFFFFFFFFFF;
+    z.as_mut().iff1 = false;
     z.as_mut().iff2 = false;
 }
 
@@ -716,7 +716,7 @@ pub fn ei<Z>(z: &mut Z)
 where
     Z: Machine + ?Sized,
 {
-    z.as_mut().iff1 = z.as_mut().cycles + 4;
+    z.as_mut().iff1 = true;
     z.as_mut().iff2 = true;
 }
 
@@ -1198,7 +1198,7 @@ where
     Z: Machine + ?Sized,
 {
     let iff2 = z.as_ref().iff2;
-    z.as_mut().iff1 = if iff2 { 0 } else { 0xFFFFFFFFFFFFFFFF };
+    z.as_mut().iff1 = iff2;
 
     let sp = SP.view(z);
     let pcl = Address(sp).view(z);

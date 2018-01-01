@@ -81,6 +81,7 @@ where
     }
 
     macro_rules! do_instruction {
+        // halt requires support from this function
         (halt, $t_states: expr $(,$arguments: tt)*) => {
             use std;
             apply_args!(halt, $($arguments),*);
@@ -88,6 +89,15 @@ where
             let pc = PC.view(z);
             PC.change(z, pc.wrapping_sub(1));
             return;
+        };
+        // ei also requires support, because we don't actually want to check for
+        // interrupts until after the following instruction
+        (ei, $t_states: expr $(,$arguments: tt)*) => {
+            apply_args!(ei, $($arguments),*);
+            z.as_mut().cycles += $t_states;
+            let cycles = z.as_ref().cycles + 1;
+            run(z, cycles);
+            continue;
         };
         ($mnemonic: ident, $t_states: expr $(,$arguments: tt)*) => {
             apply_args!($mnemonic, $($arguments),*);
@@ -443,18 +453,6 @@ where
         };
     }
 
-    if z.requesting_nmi() {
-        instructions::nonmaskable_interrupt(z);
-        z.clear_nmi();
-    } else {
-        match z.requesting_mi() {
-            Some(x) => {
-                instructions::maskable_interrupt(z, x);
-            }
-            _ => {}
-        };
-    }
-
     loop {
         match prefix {
             Prefix::NoPrefix => {
@@ -549,10 +547,6 @@ where
                     continue;
                 }
                 z.as_mut().cycles += 4;
-                if z.as_ref().cycles >= cycles {
-                    z.as_mut().iff1 = z.as_ref().cycles;
-                    return;
-                }
                 prefix = Prefix::NoPrefix;
                 continue;
             }
@@ -579,10 +573,6 @@ where
                     continue;
                 }
                 z.as_mut().cycles += 4;
-                if z.as_ref().cycles >= cycles {
-                    z.as_mut().iff1 = z.as_ref().cycles;
-                    return;
-                }
                 prefix = Prefix::NoPrefix;
                 continue;
             }
@@ -600,6 +590,18 @@ where
 {
     #[inline]
     fn run(&mut self, z: &mut Z, cycles: u64) {
+        if z.requesting_nmi() {
+            instructions::nonmaskable_interrupt(z);
+            z.clear_nmi();
+        } else {
+            match z.requesting_mi() {
+                Some(x) => {
+                    instructions::maskable_interrupt(z, x);
+                }
+                _ => {}
+            };
+        }
+
         run(z, cycles);
     }
 }
