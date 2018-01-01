@@ -8,36 +8,36 @@
 pub mod sms2;
 
 /// A machine that has an IO system with 16 bit addresses and 8 bit data.
-pub trait Machine {
+pub trait T {
     fn input(&mut self, address: u16) -> u8;
     fn output(&mut self, address: u16, value: u8);
 }
 
 /// A component providing IO services to `T`.
-pub trait ComponentOf<T>
+pub trait Impler<S>
 where
-    T: ?Sized,
+    S: ?Sized,
 {
-    fn input(t: &mut T, address: u16) -> u8;
-    fn output(t: &mut T, address: u16, value: u8);
+    fn input(s: &mut S, address: u16) -> u8;
+    fn output(s: &mut S, address: u16, value: u8);
 }
 
-pub trait MachineImpl {
-    type C: ComponentOf<Self>;
+pub trait Impl {
+    type Impler: Impler<Self>;
 }
 
-impl<T> Machine for T
+impl<S> T for S
 where
-    T: MachineImpl,
+    S: Impl + ?Sized,
 {
     #[inline]
     fn input(&mut self, address: u16) -> u8 {
-        <T::C as ComponentOf<Self>>::input(self, address)
+        <S::Impler as Impler<Self>>::input(self, address)
     }
 
     #[inline]
     fn output(&mut self, address: u16, value: u8) {
-        <T::C as ComponentOf<Self>>::output(self, address, value)
+        <S::Impler as Impler<Self>>::output(self, address, value)
     }
 }
 
@@ -51,13 +51,13 @@ impl SimpleIo {
     }
 }
 
-impl<T> ComponentOf<T> for SimpleIo
+impl<S> Impler<S> for SimpleIo
 where
-    T: ?Sized,
+    S: ?Sized,
 {
-    fn input(_t: &mut T, _address: u16) -> u8 {
+    fn input(_t: &mut S, _address: u16) -> u8 {
         0
     }
 
-    fn output(_t: &mut T, _address: u16, _value: u8) {}
+    fn output(_t: &mut S, _address: u16, _value: u8) {}
 }

@@ -11,7 +11,7 @@ use hardware::irq::Irq;
 use hardware::sn76489;
 use hardware::vdp;
 use memo::{Inbox, Outbox};
-use super::*;
+use super::Impler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
 pub enum Memo {
@@ -25,7 +25,7 @@ pub enum Memo {
 /// The IO system in the Sega Master Sytem 2. It's almost identical to that in
 /// the original Sega Master System, but a little simpler to implement.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Component {
+pub struct T {
     memory_control: u8,
     io_control: u8,
     id: u32,
@@ -34,7 +34,7 @@ pub struct Component {
     pause: bool,
 }
 
-impl Outbox for Component {
+impl Outbox for T {
     type Memo = Memo;
 
     #[inline]
@@ -48,9 +48,9 @@ impl Outbox for Component {
     }
 }
 
-impl Default for Component {
+impl Default for T {
     fn default() -> Self {
-        Component {
+        T {
             memory_control: 0,
             io_control: 0,
             id: 0,
@@ -61,8 +61,8 @@ impl Default for Component {
     }
 }
 
-impl Component {
-    pub fn new() -> Component {
+impl T {
+    pub fn new() -> T {
         Default::default()
     }
 
@@ -97,7 +97,7 @@ impl Component {
     }
 }
 
-impl Irq for Component {
+impl Irq for T {
     #[inline]
     fn requesting_nmi(&self) -> bool {
         self.pause
@@ -109,16 +109,16 @@ impl Irq for Component {
     }
 }
 
-impl<T> ComponentOf<T> for Component
+impl<S> Impler<S> for T
 where
-    T: AsMut<Component>
-        + AsRef<Component>
+    S: AsMut<T>
+        + AsRef<T>
         + vdp::Machine
         + sn76489::Machine
         + Inbox<Memo>
         + ?Sized,
 {
-    fn input(t: &mut T, address: u16) -> u8 {
+    fn input(s: &mut S, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
         let value = match masked {
             0b00000000 => {
@@ -134,35 +134,35 @@ where
             }
             0b01000000 => {
                 // V counter
-                t.read_v()
+                s.read_v()
             }
             0b01000001 => {
                 // H counter
-                t.read_h()
+                s.read_h()
             }
             0b10000000 => {
                 // VDP data
-                t.read_data()
+                s.read_data()
             }
             0b10000001 => {
                 // VDP control
-                t.read_control()
+                s.read_control()
             }
             0b11000000 => {
                 // IO port A/B register
-                AsRef::<Component>::as_ref(t).joypad_a()
+                AsRef::<T>::as_ref(s).joypad_a()
             }
             0b11000001 => {
                 // IO port B register
-                AsRef::<Component>::as_ref(t).joypad_b()
+                AsRef::<T>::as_ref(s).joypad_b()
             }
             _ => {
                 unreachable!("Missing IO address in input");
             }
         };
 
-        let id = AsRef::<Component>::as_ref(t).id();
-        t.receive(
+        let id = AsRef::<T>::as_ref(s).id();
+        s.receive(
             id,
             Memo::Input {
                 address: address,
@@ -173,31 +173,31 @@ where
         value
     }
 
-    fn output(t: &mut T, address: u16, value: u8) {
-        let id = AsRef::<Component>::as_ref(t).id();
+    fn output(s: &mut S, address: u16, value: u8) {
+        let id = AsRef::<T>::as_ref(s).id();
 
-        t.receive(id, Memo::Output { address, value });
+        s.receive(id, Memo::Output { address, value });
 
         let masked = (address & 0b11000001) as u8;
 
         match masked {
             0b00000000 => {
-                AsMut::<Component>::as_mut(t).memory_control = value;
+                AsMut::<T>::as_mut(s).memory_control = value;
             }
             0b00000001 => {
-                AsMut::<Component>::as_mut(t).io_control = value;
+                AsMut::<T>::as_mut(s).io_control = value;
             }
-            0b01000000 => t.write_sound(value),
-            0b01000001 => t.write_sound(value),
+            0b01000000 => s.write_sound(value),
+            0b01000001 => s.write_sound(value),
             0b10000000 => {
-                t.write_data(value);
+                s.write_data(value);
             }
             0b10000001 => {
-                t.write_control(value);
+                s.write_control(value);
             }
             _ => {
                 // writes to the remaining addresses have no effect
-                t.receive(id, Memo::BogusOutput { address, value });
+                s.receive(id, Memo::BogusOutput { address, value });
             }
         }
     }

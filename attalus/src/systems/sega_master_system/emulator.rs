@@ -31,7 +31,7 @@ pub trait MasterSystem
     : z80::Machine
     + vdp::Machine
     + memory_16_8::Machine
-    + AsMut<io_16_8::sms2::Component>
+    + AsMut<io_16_8::sms2::T>
     + AsMut<sn76489::real::Component>
     + Pausable
     + Clone
@@ -45,7 +45,7 @@ where
     T: z80::Machine
         + vdp::Machine
         + memory_16_8::Machine
-        + AsMut<io_16_8::sms2::Component>
+        + AsMut<io_16_8::sms2::T>
         + AsMut<sn76489::real::Component>
         + Pausable
         + Clone
@@ -59,7 +59,7 @@ where
 pub struct Hardware<M> {
     pub z80: z80::Component,
     pub memory: M,
-    pub io: io_16_8::sms2::Component,
+    pub io: io_16_8::sms2::T,
     pub vdp: vdp::Component,
     pub sn76489: sn76489::real::Component,
 }
@@ -109,7 +109,7 @@ macro_rules! impl_as_ref {
     }
 }
 
-impl_as_ref!{io_16_8::sms2::Component, io}
+impl_as_ref!{io_16_8::sms2::T, io}
 impl_as_ref!{sn76489::real::Component, sn76489}
 impl_as_ref!{vdp::Component, vdp}
 impl_as_ref!{z80::Component, z80}
@@ -150,11 +150,11 @@ where
     type C = memory_16_8::codemasters::Component;
 }
 
-impl<I, M> io_16_8::MachineImpl for System<I, M>
+impl<I, M> io_16_8::Impl for System<I, M>
 where
     I: Inbox<vdp::Memo> + Inbox<io_16_8::sms2::Memo>,
 {
-    type C = io_16_8::sms2::Component;
+    type Impler = io_16_8::sms2::T;
 }
 
 impl<I, M> Pausable for System<I, M>
@@ -417,11 +417,11 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
     {
         // audio already configured, start time, etc
 
-        <S as AsMut<io_16_8::sms2::Component>>::as_mut(master_system)
+        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system)
             .set_joypad_a(player_status.joypad_a);
-        <S as AsMut<io_16_8::sms2::Component>>::as_mut(master_system)
+        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system)
             .set_joypad_b(player_status.joypad_b);
-        <S as AsMut<io_16_8::sms2::Component>>::as_mut(master_system)
+        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system)
             .set_pause(player_status.pause);
 
         // XXX - probably should change to have the sn76489 emulator be a
