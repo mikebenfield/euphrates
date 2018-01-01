@@ -30,7 +30,7 @@ pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 pub trait MasterSystem
     : z80::Machine
     + vdp::Machine
-    + memory_16_8::Machine
+    + memory_16_8::T
     + AsMut<io_16_8::sms2::T>
     + AsMut<sn76489::real::Component>
     + Pausable
@@ -44,7 +44,7 @@ impl<T> MasterSystem for T
 where
     T: z80::Machine
         + vdp::Machine
-        + memory_16_8::Machine
+        + memory_16_8::T
         + AsMut<io_16_8::sms2::T>
         + AsMut<sn76489::real::Component>
         + Pausable
@@ -84,11 +84,11 @@ macro_rules! impl_tag {
     }
 }
 
-impl_tag!{super::DebuggingInbox, memory_16_8::sega::Component, "debugging,sega"}
-impl_tag!{NothingInbox, memory_16_8::sega::Component, "nothing,sega"}
-impl_tag!{super::DebuggingInbox, memory_16_8::codemasters::Component,
+impl_tag!{super::DebuggingInbox, memory_16_8::sega::T, "debugging,sega"}
+impl_tag!{NothingInbox, memory_16_8::sega::T, "nothing,sega"}
+impl_tag!{super::DebuggingInbox, memory_16_8::codemasters::T,
 "debugging,codemasters"}
-impl_tag!{NothingInbox, memory_16_8::codemasters::Component,
+impl_tag!{NothingInbox, memory_16_8::codemasters::T,
 "nothing,codemasters"}
 
 macro_rules! impl_as_ref {
@@ -133,21 +133,21 @@ macro_rules! impl_as_ref_memory_map {
     }
 }
 
-impl_as_ref_memory_map!{memory_16_8::sega::Component}
-impl_as_ref_memory_map!{memory_16_8::codemasters::Component}
+impl_as_ref_memory_map!{memory_16_8::sega::T}
+impl_as_ref_memory_map!{memory_16_8::codemasters::T}
 
-impl<I> memory_16_8::MachineImpl for System<I, memory_16_8::sega::Component>
+impl<I> memory_16_8::Impl for System<I, memory_16_8::sega::T>
 where
     I: Inbox<memory_16_8::sega::Memo>
 {
-    type C = memory_16_8::sega::Component;
+    type Impler = memory_16_8::sega::T;
 }
 
-impl<I> memory_16_8::MachineImpl for System<I, memory_16_8::codemasters::Component>
+impl<I> memory_16_8::Impl for System<I, memory_16_8::codemasters::T>
 where
     I: Inbox<memory_16_8::sega::Memo>
 {
-    type C = memory_16_8::codemasters::Component;
+    type Impler = memory_16_8::codemasters::T;
 }
 
 impl<I, M> io_16_8::Impl for System<I, M>

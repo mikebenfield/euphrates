@@ -12,7 +12,7 @@ use failure::ResultExt;
 
 use memo::{Inbox, Outbox, Pausable};
 use errors::{Error, SimpleKind};
-use super::*;
+use super::Impler;
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
@@ -29,7 +29,7 @@ use self::RamPagesAllocated::*;
 /// The so-called Sega memory map, used in the large majority of games for the
 /// Sega Master System.
 #[derive(Clone)]
-pub struct Component {
+pub struct T {
     // memory is a sequence of 8 KiB implementation-pages. The first
     // implementation-page corresponds to the 8 KiB of system memory.
     // Then successive pairs of implementation-pages correspond to
@@ -46,7 +46,7 @@ pub struct Component {
     //
     // Justification: we could store system RAM, cartridge RAM, and cartridge
     // ROM in separate fields. But for read and write access to be efficient, we
-    // would like fields of `Component` to index, for each logical slot of
+    // would like fields of `T` to index, for each logical slot of
     // memory, directly into the physical memory required. This can't be safely
     // done with references in Rust, so we put all pages of memory into a
     // slice and let our slot indices be slice indices.
@@ -89,7 +89,7 @@ pub struct Component {
 
 serde_struct_arrays!{
     impl_serde,
-    Component,
+    T,
     [ram_pages_allocated, reg_fffc, reg_fffd, reg_fffe, reg_ffff, pages, slot_writable, id,],
     [],
     [memory: [u8; 0x2000],]
@@ -126,7 +126,7 @@ pub enum Memo {
     },
 }
 
-impl Outbox for Component {
+impl Outbox for T {
     type Memo = Memo;
 
     #[inline]
@@ -140,25 +140,25 @@ impl Outbox for Component {
     }
 }
 
-fn write_check_register<T>(t: &mut T, logical_address: u16, value: u8)
+fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
+    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
 {
     macro_rules! receive {
         ($x: expr) => {
             {
-                let id = t.as_ref().id();
+                let id = s.as_ref().id();
                 let __y = $x;
-                t.receive(id, __y);
+                s.receive(id, __y);
             }
         }
     }
 
     macro_rules! ensure_one_page_allocated {
         () => {
-            if t.as_ref().ram_pages_allocated == Zero {
+            if s.as_ref().ram_pages_allocated == Zero {
                 receive!(Memo::AllocateFirstPage);
-                let smm = t.as_mut();
+                let smm = s.as_mut();
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.ram_pages_allocated = One;
@@ -169,18 +169,18 @@ where
 
     macro_rules! ensure_two_pages_allocated {
         () => {
-            if t.as_ref().ram_pages_allocated == Zero {
+            if s.as_ref().ram_pages_allocated == Zero {
                 receive!(Memo::AllocateFirstPage);
                 receive!(Memo::AllocateSecondPage);
-                let smm = t.as_mut();
+                let smm = s.as_mut();
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.memory.shrink_to_fit();
-            } else if t.as_ref().ram_pages_allocated == One {
+            } else if s.as_ref().ram_pages_allocated == One {
                 receive!(Memo::AllocateSecondPage);
-                let smm = t.as_mut();
+                let smm = s.as_mut();
                 assert!(smm.memory.len() >= 3);
                 // the first sega-page of cartridge RAM needs to come last, so
                 // push it over
@@ -189,16 +189,16 @@ where
                 smm.memory.insert(first_position + 1, [0; 0x2000]);
                 smm.memory.shrink_to_fit();
             }
-            t.as_mut().ram_pages_allocated = Two;
+            s.as_mut().ram_pages_allocated = Two;
         }
     }
 
-    let rom_impl_page_count = match t.as_ref().ram_pages_allocated {
+    let rom_impl_page_count = match s.as_ref().ram_pages_allocated {
         // subtract off 1 for the system memory impl_page, and two for each
         // sega_page of ram allocated
-        Zero => t.as_ref().memory.len() - 1,
-        One => t.as_ref().memory.len() - 3,
-        Two => t.as_ref().memory.len() - 5,
+        Zero => s.as_ref().memory.len() - 1,
+        One => s.as_ref().memory.len() - 3,
+        Two => s.as_ref().memory.len() - 5,
     };
 
     // debug_assert!(rom_impl_page_count % 2 == 0);
@@ -213,7 +213,7 @@ where
         // XXX Since I'm not really sure what is the right thing to do in this
         // case, I'll log it as a fault
         // log_fault!(
-        //     "Component: ROM size not a power of two: {:0>2X} sega-pages",
+        //     "T: ROM size not a power of two: {:0>2X} sega-pages",
         //     rom_sega_page_count
         // );
     }
@@ -244,7 +244,7 @@ where
                     // sega-slot 2 mapped to sega-page 0 of cartridge RAM
                     ensure_one_page_allocated!();
                     receive!(Memo::MapCartridgeRam { page: 0, slot: 2 });
-                    let smm = t.as_mut();
+                    let smm = s.as_mut();
                     smm.slot_writable |= 1 << 4;
                     smm.slot_writable |= 1 << 5;
                     (smm.memory.len() - 2) as u16
@@ -253,7 +253,7 @@ where
                     // sega-slot 2 mapped to sega-page 1 of cartridge RAM
                     ensure_two_pages_allocated!();
                     receive!(Memo::MapCartridgeRam { page: 1, slot: 2 });
-                    let smm = t.as_mut();
+                    let smm = s.as_mut();
                     smm.slot_writable |= 1 << 4;
                     smm.slot_writable |= 1 << 5;
                     (smm.memory.len() - 4) as u16
@@ -262,16 +262,16 @@ where
                     // sega-slot 2 mapped to page of ROM indicated by register
                     // 0xFFFF
                     receive!(Memo::MapRom {
-                        page: t.as_ref().reg_ffff,
+                        page: s.as_ref().reg_ffff,
                         slot: 2,
                     });
-                    let smm = t.as_mut();
+                    let smm = s.as_mut();
                     smm.slot_writable &= !(1 << 4);
                     smm.slot_writable &= !(1 << 5);
                     (smm.reg_ffff as u16) * 2 + 1
                 }
             };
-            let smm = t.as_mut();
+            let smm = s.as_mut();
             smm.pages[4] = impl_page;
             smm.pages[5] = impl_page + 1;
             smm.reg_fffc = value;
@@ -285,7 +285,7 @@ where
                 page: sega_page,
                 slot: 0,
             });
-            let smm = t.as_mut();
+            let smm = s.as_mut();
             smm.pages[0] = impl_page;
             smm.pages[1] = impl_page + 1;
             smm.slot_writable &= !(1 << 0);
@@ -301,7 +301,7 @@ where
                 page: sega_page,
                 slot: 1,
             });
-            let smm = t.as_mut();
+            let smm = s.as_mut();
             smm.pages[2] = impl_page;
             smm.pages[3] = impl_page + 1;
             smm.slot_writable &= !(1 << 2);
@@ -313,22 +313,22 @@ where
                 register: 0xFFFF,
                 value: value,
             });
-            if t.as_ref().reg_ffff & 0b1000 == 0 {
+            if s.as_ref().reg_ffff & 0b1000 == 0 {
                 receive!(Memo::MapRom {
                     page: sega_page,
                     slot: 1,
                 });
-                let smm = t.as_mut();
+                let smm = s.as_mut();
                 smm.pages[4] = impl_page;
                 smm.pages[5] = impl_page + 1;
             }
-            t.as_mut().reg_ffff = sega_page;
+            s.as_mut().reg_ffff = sega_page;
         }
         _ => {}
     }
 }
 
-impl Component {
+impl T {
     /// For use in a `Memo`.
     // Always inline: the result will be passed to a `Inbox`. In the case
     // that the `Inbox` does nothing, hopefully the compiler sees that this
@@ -403,7 +403,7 @@ pub trait MasterSystemMemory: Sized {
     }
 }
 
-impl MasterSystemMemory for Component {
+impl MasterSystemMemory for T {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
             Err(SimpleKind(format!(
@@ -427,7 +427,7 @@ impl MasterSystemMemory for Component {
             memory.push(impl_page);
         }
 
-        Ok(Component {
+        Ok(T {
             memory: memory,
             ram_pages_allocated: Zero,
             // supposedly these registers are undefined after a reset, but
@@ -445,21 +445,21 @@ impl MasterSystemMemory for Component {
     }
 }
 
-impl AsRef<Component> for Component {
+impl AsRef<T> for T {
     #[inline]
-    fn as_ref(&self) -> &Component {
+    fn as_ref(&self) -> &T {
         self
     }
 }
 
-impl AsMut<Component> for Component {
+impl AsMut<T> for T {
     #[inline]
-    fn as_mut(&mut self) -> &mut Component {
+    fn as_mut(&mut self) -> &mut T {
         self
     }
 }
 
-impl Pausable for Component {
+impl Pausable for T {
     #[inline]
     fn wants_pause(&self) -> bool {
         false
@@ -469,16 +469,16 @@ impl Pausable for Component {
     fn clear_pause(&mut self) {}
 }
 
-impl<M> Inbox<M> for Component {
+impl<M> Inbox<M> for T {
     #[inline]
     fn receive(&mut self, _id: u32, _memo: M) {}
 }
 
-impl<T> ComponentOf<T> for Component
+impl<S> Impler<S> for T
 where
-    T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
+    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
 {
-    fn read(t: &mut T, logical_address: u16) -> u8 {
+    fn read(s: &mut S, logical_address: u16) -> u8 {
         let result = if logical_address < 0x400 {
             // first KiB of logical memory is always mapped to the first KiB of
             // the first page of ROM
@@ -488,16 +488,16 @@ where
             // KiB of the zeroth impl-page.
             // - Use 1 KiB impl-pages, and never remap the zeroth slot. (This is
             // probably the best option.)
-            t.as_ref().memory[1][logical_address as usize]
+            s.as_ref().memory[1][logical_address as usize]
         } else {
             let physical_address = logical_address & 0x1FFF; // low order 13 bits
             let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-            let impl_page = t.as_ref().pages[impl_slot as usize];
-            t.as_ref().memory[impl_page as usize][physical_address as usize]
+            let impl_page = s.as_ref().pages[impl_slot as usize];
+            s.as_ref().memory[impl_page as usize][physical_address as usize]
         };
-        let id = t.as_ref().id();
-        let location = t.as_ref().logical_address_to_memory_location(logical_address);
-        t.receive(
+        let id = s.as_ref().id();
+        let location = s.as_ref().logical_address_to_memory_location(logical_address);
+        s.receive(
             id,
             Memo::Read {
                 logical_address: logical_address,
@@ -509,14 +509,14 @@ where
 
     }
 
-    fn write(t: &mut T, logical_address: u16, value: u8) {
-        write_check_register(t, logical_address, value);
+    fn write(s: &mut S, logical_address: u16, value: u8) {
+        write_check_register(s, logical_address, value);
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        let id = t.as_ref().id();
-        let location = t.as_ref().logical_address_to_memory_location(logical_address);
-        if t.as_ref().slot_writable & (1 << impl_slot) != 0 {
-            t.receive(
+        let id = s.as_ref().id();
+        let location = s.as_ref().logical_address_to_memory_location(logical_address);
+        if s.as_ref().slot_writable & (1 << impl_slot) != 0 {
+            s.receive(
                 id,
                 Memo::Write {
                     logical_address: logical_address,
@@ -524,10 +524,10 @@ where
                     location,
                 },
             );
-            let impl_page = t.as_ref().pages[impl_slot as usize];
-            t.as_mut().memory[impl_page as usize][physical_address as usize] = value;
+            let impl_page = s.as_ref().pages[impl_slot as usize];
+            s.as_mut().memory[impl_page as usize][physical_address as usize] = value;
         } else {
-            t.receive(
+            s.receive(
                 id,
                 Memo::InvalidWrite {
                     logical_address: logical_address,
@@ -543,7 +543,7 @@ where
 //     use super::*;
 
 //     #[allow(dead_code)]
-//     fn build_mmap() -> Component {
+//     fn build_mmap() -> T {
 //         let mut rom = [0u8; 0x10000]; // 64 KiB (8 8KiB impl-pages or 4 16KiB sega-pages)
 //         rom[0x2000] = 1;
 //         rom[0x4000] = 2;
@@ -552,7 +552,7 @@ where
 //         rom[0xA000] = 5;
 //         rom[0xC000] = 6;
 //         rom[0xE000] = 7;
-//         Component::new(&rom).unwrap()
+//         T::new(&rom).unwrap()
 //     }
 
 //     #[test]

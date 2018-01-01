@@ -62,7 +62,7 @@ pub struct FakeAudio(Box<[i16]>);
 
 
 impl SimpleAudio for FakeAudio {
-    fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()> {
+    fn configure(&mut self, _frequency: u32, buffer_size: u16) -> Result<()> {
         self.0 = vec![0i16; buffer_size as usize].into_boxed_slice();
         Ok(())
     }

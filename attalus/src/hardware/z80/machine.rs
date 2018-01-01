@@ -25,7 +25,7 @@ where
 
 pub trait Machine
     : io_16_8::T
-    + memory_16_8::Machine
+    + memory_16_8::T
     + AsMut<Component>
     + AsRef<Component>
     + Inbox<Memo>
@@ -38,7 +38,7 @@ pub trait MachineImpl {}
 impl<T> Machine for T
 where
     T: io_16_8::T
-        + memory_16_8::Machine
+        + memory_16_8::T
         + AsMut<Component>
         + AsRef<Component>
         + Inbox<Memo>

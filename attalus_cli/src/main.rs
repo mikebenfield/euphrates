@@ -49,8 +49,8 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
 
     type_select! {
         match memory_map {
-            "sega" => memory_16_8::sega::Component,
-            "codemasters" => memory_16_8::codemasters::Component,
+            "sega" => memory_16_8::sega::T,
+            "codemasters" => memory_16_8::codemasters::T,
         } for M {
             let mut user_interface =
                 sdl_wrap::master_system_user_interface::UserInterface::new(
@@ -96,8 +96,8 @@ fn run_playback(matches: &ArgMatches) -> Result<()> {
 
     type_for! {
         T in [
-                  Recording<System<NothingInbox, memory_16_8::sega::Component>>,
-                  Recording<System<NothingInbox, memory_16_8::codemasters::Component>>,
+                  Recording<System<NothingInbox, memory_16_8::sega::T>>,
+                  Recording<System<NothingInbox, memory_16_8::codemasters::T>>,
              ];
         let str_ref: &str = first_line.as_ref();
         if <T as Tag>::TAG == str_ref {
@@ -160,8 +160,8 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
 
     type_for! {
         T in [
-                  System<NothingInbox, memory_16_8::sega::Component>,
-                  System<NothingInbox, memory_16_8::codemasters::Component>,
+                  System<NothingInbox, memory_16_8::sega::T>,
+                  System<NothingInbox, memory_16_8::codemasters::T>,
              ];
         let str_ref: &str = first_line.as_ref();
         if <T as Tag>::TAG == str_ref {
@@ -205,8 +205,8 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
 
     type_for! {
         T in [
-                  Recording<System<NothingInbox, memory_16_8::sega::Component>>,
-                  Recording<System<NothingInbox, memory_16_8::codemasters::Component>>,
+                  Recording<System<NothingInbox, memory_16_8::sega::T>>,
+                  Recording<System<NothingInbox, memory_16_8::codemasters::T>>,
              ];
         let str_ref: &str = first_line.as_ref();
         if <T as Tag>::TAG == str_ref {

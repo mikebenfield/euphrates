@@ -26,54 +26,54 @@ pub mod codemasters;
 use std::convert::{AsMut, AsRef};
 
 /// A machine that has a memory map with 16 bit addresses and 8 bit data.
-pub trait Machine {
+pub trait T {
     fn read(&mut self, logical_address: u16) -> u8;
     fn write(&mut self, logical_address: u16, value: u8);
 }
 
-pub trait ComponentOf<T>
+pub trait Impler<S>
 where
-    T: ?Sized,
+    S: ?Sized,
 {
-    fn read(&mut T, logical_address: u16) -> u8;
-    fn write(&mut T, logical_address: u16, value: u8);
+    fn read(&mut S, logical_address: u16) -> u8;
+    fn write(&mut S, logical_address: u16, value: u8);
 }
 
-pub trait MachineImpl {
-    type C: ComponentOf<Self>;
+pub trait Impl {
+    type Impler: Impler<Self>;
 }
 
-impl<T> Machine for T
+impl<S> T for S
 where
-    T: MachineImpl,
+    S: Impl,
 {
     #[inline]
     fn read(&mut self, logical_address: u16) -> u8 {
-        <T::C as ComponentOf<Self>>::read(self, logical_address)
+        <S::Impler as Impler<Self>>::read(self, logical_address)
     }
 
     #[inline]
     fn write(&mut self, logical_address: u16, value: u8) {
-        <T::C as ComponentOf<Self>>::write(self, logical_address, value)
+        <S::Impler as Impler<Self>>::write(self, logical_address, value)
     }
 }
 
-impl<T> ComponentOf<T> for [u8; 0x10000]
+impl<S> Impler<S> for [u8; 0x10000]
 where
-    T: AsMut<[u8; 0x10000]> + AsRef<[u8; 0x10000]>,
+    S: AsMut<[u8; 0x10000]> + AsRef<[u8; 0x10000]>,
 {
     #[inline]
-    fn read(t: &mut T, logical_address: u16) -> u8 {
-        t.as_ref()[logical_address as usize]
+    fn read(s: &mut S, logical_address: u16) -> u8 {
+        s.as_ref()[logical_address as usize]
     }
 
     #[inline]
-    fn write(t: &mut T, logical_address: u16, value: u8) {
-        t.as_mut()[logical_address as usize] = value
+    fn write(s: &mut S, logical_address: u16, value: u8) {
+        s.as_mut()[logical_address as usize] = value
     }
 }
 
-impl Machine for [u8; 0x10000] {
+impl T for [u8; 0x10000] {
     #[inline]
     fn read(&mut self, logical_address: u16) -> u8 {
         self[logical_address as usize]

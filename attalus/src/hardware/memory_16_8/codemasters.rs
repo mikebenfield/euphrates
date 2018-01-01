@@ -10,7 +10,7 @@ use std;
 use errors::{Error, SimpleKind};
 use memo::{Inbox, Outbox};
 
-use super::*;
+use super::Impler;
 use super::sega::{Memo, MasterSystemMemory};
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
@@ -18,8 +18,8 @@ pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 /// The Codemasters memory map, used in Sega Master System games created by
 /// British game developer Codemasters.
 #[derive(Clone)]
-pub struct Component {
-    // As in the `sega::Component`, memory is a sequence of 8 KiB
+pub struct T {
+    // As in the `sega::T`, memory is a sequence of 8 KiB
     // implementation-pages. The first implementation-page corresponds to the
     // console RAM, and then pairs of pages correspond to 16 KiB
     // codemasters-pages of cartridge ROM. Finally, there *may* be a final 8 KiB
@@ -29,7 +29,7 @@ pub struct Component {
     cartridge_ram_allocated: bool,
 
     // The `pages` field works identically to the corresponding field in
-    // `sega::Component`.
+    // `sega::T`.
     pages: [u16; 8],
 
     reg_0000: u8,
@@ -43,13 +43,13 @@ pub struct Component {
 
 serde_struct_arrays!{
     impl_serde,
-    Component,
+    T,
     [cartridge_ram_allocated, pages, reg_0000, reg_4000, reg_8000, slot_writable, id,],
     [],
     [memory: [u8; 0x2000],]
 }
 
-impl Outbox for Component {
+impl Outbox for T {
     type Memo = Memo;
 
     #[inline]
@@ -63,30 +63,30 @@ impl Outbox for Component {
     }
 }
 
-fn write_check_register<T>(t: &mut T, logical_address: u16, value: u8)
+fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
+    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
 {
     macro_rules! receive {
         ($x: expr) => {
             {
-                let id = t.as_ref().id();
+                let id = s.as_ref().id();
                 let __y = $x;
-                t.receive(id, __y);
+                s.receive(id, __y);
             }
         }
     }
 
-    fn swap_slot<T>(t: &mut T, sega_slot: usize, value: u8)
+    fn swap_slot<S>(s: &mut S, sega_slot: usize, value: u8)
     where
-        T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
+        S: Inbox<Memo> + AsMut<T> + AsRef<T>,
     {
         macro_rules! receive {
             ($x: expr) => {
                 {
-                    let id = t.as_ref().id();
+                    let id = s.as_ref().id();
                     let __y = $x;
-                    t.receive(id, __y);
+                    s.receive(id, __y);
                 }
             }
         }
@@ -95,10 +95,10 @@ where
         let (upper_bit_set, lower_bits) = ((0x80 & value) != 0, 0x7F & value);
         let impl_slot0 = 2 * sega_slot;
         let impl_slot1 = impl_slot0 + 1;
-        let rom_impl_page_count = if t.as_ref().cartridge_ram_allocated {
-            t.as_ref().memory.len() - 2
+        let rom_impl_page_count = if s.as_ref().cartridge_ram_allocated {
+            s.as_ref().memory.len() - 2
         } else {
-            t.as_ref().memory.len() - 1
+            s.as_ref().memory.len() - 1
         };
         let rom_sega_page_count = (rom_impl_page_count / 2) as u8;
         let sega_page = if rom_sega_page_count == 0 {
@@ -113,24 +113,24 @@ where
         let impl_page = (sega_page as u16) * 2 + 1;
         if upper_bit_set {
             // RAM goes into the second implementation-slot
-            if !t.as_ref().cartridge_ram_allocated {
+            if !s.as_ref().cartridge_ram_allocated {
                 receive!(Memo::AllocateFirstPage);
-                t.as_mut().memory.push([0; 0x2000]);
-                t.as_mut().memory.shrink_to_fit();
+                s.as_mut().memory.push([0; 0x2000]);
+                s.as_mut().memory.shrink_to_fit();
             }
             receive!(Memo::MapCartridgeRam {
                 slot: sega_slot as u8,
                 page: sega_page,
             });
-            let cmm = t.as_mut();
+            let cmm = s.as_mut();
             cmm.pages[impl_slot1] = (cmm.memory.len() - 1) as u16;
             cmm.slot_writable |= 1 << impl_slot1;
         } else {
-            let cmm = t.as_mut();
+            let cmm = s.as_mut();
             cmm.pages[impl_slot1] = impl_page + 1;
             cmm.slot_writable &= !(1 << impl_slot1);
         }
-        t.as_mut().pages[impl_slot0] = impl_page;
+        s.as_mut().pages[impl_slot0] = impl_page;
         // even impl_slots will never be marked as writable anyway
     }
 
@@ -140,7 +140,7 @@ where
                 register: 0,
                 value: value,
             });
-            t.as_mut().reg_0000 = value;
+            s.as_mut().reg_0000 = value;
             0
         }
         0x4000 => {
@@ -148,7 +148,7 @@ where
                 register: 0x4000,
                 value: value,
             });
-            t.as_mut().reg_4000 = value;
+            s.as_mut().reg_4000 = value;
             1
         }
         0x8000 => {
@@ -156,43 +156,43 @@ where
                 register: 0x8000,
                 value: value,
             });
-            t.as_mut().reg_8000 = value;
+            s.as_mut().reg_8000 = value;
             2
         }
         _ => return,
     };
 
-    swap_slot(t, slot as usize, value);
+    swap_slot(s, slot as usize, value);
 }
 
-impl<T> ComponentOf<T> for Component
+impl<S> Impler<S> for T
 where
-    T: Inbox<Memo> + AsMut<Component> + AsRef<Component>,
+    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
 {
-    fn read(t: &mut T, logical_address: u16) -> u8 {
+    fn read(s: &mut S, logical_address: u16) -> u8 {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        let impl_page = t.as_ref().pages[impl_slot as usize];
-        let result = t.as_ref().memory[impl_page as usize][physical_address as usize];
+        let impl_page = s.as_ref().pages[impl_slot as usize];
+        let result = s.as_ref().memory[impl_page as usize][physical_address as usize];
         result
     }
 
-    fn write(t: &mut T, logical_address: u16, value: u8) {
-        write_check_register(t, logical_address, value);
+    fn write(s: &mut S, logical_address: u16, value: u8) {
+        write_check_register(s, logical_address, value);
         if logical_address == 0 || logical_address == 0x4000 || logical_address == 0x8000 {
             return;
         }
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        if t.as_ref().slot_writable & (1 << impl_slot) != 0 {
-            let impl_page = t.as_ref().pages[impl_slot as usize];
-            t.as_mut().memory[impl_page as usize][physical_address as usize] = value;
+        if s.as_ref().slot_writable & (1 << impl_slot) != 0 {
+            let impl_page = s.as_ref().pages[impl_slot as usize];
+            s.as_mut().memory[impl_page as usize][physical_address as usize] = value;
         } else {
         }
     }
 }
 
-impl MasterSystemMemory for Component {
+impl MasterSystemMemory for T {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
             Err(SimpleKind(format!(
@@ -216,7 +216,7 @@ impl MasterSystemMemory for Component {
             memory.push(impl_page);
         }
 
-        Ok(Component {
+        Ok(T {
             memory: memory,
             cartridge_ram_allocated: false,
             // according to smspower.org, the mapper is initialized with
@@ -237,7 +237,7 @@ impl MasterSystemMemory for Component {
 //     use super::*;
 
 //     #[allow(dead_code)]
-//     fn build_mmap() -> Component {
+//     fn build_mmap() -> T {
 //         let mut rom = [0u8; 0x10000]; // 64 KiB (8 8KiB impl-pages or 4 16KiB sega-pages)
 //         rom[0x2000] = 1;
 //         rom[0x4000] = 2;
@@ -246,7 +246,7 @@ impl MasterSystemMemory for Component {
 //         rom[0xA000] = 5;
 //         rom[0xC000] = 6;
 //         rom[0xE000] = 7;
-//         Component::new(&rom).unwrap()
+//         T::new(&rom).unwrap()
 //     }
 
 //     #[test]
