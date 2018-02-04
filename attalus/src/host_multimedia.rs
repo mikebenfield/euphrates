@@ -7,6 +7,8 @@
 
 use std;
 
+use failure;
+
 use ::errors;
 
 pub use ::errors::CommonKind as Kind;
@@ -44,17 +46,17 @@ pub trait SimpleGraphics {
 }
 
 pub trait SimpleAudio {
-    fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()>;
+    fn configure(&mut self, frequency: u32, buffer_size: u16) -> std::result::Result<(), failure::Error>;
 
-    fn play(&mut self) -> Result<()>;
+    fn play(&mut self) -> std::result::Result<(), failure::Error>;
 
-    fn pause(&mut self) -> Result<()>;
+    fn pause(&mut self) -> std::result::Result<(), failure::Error>;
 
     fn buffer(&mut self) -> &mut [i16];
 
-    fn queue_buffer(&mut self) -> Result<()>;
+    fn queue_buffer(&mut self) -> std::result::Result<(), failure::Error>;
 
-    fn clear(&mut self) -> Result<()>;
+    fn clear(&mut self) -> std::result::Result<(), failure::Error>;
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -62,28 +64,34 @@ pub struct FakeAudio(Box<[i16]>);
 
 
 impl SimpleAudio for FakeAudio {
-    fn configure(&mut self, _frequency: u32, buffer_size: u16) -> Result<()> {
+    #[inline]
+    fn configure(&mut self, _frequency: u32, buffer_size: u16) -> std::result::Result<(), failure::Error> {
         self.0 = vec![0i16; buffer_size as usize].into_boxed_slice();
         Ok(())
     }
 
-    fn play(&mut self) -> Result<()> {
+    #[inline]
+    fn play(&mut self) -> std::result::Result<(), failure::Error> {
         Ok(())
     }
 
-    fn pause(&mut self) -> Result<()> {
+    #[inline]
+    fn pause(&mut self) -> std::result::Result<(), failure::Error> {
         Ok(())
     }
 
+    #[inline]
     fn buffer(&mut self) -> &mut [i16] {
         &mut self.0
     }
 
-    fn queue_buffer(&mut self) -> Result<()> {
+    #[inline]
+    fn queue_buffer(&mut self) -> std::result::Result<(), failure::Error> {
         Ok(())
     }
 
-    fn clear(&mut self) -> Result<()> {
+    #[inline]
+    fn clear(&mut self) -> std::result::Result<(), failure::Error> {
         Ok(())
     }
 }

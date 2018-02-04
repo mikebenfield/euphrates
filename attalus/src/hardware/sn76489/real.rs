@@ -5,13 +5,16 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::AsMut;
+use std::convert::{AsMut, AsRef};
 
-use errors::{CommonKind, Error};
+use failure::Error;
+
 use host_multimedia::SimpleAudio;
 
+use super::{hardware, machine};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Component {
+pub struct T {
     // registers for the 4 different channels, in this order:
     // [channel 0 tone], [channel 0 volume], [channel 1 tone], [channel 1 volume],
     // etc.
@@ -25,9 +28,9 @@ pub struct Component {
     pub cycles: u64,
 }
 
-impl Default for Component {
+impl Default for T {
     fn default() -> Self {
-        Component {
+        T {
             registers: [0, 0xF, 0, 0xF, 0, 0xF, 0, 0xF],
             latch: 0,
             linear_feedback: 0x8000,
@@ -38,9 +41,9 @@ impl Default for Component {
     }
 }
 
-impl<T> super::ComponentOf<T> for Component
+impl<S> hardware::Impler<S> for T
 where
-    T: AsMut<Component>,
+    S: AsMut<T>,
 {
     /// If bit 7 is 1, this is a latch byte. In this case,
     /// bits 0-3 are data to be written,
@@ -50,8 +53,8 @@ where
     /// for the noise regsiter)
     /// If bit 7 is 0, this is a data byte. In this case, we write up
     /// to 6 bits in the upper bits of the latched register.
-    fn write_sound(t: &mut T, data: u8) {
-        let sn = t.as_mut();
+    fn write(s: &mut S, data: u8) {
+        let sn = s.as_mut();
         if data & 0x80 != 0 {
             // latch
             sn.latch = (data & 0x70) >> 4;
@@ -74,9 +77,6 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Emulator;
-
 macro_rules! min_nonzero {
     ($x: expr) => {
         $x
@@ -93,17 +93,12 @@ macro_rules! min_nonzero {
     };
 }
 
-impl<A> super::Emulator<A, Component> for Emulator
+impl<S> machine::Impler<S> for T
 where
-    A: SimpleAudio + ?Sized,
+    S: SimpleAudio + AsRef<T> + AsMut<T> + ?Sized,
 {
-    fn queue(
-        &mut self,
-        component: &mut Component,
-        target_cycles: u64,
-        audio: &mut A,
-    ) -> Result<(), Error<CommonKind>> {
-        if component.cycles >= target_cycles {
+    fn queue(s: &mut S, target_cycles: u64) -> Result<(), Error> {
+        if s.as_ref().cycles >= target_cycles {
             return Ok(());
         }
 
@@ -133,73 +128,73 @@ where
         }
 
         let amplitudes: [i16; 4] = [
-            convert_volume(component.registers[1]),
-            convert_volume(component.registers[3]),
-            convert_volume(component.registers[5]),
-            convert_volume(component.registers[7]),
+            convert_volume(s.as_ref().registers[1]),
+            convert_volume(s.as_ref().registers[3]),
+            convert_volume(s.as_ref().registers[5]),
+            convert_volume(s.as_ref().registers[7]),
         ];
 
         {
-            let buffer = audio.buffer();
             let mut i: usize = 0;
-            while i < buffer.len() {
-                let tone0 = component.polarity[0] as i16 * amplitudes[0];
-                let tone1 = component.polarity[1] as i16 * amplitudes[1];
-                let tone2 = component.polarity[2] as i16 * amplitudes[2];
-                let noise = component.polarity[3] as i16 * amplitudes[3];
+            while i < s.buffer().len() {
+                let tone0 = s.as_ref().polarity[0] as i16 * amplitudes[0];
+                let tone1 = s.as_ref().polarity[1] as i16 * amplitudes[1];
+                let tone2 = s.as_ref().polarity[2] as i16 * amplitudes[2];
+                let noise = s.as_ref().polarity[3] as i16 * amplitudes[3];
                 let sum = tone0 + tone1 + tone2 + noise;
-                debug_assert!(buffer.len() <= u16::max_value() as usize);
+                debug_assert!(s.buffer().len() <= u16::max_value() as usize);
                 let count = min_nonzero!(
-                    (buffer.len() - i) as u16,
-                    component.counters[0],
-                    component.counters[1],
-                    component.counters[2],
-                    component.counters[3]
+                    (s.buffer().len() - i) as u16,
+                    s.as_ref().counters[0],
+                    s.as_ref().counters[1],
+                    s.as_ref().counters[2],
+                    s.as_ref().counters[3]
                 );
                 let last_idx = count as usize + i;
                 for j in i..last_idx as usize {
-                    buffer[j] = sum;
+                    s.buffer()[j] = sum;
                 }
                 for j in 0..3 {
-                    component.counters[j] -= count;
-                    let tone_reg = component.registers[2 * j];
+                    s.as_mut().counters[j] -= count;
+                    let tone_reg = s.as_ref().registers[2 * j];
                     if tone_reg == 0 || tone_reg == 1 {
-                        component.polarity[j] = 1;
-                        component.counters[j] = 0x3FF;
-                    } else if component.counters[j] == 0 {
-                        component.polarity[j] *= -1;
-                        component.counters[j] = tone_reg;
+                        s.as_mut().polarity[j] = 1;
+                        s.as_mut().counters[j] = 0x3FF;
+                    } else if s.as_ref().counters[j] == 0 {
+                        s.as_mut().polarity[j] *= -1;
+                        s.as_mut().counters[j] = tone_reg;
                     }
                 }
-                component.counters[3] -= count;
-                if component.counters[3] == 0 {
-                    component.counters[3] = match 0x3 & component.registers[6] {
+                s.as_mut().counters[3] -= count;
+                if s.as_ref().counters[3] == 0 {
+                    s.as_mut().counters[3] = match 0x3 & s.as_ref().registers[6] {
                         0 => 0x20,
                         1 => 0x40,
                         2 => 0x80,
-                        _ => 2 * component.registers[4],
+                        _ => 2 * s.as_ref().registers[4],
                     };
-                    let bit0 = 1 & component.linear_feedback;
+                    let bit0 = 1 & s.as_ref().linear_feedback;
                     let bit0_shifted = 1 << 15;
-                    component.polarity[3] = 2 * (bit0 as i8) - 1;
-                    if component.registers[6] & 4 != 0 {
+                    s.as_mut().polarity[3] = 2 * (bit0 as i8) - 1;
+                    if s.as_ref().registers[6] & 4 != 0 {
                         // white noise
-                        let bit3_shifted = (8 & component.linear_feedback) << 12;
+                        let bit3_shifted = (8 & s.as_ref().linear_feedback) << 12;
                         let feed_bit = bit0_shifted ^ bit3_shifted;
-                        component.linear_feedback = feed_bit | (component.linear_feedback >> 1);
+                        s.as_mut().linear_feedback = feed_bit | (s.as_ref().linear_feedback >> 1);
                     } else {
                         // "periodic noise"
-                        component.linear_feedback = bit0_shifted | (component.linear_feedback >> 1);
+                        s.as_mut().linear_feedback = bit0_shifted |
+                            (s.as_ref().linear_feedback >> 1);
                     }
                 }
                 i = last_idx;
             }
 
-            component.cycles += buffer.len() as u64;
+            s.as_mut().cycles += s.buffer().len() as u64;
         }
 
-        audio.queue_buffer()?;
+        s.queue_buffer()?;
 
-        self.queue(component, target_cycles, audio)
+        Self::queue(s, target_cycles)
     }
 }

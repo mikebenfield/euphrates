@@ -114,7 +114,7 @@ where
     S: AsMut<T>
         + AsRef<T>
         + vdp::Machine
-        + sn76489::Machine
+        + sn76489::hardware::T
         + Inbox<Memo>
         + ?Sized,
 {
@@ -187,8 +187,8 @@ where
             0b00000001 => {
                 AsMut::<T>::as_mut(s).io_control = value;
             }
-            0b01000000 => s.write_sound(value),
-            0b01000001 => s.write_sound(value),
+            0b01000000 => s.write(value),
+            0b01000001 => s.write(value),
             0b10000000 => {
                 s.write_data(value);
             }

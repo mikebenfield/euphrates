@@ -5,13 +5,13 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+// XXX - this file should be deleted
+
 use std::convert::{AsMut, AsRef};
 use std::time::{Duration, Instant};
 use std;
 
-use failure::ResultExt;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use failure::{self, ResultExt};
 
 use errors::{Error, SimpleKind};
 use hardware::io_16_8;
@@ -21,9 +21,8 @@ use hardware::sn76489;
 use hardware::vdp;
 use hardware::z80;
 use host_multimedia::SimpleAudio;
-use memo::NothingInbox;
 use memo::{Inbox, Pausable};
-use utilities::{self, FrameInfo, Tag, TimeInfo};
+use utilities::{self, FrameInfo, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
@@ -32,27 +31,9 @@ pub trait MasterSystem
     + vdp::Machine
     + memory_16_8::T
     + AsMut<io_16_8::sms2::T>
-    + AsMut<sn76489::real::Component>
-    + Pausable
-    + Clone
-    + Tag
-    + Serialize
-    + DeserializeOwned {
-}
-
-impl<T> MasterSystem for T
-where
-    T: z80::Machine
-        + vdp::Machine
-        + memory_16_8::T
-        + AsMut<io_16_8::sms2::T>
-        + AsMut<sn76489::real::Component>
-        + Pausable
-        + Clone
-        + Tag
-        + Serialize
-        + DeserializeOwned,
-{
+    + sn76489::machine::T
+    + SimpleAudio {
+    fn init(&mut self) -> std::result::Result<(), failure::Error>;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -61,35 +42,84 @@ pub struct Hardware<M> {
     pub memory: M,
     pub io: io_16_8::sms2::T,
     pub vdp: vdp::Component,
-    pub sn76489: sn76489::real::Component,
+    pub sn76489: sn76489::real::T,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
 pub struct System<I, M> {
     pub inbox: I,
     pub hardware: Hardware<M>,
+    pub audio: Box<SimpleAudio>,
+    pub z80_frequency: Option<u64>,
 }
 
-impl<I, M> System<I, M> {
-    pub fn new(inbox: I, hardware: Hardware<M>) -> Self {
-        System { inbox, hardware }
+impl<I, M> MasterSystem for System<I, M>
+where
+    Self: z80::Machine
+        + vdp::Machine
+        + memory_16_8::T
+        + AsMut<io_16_8::sms2::T>
+        + sn76489::machine::T,
+{
+    fn init(&mut self) -> std::result::Result<(), failure::Error> {
+        const AUDIO_BUFFER_SIZE: u16 = 0x800;
+
+        if let Some(frequency) = self.z80_frequency {
+            self.configure(frequency as u32 / 16, AUDIO_BUFFER_SIZE)
+                .map_err(|s| {
+                    format_err!("Master System emulation: error configuring audio: {}", s)
+                })?;
+        }
+        Ok(())
     }
 }
 
-macro_rules! impl_tag {
-    ($i: ty, $m: ty, $tag: expr) => {
-        impl Tag for System<$i, $m> {
-            const TAG: &'static str = $tag;
+impl<I, M> System<I, M> {
+    pub fn new(inbox: I, hardware: Hardware<M>, audio: Box<SimpleAudio>) -> Self {
+        System {
+            z80_frequency: None,
+            inbox,
+            hardware,
+            audio,
         }
     }
 }
 
-impl_tag!{super::DebuggingInbox, memory_16_8::sega::T, "debugging,sega"}
-impl_tag!{NothingInbox, memory_16_8::sega::T, "nothing,sega"}
-impl_tag!{super::DebuggingInbox, memory_16_8::codemasters::T,
-"debugging,codemasters"}
-impl_tag!{NothingInbox, memory_16_8::codemasters::T,
-"nothing,codemasters"}
+impl<I, M> SimpleAudio for System<I, M> {
+    #[inline]
+    fn configure(
+        &mut self,
+        frequency: u32,
+        buffer_size: u16,
+    ) -> std::result::Result<(), failure::Error> {
+        self.audio.configure(frequency, buffer_size)
+    }
+
+    #[inline]
+    fn play(&mut self) -> std::result::Result<(), failure::Error> {
+        println!("play");
+        self.audio.play()
+    }
+
+    #[inline]
+    fn pause(&mut self) -> std::result::Result<(), failure::Error> {
+        self.audio.pause()
+    }
+
+    #[inline]
+    fn buffer(&mut self) -> &mut [i16] {
+        self.audio.buffer()
+    }
+
+    #[inline]
+    fn queue_buffer(&mut self) -> std::result::Result<(), failure::Error> {
+        self.audio.queue_buffer()
+    }
+
+    #[inline]
+    fn clear(&mut self) -> std::result::Result<(), failure::Error> {
+        self.audio.clear()
+    }
+}
 
 macro_rules! impl_as_ref {
     ($typename: ty, $component_name: ident) => {
@@ -110,7 +140,7 @@ macro_rules! impl_as_ref {
 }
 
 impl_as_ref!{io_16_8::sms2::T, io}
-impl_as_ref!{sn76489::real::Component, sn76489}
+impl_as_ref!{sn76489::real::T, sn76489}
 impl_as_ref!{vdp::Component, vdp}
 impl_as_ref!{z80::Component, z80}
 
@@ -138,7 +168,7 @@ impl_as_ref_memory_map!{memory_16_8::codemasters::T}
 
 impl<I> memory_16_8::Impl for System<I, memory_16_8::sega::T>
 where
-    I: Inbox<memory_16_8::sega::Memo>
+    I: Inbox<memory_16_8::sega::Memo>,
 {
     type Impler = memory_16_8::sega::T;
 }
@@ -206,8 +236,12 @@ impl<I, M> z80::MachineImpl for System<I, M> {}
 
 impl<I, M> vdp::MachineImpl for System<I, M> {}
 
-impl<I, M> sn76489::MachineImpl for System<I, M> {
-    type C = sn76489::real::Component;
+impl<I, M> sn76489::hardware::Impl for System<I, M> {
+    type Impler = sn76489::real::T;
+}
+
+impl<I, M> sn76489::machine::Impl for System<I, M> {
+    type Impler = sn76489::real::T;
 }
 
 //// Builders and other useful types
@@ -382,30 +416,10 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
         }
     }
 
-    pub fn configure_audio<A>(&self, audio: &mut A) -> Result<()>
-    where
-        A: SimpleAudio,
-    {
-        const AUDIO_BUFFER_SIZE: u16 = 0x800;
-
-        if let Some(frequency) = self.z80_frequency {
-            audio
-                .configure(frequency as u32 / 16, AUDIO_BUFFER_SIZE)
-                .map_err(|s| {
-                    SimpleKind(format!(
-                        "Master System emulation: error configuring audio: {}",
-                        s
-                    ))
-                })?;
-        }
-        Ok(())
-    }
-
     pub fn run_frame<S, HostGraphics>(
         &mut self,
         master_system: &mut S,
         graphics: &mut HostGraphics,
-        audio: &mut SimpleAudio,
         player_status: &PlayerStatus,
         time_status: &TimeStatus,
         frame_info: &mut FrameInfo,
@@ -417,16 +431,9 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
     {
         // audio already configured, start time, etc
 
-        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system)
-            .set_joypad_a(player_status.joypad_a);
-        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system)
-            .set_joypad_b(player_status.joypad_b);
-        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system)
-            .set_pause(player_status.pause);
-
-        // XXX - probably should change to have the sn76489 emulator be a
-        // field of the emulator
-        let mut sn76489_emulator: sn76489::real::Emulator = Default::default();
+        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system).set_joypad_a(player_status.joypad_a);
+        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system).set_joypad_b(player_status.joypad_b);
+        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system).set_pause(player_status.pause);
 
         loop {
             if master_system.wants_pause() {
@@ -456,12 +463,7 @@ impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
                 if let Some(_) = self.z80_frequency {
                     let sound_target_cycles =
                         <S as AsRef<z80::Component>>::as_ref(master_system).cycles / 16;
-                    sn76489::Emulator::queue(
-                        &mut sn76489_emulator,
-                        <S as AsMut<sn76489::real::Component>>::as_mut(master_system),
-                        sound_target_cycles,
-                        audio,
-                    ).with_context(|e| {
+                    master_system.queue(sound_target_cycles).with_context(|e| {
                         SimpleKind(format!(
                             "Master System emulation: error queueing audio {}",
                             e

@@ -13,9 +13,8 @@ use hardware::memory_16_8;
 use hardware::vdp;
 use hardware::z80::{self, Opcode};
 use memo::{Inbox, NothingInbox, Pausable};
-use runtime_pattern::{Matchable, WholePattern};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Memo {
     Z80(z80::Memo),
     Memory(memory_16_8::sega::Memo),
@@ -36,8 +35,8 @@ pub enum Command {
     Step,
     BreakAtPc(u16),
     RemovePcBreakpoints,
-    BreakAtMemo(MemoPattern),
-    RemoveBreakMemos,
+    // BreakAtMemo(MemoPattern),
+    // RemoveBreakMemos,
 }
 
 pub trait MasterSystemInbox
@@ -82,14 +81,14 @@ pub struct DebuggingInbox {
     hold: bool,
     status: DebugStatus,
     pc_breakpoints: Vec<u16>,
-    memo_patterns: Vec<MemoPattern>,
+    // memo_patterns: Vec<MemoPattern>,
     recent_memos: VecDeque<Memo>,
 }
 
 serde_struct_arrays!{
     impl_serde,
     DebuggingInbox,
-    [last_pc, hold, status, pc_breakpoints, memo_patterns, recent_memos,],
+    [last_pc, hold, status, pc_breakpoints, recent_memos,],
     [opcodes: [Option<::hardware::z80::Opcode>; 0x10000],],
     []
 }
@@ -144,7 +143,6 @@ impl DebuggingInbox {
             hold: true,
             status: DebugStatus::None,
             pc_breakpoints: Vec::new(),
-            memo_patterns: Vec::new(),
             recent_memos: VecDeque::new(),
         }
     }
@@ -153,10 +151,11 @@ impl DebuggingInbox {
         if self.recent_memos.len() >= MAX_MESSAGES {
             self.recent_memos.pop_front();
         }
-        if self.memo_patterns.iter().any(|pattern| {
-            let mut patt: WholePattern<Memo, MemoPattern> = WholePattern::Patt(pattern.clone());
-            message.matc(&mut patt)
-        })
+        // XXX
+        // if self.memo_patterns.iter().any(|pattern| {
+        //     let mut patt: WholePattern<Memo, MemoPattern> = WholePattern::Patt(pattern.clone());
+        //     message.matc(&mut patt)
+        // })
         {
             self.hold = true;
         }
@@ -249,8 +248,8 @@ impl MasterSystemInbox for DebuggingInbox {
             BreakAtPc(pc) => self.pc_breakpoints.push(pc),
             RemovePcBreakpoints => self.pc_breakpoints = Vec::new(),
             Step => self.status = DebugStatus::Step,
-            BreakAtMemo(pattern) => self.memo_patterns.push(pattern),
-            RemoveBreakMemos => self.memo_patterns = Vec::new(),
+            // BreakAtMemo(pattern) => self.memo_patterns.push(pattern),
+            // RemoveBreakMemos => self.memo_patterns = Vec::new(),
         }
 
         // let mut holding_time = if self.hold {
