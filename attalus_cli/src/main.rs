@@ -39,7 +39,6 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
     let sdl = sdl2::init().unwrap();
 
     let mut emulator = sega_master_system::Emulator::new(
-        sega_master_system::Frequency::Ntsc,
         <z80::Interpreter as Default>::default(),
         <vdp::SimpleEmulator as Default>::default(),
     );
@@ -59,7 +58,12 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
             let master_system_hardware = HardwareBuilder::new()
                 .build_from_file::<M>(filename)?;
             let mut master_system = System::new(NothingInbox, master_system_hardware, audio);
-            user_interface.run(&sdl, &mut emulator, &mut master_system)?;
+            user_interface.run(
+                &sdl,
+                &mut emulator,
+                &mut master_system,
+                sega_master_system::Frequency::Ntsc
+            )?;
         } else {
             Err(format_err!(
                 "Can't happen: Unknown memory map {}",

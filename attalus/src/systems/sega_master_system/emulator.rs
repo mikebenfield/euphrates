@@ -33,7 +33,19 @@ pub trait MasterSystem
     + AsMut<io_16_8::sms2::T>
     + sn76489::machine::T
     + SimpleAudio {
-    fn init(&mut self) -> std::result::Result<(), failure::Error>;
+    fn init(&mut self, frequency: Frequency) -> std::result::Result<(), failure::Error>;
+
+    fn run_frame<HostGraphics, Z80Emulator, VdpEmulator>(
+        &mut self,
+        emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
+        graphics: &mut HostGraphics,
+        player_status: &PlayerStatus,
+        time_status: &TimeStatus,
+        frame_info: &mut FrameInfo,
+    ) -> Result<EmulationResult>
+    where
+        Z80Emulator: z80::Emulator<Self>,
+        VdpEmulator: vdp::Emulator<HostGraphics>;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -60,8 +72,16 @@ where
         + AsMut<io_16_8::sms2::T>
         + sn76489::machine::T,
 {
-    fn init(&mut self) -> std::result::Result<(), failure::Error> {
+    fn init(&mut self, frequency: Frequency) -> std::result::Result<(), failure::Error> {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
+
+        self.z80_frequency = match frequency {
+            Frequency::Ntsc => Some(NTSC_MASTER_FREQUENCY / 3),
+            Frequency::Pal => Some(PAL_MASTER_FREQUENCY / 3),
+            Frequency::MasterFrequency(x) => Some(x / 3),
+            Frequency::Z80Frequency(x) => Some(x),
+            Frequency::Unlimited => None,
+        };
 
         if let Some(frequency) = self.z80_frequency {
             self.configure(frequency as u32 / 16, AUDIO_BUFFER_SIZE)
@@ -70,6 +90,74 @@ where
                 })?;
         }
         Ok(())
+    }
+
+    fn run_frame<HostGraphics, Z80Emulator, VdpEmulator>(
+        &mut self,
+        emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
+        graphics: &mut HostGraphics,
+        player_status: &PlayerStatus,
+        time_status: &TimeStatus,
+        frame_info: &mut FrameInfo,
+    ) -> Result<EmulationResult>
+    where
+        Z80Emulator: z80::Emulator<Self>,
+        VdpEmulator: vdp::Emulator<HostGraphics>,
+    {
+        // audio already configured, start time, etc
+
+        <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_joypad_a(player_status.joypad_a);
+        <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_joypad_b(player_status.joypad_b);
+        <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_pause(player_status.pause);
+
+        loop {
+            if self.wants_pause() {
+                return Ok(EmulationResult::FrameInterrupted);
+            }
+
+            emulator
+                .vdp_emulator
+                .draw_line(<Self as AsMut<vdp::Component>>::as_mut(self), graphics)
+                .with_context(|e| {
+                    SimpleKind(format!("Master System emulation: VDP error {}", e))
+                })?;
+
+            let vdp_cycles = <Self as AsRef<vdp::Component>>::as_ref(self).cycles;
+            let z80_target_cycles = 2 * vdp_cycles / 3;
+
+            while <Self as AsRef<z80::Component>>::as_ref(self).cycles < z80_target_cycles {
+                emulator.z80_emulator.run(self, z80_target_cycles);
+                if self.wants_pause() {
+                    return Ok(EmulationResult::FrameInterrupted);
+                }
+            }
+
+            if <Self as AsRef<vdp::Component>>::as_ref(self).v == 0 {
+                if let Some(_) = self.z80_frequency {
+                    let sound_target_cycles = <Self as AsRef<z80::Component>>::as_ref(self)
+                        .cycles / 16;
+                    sn76489::machine::T::queue(self, sound_target_cycles)
+                        .with_context(|e| {
+                            SimpleKind(format!(
+                                "Master System emulation: error queueing audio {}",
+                                e
+                            ))
+                        })?;
+                }
+
+                let time_info = TimeInfo {
+                    total_cycles: <Self as AsRef<z80::Component>>::as_ref(self).cycles,
+                    cycles_start: time_status.cycles_start,
+                    frequency: self.z80_frequency,
+                    start_time: time_status.start_time,
+                    hold_duration: time_status.hold_duration,
+                };
+
+                *frame_info = utilities::time_govern(time_info, frame_info.clone());
+
+                return Ok(EmulationResult::FrameCompleted);
+            }
+        }
     }
 }
 
@@ -96,7 +184,6 @@ impl<I, M> SimpleAudio for System<I, M> {
 
     #[inline]
     fn play(&mut self) -> std::result::Result<(), failure::Error> {
-        println!("play");
         self.audio.play()
     }
 
@@ -390,99 +477,18 @@ pub enum EmulationResult {
 
 #[derive(Copy, Clone, Default, Debug, Eq, PartialEq, Hash)]
 pub struct Emulator<Z80Emulator, VdpEmulator> {
-    z80_frequency: Option<u64>,
     z80_emulator: Z80Emulator,
     vdp_emulator: VdpEmulator,
 }
 
 impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
     pub fn new(
-        frequency: Frequency,
         z80_emulator: Z80Emulator,
         vdp_emulator: VdpEmulator,
     ) -> Emulator<Z80Emulator, VdpEmulator> {
-        use self::Frequency::*;
-        let z80_frequency = match frequency {
-            Ntsc => Some(NTSC_MASTER_FREQUENCY / 3),
-            Pal => Some(PAL_MASTER_FREQUENCY / 3),
-            MasterFrequency(x) => Some(x / 3),
-            Z80Frequency(x) => Some(x),
-            Unlimited => None,
-        };
         Emulator {
-            z80_frequency,
             z80_emulator,
             vdp_emulator,
-        }
-    }
-
-    pub fn run_frame<S, HostGraphics>(
-        &mut self,
-        master_system: &mut S,
-        graphics: &mut HostGraphics,
-        player_status: &PlayerStatus,
-        time_status: &TimeStatus,
-        frame_info: &mut FrameInfo,
-    ) -> Result<EmulationResult>
-    where
-        S: MasterSystem,
-        Z80Emulator: z80::Emulator<S>,
-        VdpEmulator: vdp::Emulator<HostGraphics>,
-    {
-        // audio already configured, start time, etc
-
-        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system).set_joypad_a(player_status.joypad_a);
-        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system).set_joypad_b(player_status.joypad_b);
-        <S as AsMut<io_16_8::sms2::T>>::as_mut(master_system).set_pause(player_status.pause);
-
-        loop {
-            if master_system.wants_pause() {
-                return Ok(EmulationResult::FrameInterrupted);
-            }
-
-            self.vdp_emulator
-                .draw_line(
-                    <S as AsMut<vdp::Component>>::as_mut(master_system),
-                    graphics,
-                )
-                .with_context(|e| {
-                    SimpleKind(format!("Master System emulation: VDP error {}", e))
-                })?;
-
-            let vdp_cycles = <S as AsRef<vdp::Component>>::as_ref(master_system).cycles;
-            let z80_target_cycles = 2 * vdp_cycles / 3;
-
-            while <S as AsRef<z80::Component>>::as_ref(master_system).cycles < z80_target_cycles {
-                self.z80_emulator.run(master_system, z80_target_cycles);
-                if master_system.wants_pause() {
-                    return Ok(EmulationResult::FrameInterrupted);
-                }
-            }
-
-            if <S as AsRef<vdp::Component>>::as_ref(master_system).v == 0 {
-                if let Some(_) = self.z80_frequency {
-                    let sound_target_cycles =
-                        <S as AsRef<z80::Component>>::as_ref(master_system).cycles / 16;
-                    master_system.queue(sound_target_cycles).with_context(|e| {
-                        SimpleKind(format!(
-                            "Master System emulation: error queueing audio {}",
-                            e
-                        ))
-                    })?;
-                }
-
-                let time_info = TimeInfo {
-                    total_cycles: <S as AsRef<z80::Component>>::as_ref(master_system).cycles,
-                    cycles_start: time_status.cycles_start,
-                    frequency: self.z80_frequency,
-                    start_time: time_status.start_time,
-                    hold_duration: time_status.hold_duration,
-                };
-
-                *frame_info = utilities::time_govern(time_info, frame_info.clone());
-
-                return Ok(EmulationResult::FrameCompleted);
-            }
         }
     }
 }

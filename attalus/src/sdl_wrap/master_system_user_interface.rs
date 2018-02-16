@@ -15,7 +15,7 @@ use sdl2;
 use hardware::vdp;
 use hardware::z80;
 use sdl_wrap;
-use systems::sega_master_system::{Emulator, MasterSystem, PlayerStatus, TimeStatus};
+use systems::sega_master_system::{Emulator, Frequency, MasterSystem, PlayerStatus, TimeStatus};
 use utilities::FrameInfo;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -248,6 +248,7 @@ impl UserInterface {
         sdl: &sdl2::Sdl,
         emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
         master_system: &mut S,
+        frequency: Frequency,
     ) -> Result<()>
     where
         S: MasterSystem,
@@ -261,7 +262,7 @@ impl UserInterface {
 
         let mut frame_info = FrameInfo::default();
 
-        master_system.init()?;
+        master_system.init(frequency)?;
         master_system.play()?;
 
         let time_status = TimeStatus::new(AsRef::<z80::Component>::as_ref(master_system).cycles);
@@ -271,8 +272,8 @@ impl UserInterface {
                 return Ok(());
             }
 
-            emulator.run_frame(
-                master_system,
+            master_system.run_frame(
+                emulator,
                 &mut win,
                 &self.player_status,
                 &time_status,
