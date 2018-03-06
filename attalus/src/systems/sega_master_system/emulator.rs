@@ -18,7 +18,7 @@ use hardware::io_16_8;
 use hardware::irq::Irq;
 use hardware::memory_16_8;
 use hardware::sn76489;
-use hardware::vdp;
+use hardware::sms_vdp::{self, internal::T};
 use hardware::z80;
 use host_multimedia::SimpleAudio;
 use memo::{Inbox, Pausable};
@@ -28,7 +28,7 @@ pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
 pub trait MasterSystem
     : z80::Machine
-    + vdp::Machine
+    + sms_vdp::higher::T
     + memory_16_8::T
     + AsMut<io_16_8::sms2::T>
     + sn76489::machine::T
@@ -45,7 +45,7 @@ pub trait MasterSystem
     ) -> Result<EmulationResult>
     where
         Z80Emulator: z80::Emulator<Self>,
-        VdpEmulator: vdp::Emulator<HostGraphics>;
+        VdpEmulator: sms_vdp::Emulator<HostGraphics>;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -53,7 +53,7 @@ pub struct Hardware<M> {
     pub z80: z80::Component,
     pub memory: M,
     pub io: io_16_8::sms2::T,
-    pub vdp: vdp::Component,
+    pub vdp: sms_vdp::simple::T,
     pub sn76489: sn76489::real::T,
 }
 
@@ -67,7 +67,7 @@ pub struct System<I, M> {
 impl<I, M> MasterSystem for System<I, M>
 where
     Self: z80::Machine
-        + vdp::Machine
+        + sms_vdp::higher::T
         + memory_16_8::T
         + AsMut<io_16_8::sms2::T>
         + sn76489::machine::T,
@@ -102,7 +102,7 @@ where
     ) -> Result<EmulationResult>
     where
         Z80Emulator: z80::Emulator<Self>,
-        VdpEmulator: vdp::Emulator<HostGraphics>,
+        VdpEmulator: sms_vdp::Emulator<HostGraphics>,
     {
         // audio already configured, start time, etc
 
@@ -117,12 +117,10 @@ where
 
             emulator
                 .vdp_emulator
-                .draw_line(<Self as AsMut<vdp::Component>>::as_mut(self), graphics)
-                .with_context(|e| {
-                    SimpleKind(format!("Master System emulation: VDP error {}", e))
-                })?;
+                .draw_line(self, graphics)
+                .with_context(|e| SimpleKind(format!("Master System emulation: VDP error {}", e)))?;
 
-            let vdp_cycles = <Self as AsRef<vdp::Component>>::as_ref(self).cycles;
+            let vdp_cycles = <Self as sms_vdp::internal::T>::cycles(self);
             let z80_target_cycles = 2 * vdp_cycles / 3;
 
             while <Self as AsRef<z80::Component>>::as_ref(self).cycles < z80_target_cycles {
@@ -132,17 +130,16 @@ where
                 }
             }
 
-            if <Self as AsRef<vdp::Component>>::as_ref(self).v == 0 {
+            if self.v() == 0 {
                 if let Some(_) = self.z80_frequency {
-                    let sound_target_cycles = <Self as AsRef<z80::Component>>::as_ref(self)
-                        .cycles / 16;
-                    sn76489::machine::T::queue(self, sound_target_cycles)
-                        .with_context(|e| {
-                            SimpleKind(format!(
-                                "Master System emulation: error queueing audio {}",
-                                e
-                            ))
-                        })?;
+                    let sound_target_cycles =
+                        <Self as AsRef<z80::Component>>::as_ref(self).cycles / 16;
+                    sn76489::machine::T::queue(self, sound_target_cycles).with_context(|e| {
+                        SimpleKind(format!(
+                            "Master System emulation: error queueing audio {}",
+                            e
+                        ))
+                    })?;
                 }
 
                 let time_info = TimeInfo {
@@ -228,7 +225,7 @@ macro_rules! impl_as_ref {
 
 impl_as_ref!{io_16_8::sms2::T, io}
 impl_as_ref!{sn76489::real::T, sn76489}
-impl_as_ref!{vdp::Component, vdp}
+impl_as_ref!{sms_vdp::simple::T, vdp}
 impl_as_ref!{z80::Component, z80}
 
 macro_rules! impl_as_ref_memory_map {
@@ -262,16 +259,20 @@ where
 
 impl<I> memory_16_8::Impl for System<I, memory_16_8::codemasters::T>
 where
-    I: Inbox<memory_16_8::sega::Memo>
+    I: Inbox<memory_16_8::sega::Memo>,
 {
     type Impler = memory_16_8::codemasters::T;
 }
 
 impl<I, M> io_16_8::Impl for System<I, M>
 where
-    I: Inbox<vdp::Memo> + Inbox<io_16_8::sms2::Memo>,
+    I: Inbox<io_16_8::sms2::Memo>,
 {
     type Impler = io_16_8::sms2::T;
+}
+
+impl<I, M> sms_vdp::internal::Impl for System<I, M> {
+    type Impler = sms_vdp::simple::T;
 }
 
 impl<I, M> Pausable for System<I, M>
@@ -302,26 +303,22 @@ where
 impl<I, M> Irq for System<I, M> {
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {
-        self.hardware.vdp.requesting_mi().or_else(|| {
-            self.hardware.io.requesting_mi()
-        })
+        <Self as sms_vdp::part::T>::requesting_mi(&self)
+            .or_else(|| self.hardware.io.requesting_mi())
     }
 
     #[inline]
     fn requesting_nmi(&self) -> bool {
-        self.hardware.vdp.requesting_nmi() || self.hardware.io.requesting_nmi()
+        self.hardware.io.requesting_nmi()
     }
 
     #[inline]
     fn clear_nmi(&mut self) {
-        self.hardware.vdp.clear_nmi();
         self.hardware.io.clear_nmi();
     }
 }
 
 impl<I, M> z80::MachineImpl for System<I, M> {}
-
-impl<I, M> vdp::MachineImpl for System<I, M> {}
 
 impl<I, M> sn76489::hardware::Impl for System<I, M> {
     type Impler = sn76489::real::T;
@@ -353,8 +350,8 @@ pub const NTSC_MASTER_FREQUENCY: u64 = 10738580;
 pub const PAL_MASTER_FREQUENCY: u64 = 10640685;
 #[derive(Copy, Clone, Debug, Default)]
 pub struct HardwareBuilder {
-    vdp_kind: vdp::Kind,
-    vdp_tv_system: vdp::TvSystem,
+    vdp_kind: sms_vdp::Kind,
+    vdp_tv_system: sms_vdp::TvSystem,
 }
 
 impl HardwareBuilder {
@@ -363,44 +360,41 @@ impl HardwareBuilder {
     }
 
     pub fn vdp_sms(&mut self) -> &mut Self {
-        self.vdp_kind(vdp::Kind::Sms);
+        self.vdp_kind(sms_vdp::Kind::Sms);
         self
     }
 
     pub fn vdp_sms2(&mut self) -> &mut Self {
-        self.vdp_kind(vdp::Kind::Sms2);
+        self.vdp_kind(sms_vdp::Kind::Sms2);
         self
     }
 
     pub fn vdp_gg(&mut self) -> &mut Self {
-        self.vdp_kind(vdp::Kind::Gg);
+        self.vdp_kind(sms_vdp::Kind::Gg);
         self
     }
 
-    pub fn vdp_kind(&mut self, vdp_kind: vdp::Kind) -> &mut Self {
+    pub fn vdp_kind(&mut self, vdp_kind: sms_vdp::Kind) -> &mut Self {
         self.vdp_kind = vdp_kind;
         self
     }
 
     pub fn vdp_tv_pal(&mut self) -> &mut Self {
-        self.vdp_tv_system(vdp::TvSystem::Pal);
+        self.vdp_tv_system(sms_vdp::TvSystem::Pal);
         self
     }
 
     pub fn vdp_tv_ntsc(&mut self) -> &mut Self {
-        self.vdp_tv_system(vdp::TvSystem::Ntsc);
+        self.vdp_tv_system(sms_vdp::TvSystem::Ntsc);
         self
     }
 
-    pub fn vdp_tv_system(&mut self, vdp_tv_system: vdp::TvSystem) -> &mut Self {
+    pub fn vdp_tv_system(&mut self, vdp_tv_system: sms_vdp::TvSystem) -> &mut Self {
         self.vdp_tv_system = vdp_tv_system;
         self
     }
 
     pub fn build<M>(&self, memory: M) -> Hardware<M> {
-        let mut vdp = vdp::Component::new();
-        vdp.kind = self.vdp_kind;
-        vdp.tv_system = self.vdp_tv_system;
         Hardware {
             z80: Default::default(),
             io: Default::default(),

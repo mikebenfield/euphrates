@@ -28,13 +28,13 @@ fn pattern_to_palette_indices(pattern: [u8; 4]) -> [u8; 8] {
 /// of the function `PATTERN_TO_PALETTE_INDICES`.
 ///
 /// This function is unsafe because it modifies the static variable
-/// `attalus::hardware::vdp::replaceable::PATTERN_TO_PALETTE_INDICES`. Should
+/// `attalus::hardware::sms_vdp::replaceable::PATTERN_TO_PALETTE_INDICES`. Should
 /// only be called before doing anything in `attalus::hardware::vdp`.
 /// After the fast implementation is installed, the VDP emulator will use it
 /// automatically.
 pub unsafe fn install_pattern_to_palette_indices() -> bool {
     if supports_pattern_to_palette_indices() {
-        attalus::hardware::vdp::replaceable::PATTERN_TO_PALETTE_INDICES =
+        attalus::hardware::sms_vdp::replaceable::PATTERN_TO_PALETTE_INDICES =
             pattern_to_palette_indices;
         true
     } else {

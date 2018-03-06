@@ -10,7 +10,6 @@ use std::fmt::Write;
 
 use hardware::io_16_8;
 use hardware::memory_16_8;
-use hardware::vdp;
 use hardware::z80::{self, Opcode};
 use memo::{Inbox, NothingInbox, Pausable};
 
@@ -19,7 +18,6 @@ pub enum Memo {
     Z80(z80::Memo),
     Memory(memory_16_8::sega::Memo),
     Io(io_16_8::sms2::Memo),
-    Vdp(vdp::Memo),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -42,7 +40,6 @@ pub enum Command {
 pub trait MasterSystemInbox
     : Inbox<Memo>
     + Inbox<z80::Memo>
-    + Inbox<vdp::Memo>
     + Inbox<memory_16_8::sega::Memo>
     + Inbox<io_16_8::sms2::Memo>
     + Default {
@@ -126,7 +123,6 @@ macro_rules! impl_inbox {
 impl_inbox!{z80::Memo, Z80}
 impl_inbox!{memory_16_8::sega::Memo, Memory}
 impl_inbox!{io_16_8::sms2::Memo, Io}
-impl_inbox!{vdp::Memo, Vdp}
 
 impl Inbox<Memo> for DebuggingInbox {
     #[inline]

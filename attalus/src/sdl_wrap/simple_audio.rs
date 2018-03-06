@@ -58,7 +58,6 @@ impl SimpleAudio for Audio {
         frequency: u32,
         buffer_size: u16,
     ) -> std::result::Result<(), failure::Error> {
-        println!("configure {}, {}", frequency, buffer_size);
         self.queue = self.audio_subsystem
             .open_queue(
                 None,

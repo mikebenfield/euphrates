@@ -20,7 +20,7 @@ use failure::Error;
 
 use attalus::host_multimedia::SimpleAudio;
 use attalus::hardware::memory_16_8;
-use attalus::hardware::vdp;
+use attalus::hardware::sms_vdp;
 use attalus::hardware::z80;
 use attalus::memo::NothingInbox;
 use attalus::sdl_wrap;
@@ -40,7 +40,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
 
     let mut emulator = sega_master_system::Emulator::new(
         <z80::Interpreter as Default>::default(),
-        <vdp::SimpleEmulator as Default>::default(),
+        <sms_vdp::SimpleEmulator as Default>::default(),
     );
 
     type_select! {

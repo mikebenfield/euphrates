@@ -12,7 +12,7 @@ use std;
 use failure::Error;
 use sdl2;
 
-use hardware::vdp;
+use hardware::sms_vdp;
 use hardware::z80;
 use sdl_wrap;
 use systems::sega_master_system::{Emulator, Frequency, MasterSystem, PlayerStatus, TimeStatus};
@@ -253,7 +253,7 @@ impl UserInterface {
     where
         S: MasterSystem,
         Z80Emulator: z80::Emulator<S>,
-        VdpEmulator: vdp::Emulator<sdl_wrap::simple_graphics::Window>,
+        VdpEmulator: sms_vdp::Emulator<sdl_wrap::simple_graphics::Window>,
     {
         let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
         win.set_size(768, 576);

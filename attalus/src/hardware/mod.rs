@@ -30,5 +30,5 @@ pub mod io_16_8;
 pub mod sn76489;
 pub mod irq;
 pub mod memory_16_8;
-pub mod vdp;
+pub mod sms_vdp;
 pub mod z80;

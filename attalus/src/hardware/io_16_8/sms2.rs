@@ -9,7 +9,7 @@ use std::convert::{AsMut, AsRef};
 
 use hardware::irq::Irq;
 use hardware::sn76489;
-use hardware::vdp;
+use hardware::sms_vdp;
 use memo::{Inbox, Outbox};
 use super::Impler;
 
@@ -113,7 +113,7 @@ impl<S> Impler<S> for T
 where
     S: AsMut<T>
         + AsRef<T>
-        + vdp::Machine
+        + sms_vdp::part::T
         + sn76489::hardware::T
         + Inbox<Memo>
         + ?Sized,
