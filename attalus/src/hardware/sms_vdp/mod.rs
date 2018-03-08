@@ -7,6 +7,7 @@
 
 pub mod internal;
 pub mod higher;
+pub mod machine;
 pub mod replaceable;
 pub mod simple;
 pub mod part;

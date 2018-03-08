@@ -5,8 +5,6 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-// XXX - this file should be deleted
-
 use std::convert::{AsMut, AsRef};
 use std::time::{Duration, Instant};
 use std;
