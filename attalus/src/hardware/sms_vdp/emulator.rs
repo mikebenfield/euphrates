@@ -5,13 +5,15 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use errors::{CommonKind, Error};
-use host_multimedia::{SimpleColor, SimpleGraphics};
 use std;
+
+use failure::Error;
+
+use host_multimedia::{SimpleColor, SimpleGraphics};
 use super::{higher, FRAME_INTERRUPT_FLAG};
 use utilities;
 
-type Result<T> = std::result::Result<T, Error<CommonKind>>;
+type Result<T> = std::result::Result<T, Error>;
 
 pub trait Emulator<HostGraphics> {
     fn draw_line(&mut self, vdp: &mut higher::T, graphics: &mut HostGraphics) -> Result<()>;

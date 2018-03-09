@@ -12,9 +12,7 @@ use std;
 use failure::Error;
 use sdl2;
 
-use hardware::sms_vdp;
 use hardware::z80;
-use sdl_wrap;
 use systems::sega_master_system::{Emulator, Frequency, MasterSystem, PlayerStatus, TimeStatus};
 use utilities::FrameInfo;
 
@@ -243,23 +241,16 @@ impl UserInterface {
         true
     }
 
-    pub fn run<S, Z80Emulator, VdpEmulator>(
+    pub fn run<S, Z80Emulator>(
         &mut self,
-        sdl: &sdl2::Sdl,
-        emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
+        emulator: &mut Emulator<Z80Emulator>,
         master_system: &mut S,
         frequency: Frequency,
     ) -> Result<()>
     where
         S: MasterSystem,
         Z80Emulator: z80::Emulator<S>,
-        VdpEmulator: sms_vdp::Emulator<sdl_wrap::simple_graphics::Window>,
     {
-        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-        win.set_size(768, 576);
-        win.set_texture_size(256, 192);
-        win.set_title("Attalus");
-
         let mut frame_info = FrameInfo::default();
 
         master_system.init(frequency)?;
@@ -274,7 +265,6 @@ impl UserInterface {
 
             master_system.run_frame(
                 emulator,
-                &mut win,
                 &self.player_status,
                 &time_status,
                 &mut frame_info,

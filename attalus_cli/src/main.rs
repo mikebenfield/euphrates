@@ -5,22 +5,21 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-extern crate sdl2;
-extern crate clap;
-#[macro_use]
-extern crate failure;
 #[macro_use]
 extern crate attalus;
 extern crate attalus_x64;
+extern crate clap;
+#[macro_use]
+extern crate failure;
+extern crate sdl2;
 
 use std::path::PathBuf;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
 use failure::Error;
 
-use attalus::host_multimedia::SimpleAudio;
+use attalus::host_multimedia::{SimpleAudio, SimpleGraphics};
 use attalus::hardware::memory_16_8;
-use attalus::hardware::sms_vdp;
 use attalus::hardware::z80;
 use attalus::memo::NothingInbox;
 use attalus::sdl_wrap;
@@ -38,10 +37,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
 
     let sdl = sdl2::init().unwrap();
 
-    let mut emulator = sega_master_system::Emulator::new(
-        <z80::Interpreter as Default>::default(),
-        <sms_vdp::SimpleEmulator as Default>::default(),
-    );
+    let mut emulator = sega_master_system::Emulator::new(<z80::Interpreter as Default>::default());
 
     type_select! {
         match memory_map {
@@ -55,11 +51,24 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
                     &[]
                 )?;
             let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
+
+            let graphics: Box<SimpleGraphics> = {
+                let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
+                win.set_size(768, 576);
+                win.set_texture_size(256, 192);
+                win.set_title("Attalus");
+                Box::new(win)
+            };
+
             let master_system_hardware = HardwareBuilder::new()
                 .build_from_file::<M>(filename)?;
-            let mut master_system = System::new(NothingInbox, master_system_hardware, audio);
+            let mut master_system = System::new(
+                NothingInbox,
+                master_system_hardware,
+                graphics,
+                audio
+            );
             user_interface.run(
-                &sdl,
                 &mut emulator,
                 &mut master_system,
                 sega_master_system::Frequency::Ntsc

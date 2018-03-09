@@ -9,41 +9,38 @@ use std::convert::{AsMut, AsRef};
 use std::time::{Duration, Instant};
 use std;
 
-use failure::{self, ResultExt};
+use failure::{err_msg, Error, ResultExt};
 
-use errors::{Error, SimpleKind};
 use hardware::io_16_8;
 use hardware::irq::Irq;
 use hardware::memory_16_8;
+use hardware::sms_vdp::{self, internal::T as internalT, machine::T as machineT};
 use hardware::sn76489;
-use hardware::sms_vdp::{self, internal::T};
 use hardware::z80;
-use host_multimedia::SimpleAudio;
+use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
 use memo::{Inbox, Pausable};
 use utilities::{self, FrameInfo, TimeInfo};
 
-pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait MasterSystem
     : z80::Machine
-    + sms_vdp::higher::T
+    + sms_vdp::machine::T
     + memory_16_8::T
     + AsMut<io_16_8::sms2::T>
     + sn76489::machine::T
     + SimpleAudio {
-    fn init(&mut self, frequency: Frequency) -> std::result::Result<(), failure::Error>;
+    fn init(&mut self, frequency: Frequency) -> Result<()>;
 
-    fn run_frame<HostGraphics, Z80Emulator, VdpEmulator>(
+    fn run_frame<Z80Emulator>(
         &mut self,
-        emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
-        graphics: &mut HostGraphics,
+        emulator: &mut Emulator<Z80Emulator>,
         player_status: &PlayerStatus,
         time_status: &TimeStatus,
         frame_info: &mut FrameInfo,
     ) -> Result<EmulationResult>
     where
-        Z80Emulator: z80::Emulator<Self>,
-        VdpEmulator: sms_vdp::Emulator<HostGraphics>;
+        Z80Emulator: z80::Emulator<Self>;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -59,18 +56,19 @@ pub struct System<I, M> {
     pub inbox: I,
     pub hardware: Hardware<M>,
     pub audio: Box<SimpleAudio>,
+    pub graphics: Box<SimpleGraphics>,
     pub z80_frequency: Option<u64>,
 }
 
 impl<I, M> MasterSystem for System<I, M>
 where
     Self: z80::Machine
-        + sms_vdp::higher::T
+        + sms_vdp::machine::T
         + memory_16_8::T
         + AsMut<io_16_8::sms2::T>
         + sn76489::machine::T,
 {
-    fn init(&mut self, frequency: Frequency) -> std::result::Result<(), failure::Error> {
+    fn init(&mut self, frequency: Frequency) -> Result<()> {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
 
         self.z80_frequency = match frequency {
@@ -90,17 +88,15 @@ where
         Ok(())
     }
 
-    fn run_frame<HostGraphics, Z80Emulator, VdpEmulator>(
+    fn run_frame<Z80Emulator>(
         &mut self,
-        emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
-        graphics: &mut HostGraphics,
+        emulator: &mut Emulator<Z80Emulator>,
         player_status: &PlayerStatus,
         time_status: &TimeStatus,
         frame_info: &mut FrameInfo,
     ) -> Result<EmulationResult>
     where
         Z80Emulator: z80::Emulator<Self>,
-        VdpEmulator: sms_vdp::Emulator<HostGraphics>,
     {
         // audio already configured, start time, etc
 
@@ -113,10 +109,8 @@ where
                 return Ok(EmulationResult::FrameInterrupted);
             }
 
-            emulator
-                .vdp_emulator
-                .draw_line(self, graphics)
-                .with_context(|e| SimpleKind(format!("Master System emulation: VDP error {}", e)))?;
+            self.draw_line()
+                .with_context(|e| err_msg(format!("Master System emulation: VDP error {}", e)))?;
 
             let vdp_cycles = <Self as sms_vdp::internal::T>::cycles(self);
             let z80_target_cycles = 2 * vdp_cycles / 3;
@@ -133,10 +127,7 @@ where
                     let sound_target_cycles =
                         <Self as AsRef<z80::Component>>::as_ref(self).cycles / 16;
                     sn76489::machine::T::queue(self, sound_target_cycles).with_context(|e| {
-                        SimpleKind(format!(
-                            "Master System emulation: error queueing audio {}",
-                            e
-                        ))
+                        format_err!("Master System emulation: error queueing audio {}", e)
                     })?;
                 }
 
@@ -157,33 +148,62 @@ where
 }
 
 impl<I, M> System<I, M> {
-    pub fn new(inbox: I, hardware: Hardware<M>, audio: Box<SimpleAudio>) -> Self {
+    pub fn new(
+        inbox: I,
+        hardware: Hardware<M>,
+        graphics: Box<SimpleGraphics>,
+        audio: Box<SimpleAudio>,
+    ) -> Self {
         System {
             z80_frequency: None,
             inbox,
             hardware,
+            graphics,
             audio,
         }
     }
 }
 
+impl<I, M> SimpleGraphics for System<I, M> {
+    #[inline]
+    fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
+        self.graphics.set_resolution(width, height)
+    }
+
+    #[inline]
+    fn resolution(&self) -> (u32, u32) {
+        self.graphics.resolution()
+    }
+
+    #[inline]
+    fn paint(&mut self, x: u32, y: u32, color: SimpleColor) {
+        self.graphics.paint(x, y, color)
+    }
+
+    #[inline]
+    fn get(&self, x: u32, y: u32) -> SimpleColor {
+        self.graphics.get(x, y)
+    }
+
+    #[inline]
+    fn render(&mut self) -> Result<()> {
+        self.graphics.render()
+    }
+}
+
 impl<I, M> SimpleAudio for System<I, M> {
     #[inline]
-    fn configure(
-        &mut self,
-        frequency: u32,
-        buffer_size: u16,
-    ) -> std::result::Result<(), failure::Error> {
+    fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()> {
         self.audio.configure(frequency, buffer_size)
     }
 
     #[inline]
-    fn play(&mut self) -> std::result::Result<(), failure::Error> {
+    fn play(&mut self) -> Result<()> {
         self.audio.play()
     }
 
     #[inline]
-    fn pause(&mut self) -> std::result::Result<(), failure::Error> {
+    fn pause(&mut self) -> Result<()> {
         self.audio.pause()
     }
 
@@ -193,12 +213,12 @@ impl<I, M> SimpleAudio for System<I, M> {
     }
 
     #[inline]
-    fn queue_buffer(&mut self) -> std::result::Result<(), failure::Error> {
+    fn queue_buffer(&mut self) -> Result<()> {
         self.audio.queue_buffer()
     }
 
     #[inline]
-    fn clear(&mut self) -> std::result::Result<(), failure::Error> {
+    fn clear(&mut self) -> Result<()> {
         self.audio.clear()
     }
 }
@@ -271,6 +291,10 @@ where
 
 impl<I, M> sms_vdp::internal::Impl for System<I, M> {
     type Impler = sms_vdp::simple::T;
+}
+
+impl<I, M> sms_vdp::machine::Impl for System<I, M> {
+    type Impler = sms_vdp::machine::simple::T;
 }
 
 impl<I, M> Pausable for System<I, M>
@@ -468,19 +492,12 @@ pub enum EmulationResult {
 }
 
 #[derive(Copy, Clone, Default, Debug, Eq, PartialEq, Hash)]
-pub struct Emulator<Z80Emulator, VdpEmulator> {
+pub struct Emulator<Z80Emulator> {
     z80_emulator: Z80Emulator,
-    vdp_emulator: VdpEmulator,
 }
 
-impl<Z80Emulator, VdpEmulator> Emulator<Z80Emulator, VdpEmulator> {
-    pub fn new(
-        z80_emulator: Z80Emulator,
-        vdp_emulator: VdpEmulator,
-    ) -> Emulator<Z80Emulator, VdpEmulator> {
-        Emulator {
-            z80_emulator,
-            vdp_emulator,
-        }
+impl<Z80Emulator> Emulator<Z80Emulator> {
+    pub fn new(z80_emulator: Z80Emulator) -> Emulator<Z80Emulator> {
+        Emulator { z80_emulator }
     }
 }

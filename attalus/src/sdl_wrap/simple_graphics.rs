@@ -207,7 +207,7 @@ impl SimpleGraphics for Window {
             .update(None, &self.pixels, self.texture_width * 4)
             .with_context(|e| CommonKind::Dead(format!("SDL rendering error {}", e)))?;
         self.canvas.copy(&self.texture, None, None).map_err(|s| {
-            CommonKind::Dead(format!("SDL rendering error {}", s))
+            format_err!("SDL rendering error {}", s)
         })?;
         self.canvas.present();
         Ok(())
