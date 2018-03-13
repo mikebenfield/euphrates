@@ -153,7 +153,7 @@ pub mod simple {
                 let pattern_addr = unsafe { s.sprite_pattern_address(i) };
 
                 let palette_indices: [u8; 8] =
-                    s.pattern_address_to_palette_indices(pattern_addr, sprite_line);
+                    unsafe { s.pattern_address_to_palette_indices(pattern_addr, sprite_line) };
                 let sprite_x = unsafe { s.sprite_x(i) } as usize;
                 let shift_x = if s.shift_sprites() { 8 } else { 0 };
                 for i in 0..8 {
@@ -189,8 +189,9 @@ pub mod simple {
                 let palette = ((high_byte & 8) << 1) as u16;
                 let pattern_index = utilities::to16(low_byte, high_byte & 1);
                 let tile_line_really = if vert_flip { 7 - tile_line } else { tile_line };
-                let palette_indices: [u8; 8] =
-                    s.pattern_address_to_palette_indices(pattern_index * 32, tile_line_really);
+                let palette_indices: [u8; 8] = unsafe {
+                    s.pattern_address_to_palette_indices(pattern_index * 32, tile_line_really)
+                };
                 for j in 0..8 {
                     let x = if horiz_flip {
                         tile as usize * 8 + (7 - j)

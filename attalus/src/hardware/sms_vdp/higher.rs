@@ -5,19 +5,19 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+//! A trait with methods building on those from `internal::T`.
+
 use super::internal;
 use super::replaceable;
-use super::{Kind, Resolution, SPRITE_COLLISION_FLAG, SPRITE_OVERFLOW_FLAG, TvSystem};
+use super::{Kind, Resolution, TvSystem, SPRITE_COLLISION_FLAG, SPRITE_OVERFLOW_FLAG};
 
 /// Methods providing a higher level view of the internal components of the VDP
 pub trait T: internal::T {
-    /// A number in [0, 3], determined by the upper 2 bits of
-    /// `code_address`.
+    /// A number in [0, 3], determined by the upper 2 bits of `code_address`.
     ///
     /// This code is used to determine whether writes to the control port should
     /// read from VRAM or write to a register, and whether writes to the data
     /// port should go to VRAM or CRAM. (See `write_control` and `write_data`.)
-    /// XXX
     #[inline]
     fn code(&self) -> u8 {
         ((self.code_address() & 0xC000) >> 14) as u8
@@ -173,15 +173,17 @@ pub trait T: internal::T {
     /// columns [48, 209) are actually displayed.
     #[inline]
     fn visible_columns(&self) -> u16 {
-        if self.kind() == Kind::Gg { 160 } else { 256 }
+        if self.kind() == Kind::Gg {
+            160
+        } else {
+            256
+        }
     }
 
     /// Are sprites tall (bit 1 of register 1)?
     ///
-    /// Normally, sprites are 8x8 pixels. When this is enabled, they are
-    /// 8x16 pixels.
-    ///
-    /// XXX
+    /// Normally, sprites are 8x8 pixels. When this is enabled, they are 8x16
+    /// pixels.
     #[inline]
     fn tall_sprites(&self) -> bool {
         unsafe { self.register_unchecked(1) & (1 << 1) != 0 }
@@ -232,7 +234,6 @@ pub trait T: internal::T {
 
     /// Horizontal scroll.
     ///
-    /// XXX
     /// Taken directly from register 8.
     #[inline]
     fn x_scroll(&self) -> u8 {
@@ -310,8 +311,8 @@ pub trait T: internal::T {
     /// sprite_index + 128) & sprite_attribute_table_mask()`.
     #[inline]
     unsafe fn sprite_x(&self, sprite_index: u16) -> u8 {
-        let address = (self.sprite_attribute_table_address() + 2 * sprite_index + 128) &
-            self.sprite_attribute_table_mask();
+        let address = (self.sprite_attribute_table_address() + 2 * sprite_index + 128)
+            & self.sprite_attribute_table_mask();
         self.vram_unchecked(address)
     }
 
@@ -331,10 +332,10 @@ pub trait T: internal::T {
     /// There are only 64 sprites in the sprite attribute table, and the
     /// result of this function is undefined for `sprite_index > 63`.
     ///
-    /// Guaranteed to return a value no bigger than `0x3FFC`, and thus this
-    /// address and the next three can be safely used in `vram_unchecked`. If
+    /// Guaranteed to return a value no bigger than `0x3FFE0`, and thus this
+    /// address and the next 31 can be safely used in `vram_unchecked`. If
     /// `tall_sprites()` is true, guaranteed to return a value no bigger than
-    /// `0x3FF8`, so this address and the next 7 can be safely used in
+    /// `0x3FC0`, so this address and the next 63 can be safely used in
     /// `vram_unchecked`.
     ///
     /// This address is `(pattern_index * 32 + sprite_pattern_table_address()) &
@@ -357,8 +358,8 @@ pub trait T: internal::T {
             pattern_index
         };
 
-        (self.sprite_pattern_table_address() + actual_pattern_index * 32) &
-            self.sprite_pattern_table_mask()
+        (self.sprite_pattern_table_address() + actual_pattern_index * 32)
+            & self.sprite_pattern_table_mask()
     }
 
     /// Where in VRAM is the sprite pattern table located?
@@ -420,8 +421,6 @@ pub trait T: internal::T {
     /// coordinate unaffected by `y_scroll`. This works on the GG VDP, but since
     /// screen pixel columns [209, 256) are not visible, only the 16 screen
     /// pixel columns [192, 209) are affected.
-    ///
-    /// See XXX for more about vertical scrolling.
     #[inline]
     fn vert_scroll_locked(&self) -> bool {
         unsafe { self.register_unchecked(0) & (1 << 7) != 0 }
@@ -433,8 +432,6 @@ pub trait T: internal::T {
     /// (that is, the topmost 16 logical pixels) have their screen x coordinate
     /// unaffected by `x_scoll`. Since these pixels are not visible on the GG
     /// VDP, this effectively does nothing in that case.
-    ///
-    /// See XXX for more about horizontal scrolling.
     #[inline]
     fn horiz_scroll_lock(&self) -> bool {
         unsafe { self.register_unchecked(0) & (1 << 6) != 0 }
@@ -458,33 +455,32 @@ pub trait T: internal::T {
         unsafe { self.register_unchecked(0) & (1 << 3) != 0 }
     }
 
-    /// XXX - unsafe?
+    /// Given a pattern at `address`, return the indices of the desired palette.
+    ///
+    /// `address + 4 * line + 3` should be less than 0x4000. If `address` was
+    /// correctly obtained from `sprite_pattern_address` and `line` is smaller
+    /// than 8 (or smaller than 16 if `tall_sprites` is true), this will be the
+    /// case.
     #[inline]
-    fn pattern_address_to_palette_indices(&self, address: u16, line: u16) -> [u8; 8] {
+    unsafe fn pattern_address_to_palette_indices(&self, address: u16, line: u16) -> [u8; 8] {
         debug_assert!(line < 16);
         let bitplanes_address = address + 4 * line;
         debug_assert!(bitplanes_address + 3 < 0x4000);
-        let pattern = unsafe {
-            [
-                self.vram_unchecked(bitplanes_address),
-                self.vram_unchecked(bitplanes_address + 1),
-                self.vram_unchecked(bitplanes_address + 2),
-                self.vram_unchecked(bitplanes_address + 3),
-            ]
-        };
-        unsafe { replaceable::PATTERN_TO_PALETTE_INDICES(pattern) }
+        let pattern = [
+            self.vram_unchecked(bitplanes_address),
+            self.vram_unchecked(bitplanes_address + 1),
+            self.vram_unchecked(bitplanes_address + 2),
+            self.vram_unchecked(bitplanes_address + 3),
+        ];
+        replaceable::PATTERN_TO_PALETTE_INDICES(pattern)
     }
 
-    /// Are frame interrupts enabled (bit 5 of register 1).
-    ///
-    /// See XXX for more about frame interrupts.
+    /// Are frame interrupts enabled (bit 5 of register 1)?
     fn frame_irq_enabled(&self) -> bool {
         unsafe { self.register_unchecked(1) & (1 << 5) != 0 }
     }
 
     /// Are line interrupts enabled (bit 4 of register 0)?
-    ///
-    /// If line interrupts are enabled, then XXX
     fn line_irq_enabled(&self) -> bool {
         unsafe { self.register_unchecked(0) & (1 << 4) != 0 }
     }

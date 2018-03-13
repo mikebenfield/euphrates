@@ -5,6 +5,10 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+//! Contains a bit scatter/gather operation needed by the VDP that can be
+//! replaced by a more performant implementation.
+
+/// Simple Rust implementation.
 pub fn simple_pattern_to_palette_indices(mut pattern: [u8; 4]) -> [u8; 8] {
     let mut result = [0u8; 8];
     for i in 0..8 {
@@ -41,7 +45,7 @@ pub fn simple_pattern_to_palette_indices(mut pattern: [u8; 4]) -> [u8; 8] {
 ///   0,  0,  0,  0,b32,b22,b12,b02
 ///   0,  0,  0,  0,b31,b21,b11,b01
 ///   0,  0,  0,  0,b30,b20,b10,b00
-/// above, the bits are listed in logical order as they appear in the
+/// Above, the bits are listed in logical order as they appear in the
 /// arrays. If the arrays are reinterpreted as unsigned little endian
 /// integers, the operation looks like this:
 /// b37,b36,b35,b34,b33,b32,b31,b30

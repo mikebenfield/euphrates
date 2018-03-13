@@ -5,6 +5,18 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+//! Internal components of the VDP.
+//!
+//! The types here follow the Impler pattern.
+//!
+//! `T` is the trait of primary interest here.
+//!
+//! A type wishing to provide an implementation of `T` for a type `S` may
+//! implement `Impler<S>`.
+//!
+//! A type wishing to use a type `U`'s `Impler` may implement `Impl`, specifying
+//! `type Impler = U`.
+
 use super::{TvSystem, Kind};
 
 /// Methods giving access to the registers and other internal components of the
@@ -114,7 +126,7 @@ pub trait T {
     /// The upper 2 bits contain a code used to determine the effects
     /// of writes to the control and data ports. The lower 14 bits contain
     /// an address used in accesses to the VRAM and CRAM through reads
-    /// from the control and data ports. See FIXME
+    /// from the control and data ports.
     fn code_address(&self) -> u16;
 
     /// Set the value of the code/address register.
@@ -123,8 +135,8 @@ pub trait T {
     /// For how many cycles has this VDP been running?
     ///
     /// The VDP takes one cycle to process a pixel; since there are 342 pixels
-    /// per line, this will be 364 times the number of times `run_line` has been
-    /// called. reference FIXME
+    /// per line, this will be 342 times the number of times `draw_line` from
+    /// `machine::T` has been called.
     fn cycles(&self) -> u64;
 
     /// Set the number of cycles this VDP has been running.
@@ -147,7 +159,7 @@ pub trait T {
     /// array of 32 `u16`s for a GG VDP. An SMS or SMS2 VDP returns the value of
     /// the `u8` at `index` in the least significant byte of the returned `u16`.
     ///
-    /// The result of a call with `index > 31` is indefined.
+    /// The result of a call with `index > 31` is undefined.
     unsafe fn cram_unchecked(&self, index: u16) -> u16;
 
     /// Set values in the Color RAM.
@@ -170,6 +182,7 @@ pub trait T {
     unsafe fn set_register_unchecked(&mut self, index: u16, value: u8);
 }
 
+/// A type able to provide an implementation of `T` for `S`.
 pub trait Impler<S>
 where
     S: ?Sized,
@@ -207,6 +220,7 @@ where
     unsafe fn set_register_unchecked(&mut S, index: u16, value: u8);
 }
 
+/// A type which wishes to use `Impler`'s implementation of `T`.
 pub trait Impl {
     type Impler: Impler<Self>;
 }
@@ -370,4 +384,3 @@ where
         <S::Impler as Impler<Self>>::set_register_unchecked(self, index, value)
     }
 }
-

@@ -5,6 +5,11 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+//! The Sega Master System's Video Display Processor.
+//!
+//! The traits here are organized into submodules generally following the Impler
+//! pattern.
+
 pub mod internal;
 pub mod higher;
 pub mod machine;

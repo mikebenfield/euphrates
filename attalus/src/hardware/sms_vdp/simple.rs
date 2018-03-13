@@ -5,6 +5,7 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+//! Provides a simple type implementating the the traits in `sms_vdp`.
 use std;
 
 use super::{Kind, TvSystem};
@@ -18,6 +19,7 @@ const CONTROL_FLAG: u8 = 0x1;
 /// register to indicate if a line interrupt has occurred.
 const LINE_INTERRUPT_FLAG: u8 = 0x2;
 
+/// For now this cannot do the Game Gear VDP.
 #[derive(Copy)]
 pub struct T {
     pub cycles: u64,

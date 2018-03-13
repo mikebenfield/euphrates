@@ -10,6 +10,11 @@ use super::higher;
 use super::internal;
 use super::{Kind, Resolution, TvSystem};
 
+/// Methods for the VDP that other pieces of hardware, in particular the IO
+/// system, should be able to use.
+///
+/// An implementation is provided for any type implementing `internal::T` and
+/// `higher::T`; there should be no reason to change it.
 pub trait T: internal::T + higher::T {
     /// Hardware method providing access to the VDP's `v` counter.
     ///
@@ -197,12 +202,17 @@ pub trait T: internal::T + higher::T {
 
     /// Write to the control port.
     ///
+    /// If the control flag is not set, this will set it and also set the
+    /// lower 8 bits of the `code_address` register to `x`.
     ///
+    /// Otherwise, This will set the upper 8 bits of the `code_address` register
+    /// to `x`. Then, if the upper 2 bits of `x` are 0, will read a byte from
+    /// VRAM at `self.address()`, store the result in the data buffer, and then
+    /// increment the lower 14 bits of `code_address`. If the upper 2 bits of
+    /// `x` are 2, will instead set the register indicated by the low 4 bits of
+    /// `x` to the low 8 bits of the `code_address` register. (Registers past 10
+    /// are ignored.)
     fn write_control(&mut self, x: u8) {
-        // FIXME
-        // let id = self.as_ref().id();
-        // self.receive(id, Memo::WriteControl(x));
-
         if self.control_flag() {
             self.set_control_flag(false);
             let low_byte = self.code_address() & 0xFF;
@@ -213,7 +223,7 @@ pub trait T: internal::T + higher::T {
             if code == 0 {
                 let val = unsafe { self.vram_unchecked(addr) };
                 self.set_data_buffer(val);
-                self.set_code_address(addr + 1);
+                self.set_address(addr + 1);
             } else if code == 2 {
                 let which_reg = x & 0xF;
                 if which_reg < 11 {
@@ -229,7 +239,6 @@ pub trait T: internal::T + higher::T {
         }
     }
 }
-
 
 impl<S> T for S
 where
