@@ -12,10 +12,6 @@ pub mod replaceable;
 pub mod simple;
 pub mod part;
 
-mod emulator;
-
-pub use self::emulator::*;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum TvSystem {
     Ntsc,
