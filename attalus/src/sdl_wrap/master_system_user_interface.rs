@@ -5,7 +5,6 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::AsRef;
 use std::path::{PathBuf};
 use std;
 
@@ -13,7 +12,7 @@ use failure::Error;
 use sdl2;
 
 use hardware::z80;
-use systems::sega_master_system::{Emulator, Frequency, MasterSystem, PlayerStatus, TimeStatus};
+use systems::sega_master_system::{Frequency, MasterSystem, PlayerStatus, TimeStatus};
 use utilities::FrameInfo;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -125,7 +124,7 @@ impl UserInterface {
         })
     }
 
-    fn frame_update<S>(&mut self, master_system: &S) -> bool
+    fn frame_update<S>(&mut self, _master_system: &S) -> bool
     where
         S: MasterSystem,
     {
@@ -164,10 +163,10 @@ impl UserInterface {
                         //     }
                         // }
                         (Z, _) => {
-                            if let Some(ref path) = self.save_directory {
-                                let z80: &z80::Component = master_system.as_ref();
-                                let mut path2 = path.clone();
-                                path2.push(format!("{:>0width$X}.state", z80.cycles, width = 20));
+                            if let Some(ref _path) = self.save_directory {
+                                // let z80: &z80::Component = master_system.as_ref();
+                                // let mut path2 = path.clone();
+                                // path2.push(format!("{:>0width$X}.state", z80.cycles, width = 20));
                                 // XXX
                                 unimplemented!();
                                 // if let Err(e) = save_tag(path2, master_system) {
@@ -241,22 +240,20 @@ impl UserInterface {
         true
     }
 
-    pub fn run<S, Z80Emulator>(
+    pub fn run<S>(
         &mut self,
-        emulator: &mut Emulator<Z80Emulator>,
         master_system: &mut S,
         frequency: Frequency,
     ) -> Result<()>
     where
         S: MasterSystem,
-        Z80Emulator: z80::Emulator<S>,
     {
         let mut frame_info = FrameInfo::default();
 
         master_system.init(frequency)?;
         master_system.play()?;
 
-        let time_status = TimeStatus::new(AsRef::<z80::Component>::as_ref(master_system).cycles);
+        let time_status = TimeStatus::new(z80::internal::T::cycles(master_system));
 
         loop {
             if !self.frame_update(master_system) {
@@ -264,7 +261,6 @@ impl UserInterface {
             }
 
             master_system.run_frame(
-                emulator,
                 &self.player_status,
                 &time_status,
                 &mut frame_info,

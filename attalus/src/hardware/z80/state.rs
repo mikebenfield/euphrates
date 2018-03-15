@@ -5,27 +5,15 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use super::higher;
+use super::InterruptMode;
 
-pub trait T: higher::T {
-    /// execute instructions until the total number of cycles run is `cycles`
-    fn run(&mut self, cycles: u64);
-}
-
-pub trait Impler<S: ?Sized> {
-    fn run(&mut S, cycles: u64);
-}
-
-pub trait Impl {
-    type Impler: Impler<Self>;
-}
-
-impl<S> T for S
-where
-    S: Impl + higher::T,
-{
-    #[inline]
-    fn run(&mut self, cycles: u64) {
-        <S::Impler as Impler<Self>>::run(self, cycles);
-    }
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[repr(C)]
+pub struct T {
+    pub cycles: u64,
+    pub registers: [u16; 13],
+    pub halted: bool,
+    pub iff1: bool,
+    pub iff2: bool,
+    pub interrupt_mode: InterruptMode,
 }

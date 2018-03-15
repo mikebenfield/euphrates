@@ -5,23 +5,126 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::AsRef;
-
-use memo::{Inbox, Outbox};
-use super::*;
+use super::instructions;
+use super::part::{self, Address, Changeable, Shift, Viewable};
+use super::machine;
 use utilities;
 
-fn receive<Z>(z: &mut Z, memo: Memo)
-where
-    Z: Inbox<Memo> + AsRef<Component> + ?Sized,
-{
-    let id = z.as_ref().id();
-    z.receive(id, memo);
+use super::Reg16::*;
+use super::Reg8::*;
+use super::ConditionCode::*;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Interpreter<SafetyLevel> {
+    safety: SafetyLevel,
 }
 
-fn run<Z>(z: &mut Z, cycles: u64)
+impl<SafetyLevel: Default> Interpreter<SafetyLevel> {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+mod private {
+    pub trait Seal {}
+}
+
+/// The straightforward implementation of the `Interpreter` is vulnerable to an
+/// attack in two ways:
+///
+/// 1. An unending stream of instruction prefixes like `FD` and `DD`. The `run`
+/// method will never return.
+///
+/// 2. An unending sequence of `ei` instructions. Again, the `run` method
+/// will never return.
+///
+/// The reason these are issues is due to the desire not to require the Z80 to
+/// keep track of intermediate states like `Prefix::DD` or
+/// `Iff1State::Intermediate`: we only see those states within the `run` method;
+/// as long as we're in such a state we keep looking at the next PC address.
+///
+/// The simple solution is to keep track of how many prefixes have been run in a
+/// row, or how many `ei` instructions. If it appears the entire memory is
+/// filled with them, just give up and return early with a failure. But in my
+/// testing that imposes a runtime penalty of about XXX. The user can use
+/// `Interpreter<Safe>` to use this safety check, or `Interpreter<Unsafe>`
+/// to elide the checks and avoid the runtime penalty entirely.
+pub trait Safety: private::Seal {
+    fn inc_prefixes(&mut self);
+    fn zero_prefixes(&mut self);
+    fn prefixes(&self) -> u32;
+    fn inc_eis(&mut self);
+    fn zero_eis(&mut self);
+    fn eis(&self) -> u32;
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Safe {
+    prefixes: u32,
+    eis: u32,
+}
+
+impl private::Seal for Safe {}
+
+impl Safety for Safe {
+    fn inc_prefixes(&mut self) {
+        self.prefixes += 1;
+    }
+
+    fn zero_prefixes(&mut self) {
+        self.prefixes = 0;
+    }
+
+    fn prefixes(&self) -> u32 {
+        self.prefixes
+    }
+
+    fn inc_eis(&mut self) {
+        self.eis += 1;
+    }
+
+    fn zero_eis(&mut self) {
+        self.eis = 0;
+    }
+
+    fn eis(&self) -> u32 {
+        self.eis
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Unsafe;
+
+impl private::Seal for Unsafe {}
+
+impl Safety for Unsafe {
+    #[inline(always)]
+    fn inc_prefixes(&mut self) {}
+
+    #[inline(always)]
+    fn zero_prefixes(&mut self) {}
+
+    #[inline(always)]
+    fn prefixes(&self) -> u32 {
+        0
+    }
+
+    #[inline(always)]
+    fn inc_eis(&mut self) {}
+
+    #[inline(always)]
+    fn zero_eis(&mut self) {}
+
+    #[inline(always)]
+    fn eis(&self) -> u32 {
+        0
+    }
+}
+
+fn run2<Z, SafetyLevel>(z: &mut Z, cycles: u64)
 where
-    Z: Machine + ?Sized,
+    Z: part::T + AsRef<Interpreter<SafetyLevel>> + AsMut<Interpreter<SafetyLevel>> + ?Sized,
+    SafetyLevel: Safety,
 {
     let mut opcode: u8;
     let mut n: u8;
@@ -43,7 +146,7 @@ where
 
     fn read_pc<Z>(z: &mut Z) -> u8
     where
-        Z: Machine + ?Sized,
+        Z: part::T + ?Sized,
     {
         let pc = PC.view(z);
         let opcode: u8 = Address(pc).view(z);
@@ -74,34 +177,48 @@ where
 
     macro_rules! check_return {
         () => {
-            if z.as_ref().cycles >= cycles || z.wants_pause() {
+            if z.cycles() >= cycles { // XXX || z.wants_pause() {
                 return;
             }
         }
     }
 
     macro_rules! do_instruction {
-        // halt requires support from this function
+        // the halt instruction needs extra support, because we need to return early
         (halt, $t_states: expr $(,$arguments: tt)*) => {
+            z.as_mut().safety.zero_eis();
             use std;
             apply_args!(halt, $($arguments),*);
-            z.as_mut().cycles = std::cmp::max(z.as_ref().cycles, cycles);
+            let new_cycles = std::cmp::max(z.cycles(), cycles);
+            z.set_cycles(new_cycles);
             let pc = PC.view(z);
             PC.change(z, pc.wrapping_sub(1));
             return;
         };
-        // ei also requires support, because we don't actually want to check for
-        // interrupts until after the following instruction
+        // the ei instruction also needs support, because we need to execute one
+        // more instruction and then set `iff1` to `true`.
         (ei, $t_states: expr $(,$arguments: tt)*) => {
+            z.as_mut().safety.inc_eis();
+            // arbitrary threshold - don't want to risk blowing the stack
+            // if tail calls are not eliminated
+            if z.as_ref().safety.eis() >= 0x100 {
+                // XXX - error
+                return;
+            }
             apply_args!(ei, $($arguments),*);
-            z.as_mut().cycles += $t_states;
-            let cycles = z.as_ref().cycles + 1;
-            run(z, cycles);
+            z.inc_cycles($t_states);
+            let current_cycles = z.cycles();
+            // XXX - Check for error return
+            run2(z, current_cycles + 1);
+            z.set_iff1(true);
+            check_return!();
+            prefix = Prefix::NoPrefix;
             continue;
         };
         ($mnemonic: ident, $t_states: expr $(,$arguments: tt)*) => {
+            z.as_mut().safety.zero_eis();
             apply_args!($mnemonic, $($arguments),*);
-            z.as_mut().cycles += $t_states;
+            z.inc_cycles($t_states);
             check_return!();
             prefix = Prefix::NoPrefix;
             continue;
@@ -110,48 +227,48 @@ where
 
     macro_rules! send_instruction {
         ([$code0: expr]) => {
-            let pc_op = PC.view(z).wrapping_sub(1);
-            receive(
-                z,
-                Memo::InstructionAtPc(pc_op),
-            );
-            receive(
-                z,
-                Memo::InstructionOpcode(Opcode::OneByte([$code0])),
-            );
+            // let pc_op = PC.view(z).wrapping_sub(1);
+            // receive(
+            //     z,
+            //     Memo::InstructionAtPc(pc_op),
+            // );
+            // receive(
+            //     z,
+            //     Memo::InstructionOpcode(Opcode::OneByte([$code0])),
+            // );
         };
         ([$code0: expr, $code1: expr]) => {
-            let pc_op = PC.view(z).wrapping_sub(2);
-            receive(
-                z,
-                Memo::InstructionAtPc(pc_op),
-            );
-            receive(
-                z,
-                Memo::InstructionOpcode(Opcode::TwoBytes([$code0, $code1])),
-            );
+            // let pc_op = PC.view(z).wrapping_sub(2);
+            // receive(
+            //     z,
+            //     Memo::InstructionAtPc(pc_op),
+            // );
+            // receive(
+            //     z,
+            //     Memo::InstructionOpcode(Opcode::TwoBytes([$code0, $code1])),
+            // );
         };
         ([$code0: expr, $code1: expr, $code2: expr]) => {
-            let pc_op = PC.view(z).wrapping_sub(3);
-            receive(
-                z,
-                Memo::InstructionAtPc(pc_op),
-            );
-            receive(
-                z,
-                Memo::InstructionOpcode(Opcode::ThreeBytes([$code0, $code1, $code2])),
-            );
+            // let pc_op = PC.view(z).wrapping_sub(3);
+            // receive(
+            //     z,
+            //     Memo::InstructionAtPc(pc_op),
+            // );
+            // receive(
+            //     z,
+            //     Memo::InstructionOpcode(Opcode::ThreeBytes([$code0, $code1, $code2])),
+            // );
         };
         ([$code0: expr, $code1: expr, $code2: expr, $code3: expr]) => {
-            let pc_op = PC.view(z).wrapping_sub(4);
-            receive(
-                z,
-                Memo::InstructionAtPc(pc_op),
-            );
-            receive(
-                z,
-                Memo::InstructionOpcode(Opcode::FourBytes([$code0, $code1, $code2, $code3])),
-            );
+            // let pc_op = PC.view(z).wrapping_sub(4);
+            // receive(
+            //     z,
+            //     Memo::InstructionAtPc(pc_op),
+            // );
+            // receive(
+            //     z,
+            //     Memo::InstructionOpcode(Opcode::FourBytes([$code0, $code1, $code2, $code3])),
+            // );
         };
     }
 
@@ -318,6 +435,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 let n1: u8 = read_pc(z);
                 let n2: u8 = read_pc(z);
                 nn = utilities::to16(n1, n2);
@@ -333,6 +451,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 d = read_pc(z) as i8;
                 n = read_pc(z);
                 send_instruction!([0xDD, $code, d as u8, n]);
@@ -347,6 +466,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 d = read_pc(z) as i8;
                 send_instruction!([0xDD, $code, d as u8]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
@@ -360,6 +480,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 n = read_pc(z);
                 send_instruction!([0xDD, $code, n]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
@@ -373,6 +494,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 send_instruction!([0xDD, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
@@ -390,6 +512,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 let n1: u8 = read_pc(z);
                 let n2: u8 = read_pc(z);
                 nn = utilities::to16(n1, n2);
@@ -405,6 +528,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 d = read_pc(z) as i8;
                 n = read_pc(z);
                 send_instruction!([0xFD, $code, d as u8, n]);
@@ -419,6 +543,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 d = read_pc(z) as i8;
                 send_instruction!([0xFD, $code, d as u8]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
@@ -432,6 +557,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 n = read_pc(z);
                 send_instruction!([0xFD, $code, n]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
@@ -445,6 +571,7 @@ where
             $is_undoc: expr
         ) => {
             if opcode == $code {
+                z.as_mut().safety.zero_prefixes();
                 send_instruction!([0xFD, $code]);
                 do_instruction!($mnemonic, $t_states $(,$arguments)*);
             }
@@ -453,18 +580,32 @@ where
         };
     }
 
+    if z.requesting_nmi() {
+        instructions::nonmaskable_interrupt(z);
+        z.clear_nmi();
+    } else {
+        match z.requesting_mi() {
+            Some(x) => {
+                instructions::maskable_interrupt(z, x);
+            }
+            _ => {}
+        };
+    }
+
     loop {
         match prefix {
             Prefix::NoPrefix => {
                 {
-                    let pc = z.as_ref().get_reg16(PC);
-                    receive(z, Memo::ReadingPcToExecute(pc));
+                    // XXX
+                    // let pc = z.reg16(PC);
+                    // receive(z, Memo::ReadingPcToExecute(pc));
                 }
-                if z.wants_pause() {
-                    return;
-                }
+                // XXX
+                // if z.wants_pause() {
+                //     return;
+                // }
                 opcode = read_pc(z);
-                z.as_mut().inc_r();
+                z.inc_r(1);
                 process_instructions!(instruction_noprefix, d, e, n, nn);
                 if opcode == 0xED {
                     prefix = Prefix::Ed;
@@ -485,19 +626,21 @@ where
                 panic!("Z80: can't happen: missing opcode {:0>2X}", opcode);
             }
             Prefix::Ed => {
+                z.as_mut().safety.zero_eis();
                 opcode = read_pc(z);
-                z.as_mut().inc_r();
+                z.inc_r(1);
                 process_instructions!(instruction_ed, d, e, n, nn);
-                z.as_mut().cycles += 8;
+                z.inc_cycles(6);
                 check_return!();
                 prefix = Prefix::NoPrefix;
                 continue;
             }
             Prefix::Cb => {
+                z.as_mut().safety.zero_eis();
                 opcode = read_pc(z);
-                z.as_mut().inc_r();
+                z.inc_r(1);
                 process_instructions!(instruction_cb, d, e, n, nn);
-                z.as_mut().cycles += 8;
+                z.inc_cycles(8);
                 check_return!();
                 prefix = Prefix::NoPrefix;
                 continue;
@@ -525,83 +668,99 @@ where
                 );
             }
             Prefix::Dd => {
+                z.as_mut().safety.zero_eis();
+                z.as_mut().safety.inc_prefixes();
+                if z.as_ref().safety.prefixes() >= 65536 {
+                    // XXX - error
+                    return;
+                }
                 opcode = read_pc(z);
-                z.as_mut().inc_r();
+                z.inc_r(1);
                 process_instructions!(instruction_dd, d, e, n, nn);
                 if opcode == 0xED {
+                    z.as_mut().safety.zero_prefixes();
                     prefix = Prefix::Ed;
                     continue;
                 }
                 if opcode == 0xCB {
+                    z.as_mut().safety.zero_prefixes();
                     prefix = Prefix::Ddcb;
                     continue;
                 }
                 if opcode == 0xDD {
-                    z.as_mut().cycles += 4;
+                    z.inc_cycles(4);
                     prefix = Prefix::Dd;
                     continue;
                 }
                 if opcode == 0xFD {
-                    z.as_mut().cycles += 4;
+                    z.inc_cycles(4);
                     prefix = Prefix::Fd;
                     continue;
                 }
-                z.as_mut().cycles += 4;
+                z.inc_cycles(4);
+                if z.cycles() >= cycles {
+                    // XXX - why was the line below here? doesn't seem to make
+                    // sense
+                    // z.as_mut().iff1 = z.as_ref().cycles;
+                    return;
+                }
                 prefix = Prefix::NoPrefix;
                 continue;
             }
             Prefix::Fd => {
+                z.as_mut().safety.zero_eis();
+                z.as_mut().safety.inc_prefixes();
+                if z.as_ref().safety.prefixes() >= 65536 {
+                    // XXX - error
+                    return;
+                }
                 opcode = read_pc(z);
-                z.as_mut().inc_r();
+                z.inc_r(1);
                 process_instructions!(instruction_fd, d, e, n, nn);
                 if opcode == 0xED {
+                    z.as_mut().safety.zero_prefixes();
                     prefix = Prefix::Ed;
                     continue;
                 }
                 if opcode == 0xCB {
+                    z.as_mut().safety.zero_prefixes();
                     prefix = Prefix::Fdcb;
                     continue;
                 }
                 if opcode == 0xDD {
-                    z.as_mut().cycles += 4;
+                    z.inc_cycles(4);
                     prefix = Prefix::Dd;
                     continue;
                 }
                 if opcode == 0xFD {
-                    z.as_mut().cycles += 4;
+                    z.inc_cycles(4);
                     prefix = Prefix::Fd;
                     continue;
                 }
-                z.as_mut().cycles += 4;
+                z.inc_cycles(4);
+                if z.cycles() >= cycles {
+                    // XXX - why was the line below here? doesn't seem to make
+                    // sense
+                    // z.as_mut().iff1 = z.as_ref().cycles;
+                    return;
+                }
                 prefix = Prefix::NoPrefix;
                 continue;
             }
         }
     }
-
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Interpreter;
-
-impl<Z> Emulator<Z> for Interpreter
+impl<S, SafetyLevel> machine::Impler<S> for Interpreter<SafetyLevel>
 where
-    Z: Machine + ?Sized,
+    S: part::T
+        + AsRef<Interpreter<SafetyLevel>>
+        + AsMut<Interpreter<SafetyLevel>>
+        + ?Sized,
+    SafetyLevel: Safety,
 {
     #[inline]
-    fn run(&mut self, z: &mut Z, cycles: u64) {
-        if z.requesting_nmi() {
-            instructions::nonmaskable_interrupt(z);
-            z.clear_nmi();
-        } else {
-            match z.requesting_mi() {
-                Some(x) => {
-                    instructions::maskable_interrupt(z, x);
-                }
-                _ => {}
-            };
-        }
-
-        run(z, cycles);
+    fn run(s: &mut S, cycles: u64) {
+        run2(s, cycles)
     }
 }

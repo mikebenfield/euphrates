@@ -16,7 +16,7 @@ use hardware::irq::Irq;
 use hardware::memory_16_8;
 use hardware::sms_vdp::{self, internal::T as internalT, machine::T as machineT};
 use hardware::sn76489;
-use hardware::z80;
+use hardware::z80::{self, machine::T as Z80MachineT};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
 use memo::{Inbox, Pausable};
 use utilities::{self, FrameInfo, TimeInfo};
@@ -24,7 +24,7 @@ use utilities::{self, FrameInfo, TimeInfo};
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait MasterSystem
-    : z80::Machine
+    : z80::machine::T
     + sms_vdp::machine::T
     + memory_16_8::T
     + AsMut<io_16_8::sms2::T>
@@ -32,24 +32,22 @@ pub trait MasterSystem
     + SimpleAudio {
     fn init(&mut self, frequency: Frequency) -> Result<()>;
 
-    fn run_frame<Z80Emulator>(
+    fn run_frame(
         &mut self,
-        emulator: &mut Emulator<Z80Emulator>,
         player_status: &PlayerStatus,
         time_status: &TimeStatus,
         frame_info: &mut FrameInfo,
-    ) -> Result<EmulationResult>
-    where
-        Z80Emulator: z80::Emulator<Self>;
+    ) -> Result<EmulationResult>;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Hardware<M> {
-    pub z80: z80::Component,
+    pub z80: z80::state::T,
     pub memory: M,
     pub io: io_16_8::sms2::T,
     pub vdp: sms_vdp::simple::T,
     pub sn76489: sn76489::real::T,
+    pub interpreter: z80::interpreter::Interpreter<z80::interpreter::Safe>,
 }
 
 pub struct System<I, M> {
@@ -62,11 +60,12 @@ pub struct System<I, M> {
 
 impl<I, M> MasterSystem for System<I, M>
 where
-    Self: z80::Machine
+    Self: z80::machine::T
         + sms_vdp::machine::T
         + memory_16_8::T
         + AsMut<io_16_8::sms2::T>
-        + sn76489::machine::T,
+        + sn76489::machine::T
+        + Pausable,
 {
     fn init(&mut self, frequency: Frequency) -> Result<()> {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
@@ -88,16 +87,12 @@ where
         Ok(())
     }
 
-    fn run_frame<Z80Emulator>(
+    fn run_frame(
         &mut self,
-        emulator: &mut Emulator<Z80Emulator>,
         player_status: &PlayerStatus,
         time_status: &TimeStatus,
         frame_info: &mut FrameInfo,
-    ) -> Result<EmulationResult>
-    where
-        Z80Emulator: z80::Emulator<Self>,
-    {
+    ) -> Result<EmulationResult> {
         // audio already configured, start time, etc
 
         <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_joypad_a(player_status.joypad_a);
@@ -115,8 +110,8 @@ where
             let vdp_cycles = <Self as sms_vdp::internal::T>::cycles(self);
             let z80_target_cycles = 2 * vdp_cycles / 3;
 
-            while <Self as AsRef<z80::Component>>::as_ref(self).cycles < z80_target_cycles {
-                emulator.z80_emulator.run(self, z80_target_cycles);
+            while z80::internal::T::cycles(self) < z80_target_cycles {
+                self.run(z80_target_cycles);
                 if self.wants_pause() {
                     return Ok(EmulationResult::FrameInterrupted);
                 }
@@ -124,15 +119,14 @@ where
 
             if self.v() == 0 {
                 if let Some(_) = self.z80_frequency {
-                    let sound_target_cycles =
-                        <Self as AsRef<z80::Component>>::as_ref(self).cycles / 16;
+                    let sound_target_cycles = z80::internal::T::cycles(self) / 16;
                     sn76489::machine::T::queue(self, sound_target_cycles).with_context(|e| {
                         format_err!("Master System emulation: error queueing audio {}", e)
                     })?;
                 }
 
                 let time_info = TimeInfo {
-                    total_cycles: <Self as AsRef<z80::Component>>::as_ref(self).cycles,
+                    total_cycles: z80::internal::T::cycles(self),
                     cycles_start: time_status.cycles_start,
                     frequency: self.z80_frequency,
                     start_time: time_status.start_time,
@@ -244,7 +238,8 @@ macro_rules! impl_as_ref {
 impl_as_ref!{io_16_8::sms2::T, io}
 impl_as_ref!{sn76489::real::T, sn76489}
 impl_as_ref!{sms_vdp::simple::T, vdp}
-impl_as_ref!{z80::Component, z80}
+impl_as_ref!{z80::interpreter::Interpreter<z80::interpreter::Safe>, interpreter}
+impl_as_ref!{z80::state::T, z80}
 
 macro_rules! impl_as_ref_memory_map {
     ($typename: ty) => {
@@ -322,7 +317,16 @@ where
     }
 }
 
-impl<I, M> Irq for System<I, M> {
+impl<I, M> z80::internal::Impl for System<I, M> {
+    type Impler = z80::state::T;
+}
+
+impl<I, M> z80::higher::T for System<I, M> {}
+
+impl<I, M> z80::part::T for System<I, M>
+where
+    Self: memory_16_8::T + io_16_8::T
+{
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {
         <Self as sms_vdp::part::T>::requesting_mi(&self)
@@ -340,7 +344,12 @@ impl<I, M> Irq for System<I, M> {
     }
 }
 
-impl<I, M> z80::MachineImpl for System<I, M> {}
+impl<I, M> z80::machine::Impl for System<I, M>
+where
+    Self: z80::part::T,
+{
+    type Impler = z80::interpreter::Interpreter<z80::interpreter::Safe>;
+}
 
 impl<I, M> sn76489::hardware::Impl for System<I, M> {
     type Impler = sn76489::real::T;
@@ -422,6 +431,7 @@ impl HardwareBuilder {
             io: Default::default(),
             vdp: Default::default(),
             sn76489: Default::default(),
+            interpreter: Default::default(),
             memory,
         }
     }
@@ -443,7 +453,7 @@ impl HardwareBuilder {
     }
 }
 
-//// The Emulator and types it needs
+//// Types needed for emulation
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct PlayerStatus {
@@ -489,15 +499,4 @@ impl TimeStatus {
 pub enum EmulationResult {
     FrameCompleted,
     FrameInterrupted,
-}
-
-#[derive(Copy, Clone, Default, Debug, Eq, PartialEq, Hash)]
-pub struct Emulator<Z80Emulator> {
-    z80_emulator: Z80Emulator,
-}
-
-impl<Z80Emulator> Emulator<Z80Emulator> {
-    pub fn new(z80_emulator: Z80Emulator) -> Emulator<Z80Emulator> {
-        Emulator { z80_emulator }
-    }
 }

@@ -20,7 +20,6 @@ use failure::Error;
 
 use attalus::host_multimedia::{SimpleAudio, SimpleGraphics};
 use attalus::hardware::memory_16_8;
-use attalus::hardware::z80;
 use attalus::memo::NothingInbox;
 use attalus::sdl_wrap;
 use attalus::systems::sega_master_system::{self, HardwareBuilder, System};
@@ -36,8 +35,6 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
     };
 
     let sdl = sdl2::init().unwrap();
-
-    let mut emulator = sega_master_system::Emulator::new(<z80::Interpreter as Default>::default());
 
     type_select! {
         match memory_map {
@@ -69,7 +66,6 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
                 audio
             );
             user_interface.run(
-                &mut emulator,
                 &mut master_system,
                 sega_master_system::Frequency::Ntsc
             )?;
