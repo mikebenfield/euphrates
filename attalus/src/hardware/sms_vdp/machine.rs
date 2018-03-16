@@ -5,16 +5,70 @@
 // version. You should have received a copy of the GNU General Public License
 // along with Attalus. If not, see <http://www.gnu.org/licenses/>.
 
+/// The actual video functionality of the VDP.
+
 use std;
 
 use failure::Error;
 
-use super::higher;
+use super::{higher, FRAME_INTERRUPT_FLAG};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The video functionality of the VDP.
 pub trait T: higher::T {
+    /// Called to draw each line and update the VDP's registers appropriately.
     fn draw_line(&mut self) -> Result<()>;
+}
+
+/// Update the VDP after drawing a line.
+///
+/// This function is provided for convenience so that implementations of
+/// `T::draw_line` can call it. It does the following:
+/// * set the frame interrupt flag, if we're on the line past the last active one
+/// * if we're in the active region or one line past it, decrement the line
+///   counter, and we wrap to 0xFF, set the line interrupt flag and reload the
+///   line counter from register 10.
+/// * if we're more than one line past the active region, reload the line counter
+///   from register 10.
+/// * increment the v counter, wrapping at `total_lines()`.
+/// * increase the number of cycles by 342
+pub fn finish_line<S: higher::T>(vdp: &mut S) -> Result<()> {
+    let v = vdp.v();
+
+    if v == vdp.active_lines() {
+        // YYY - it's not completely clear to me whether this is the right
+        // line on which to trigger a frame interrupt.
+        let flags = vdp.status_flags();
+        vdp.set_status_flags(flags | FRAME_INTERRUPT_FLAG);
+    }
+
+    if v <= vdp.active_lines() {
+        let line_counter = vdp.line_counter();
+        vdp.set_line_counter(line_counter.wrapping_sub(1));
+        if vdp.line_counter() == 0xFF {
+            let reg_line_counter = vdp.reg_line_counter();
+            vdp.set_line_counter(reg_line_counter);
+            vdp.set_line_interrupt_pending(true);
+        }
+    } else {
+        let reg_line_counter = vdp.reg_line_counter();
+        vdp.set_line_counter(reg_line_counter);
+    }
+
+    let new_v = (v + 1) % vdp.total_lines();
+
+    vdp.set_v(new_v);
+
+    if new_v == 0 {
+        let reg9 = unsafe { vdp.register_unchecked(9) };
+        vdp.set_y_scroll(reg9);
+    }
+
+    let cycles = vdp.cycles();
+    vdp.set_cycles(cycles + 342);
+
+    return Ok(());
 }
 
 pub trait Impler<S>
@@ -38,7 +92,7 @@ where
     }
 }
 
-/// The easiest way to implement `machine::T` is to use the types in this
+/// The easiest way to implement `machine::T` is to use the type in this
 /// module.
 pub mod simple {
     use host_multimedia::{SimpleColor, SimpleGraphics};
@@ -49,6 +103,10 @@ pub mod simple {
 
     use super::higher;
 
+    /// Easiest way to implement `machine::T`.
+    ///
+    /// If your type implements `SimpleGraphics` and `higher::T`, you can just
+    /// implement `machine::Impl` with `type Impler = machine::simple::T`.
     pub struct T;
 
     #[inline]
@@ -59,56 +117,27 @@ pub mod simple {
         SimpleColor { red, green, blue }
     }
 
+    fn real_finish_line<S: SimpleGraphics + higher::T>(vdp: &mut S) -> Result<()> {
+        super::finish_line(vdp).and_then(|()| {
+            if vdp.v() == 0 {
+                vdp.render()
+            } else {
+                Ok(())
+            }
+        })
+    }
+
     impl<S> super::Impler<S> for T
     where
         S: SimpleGraphics + higher::T,
     {
         fn draw_line(s: &mut S) -> Result<()> {
-            use super::super::{Resolution::*, FRAME_INTERRUPT_FLAG};
-
-            fn finish<S: SimpleGraphics + higher::T>(s: &mut S) -> Result<()> {
-                let v = s.v();
-
-                if v == s.active_lines() {
-                    // YYY - it's not completely clear to me whether this is the right
-                    // line on which to trigger a frame interrupt.
-                    let flags = s.status_flags();
-                    s.set_status_flags(flags | FRAME_INTERRUPT_FLAG);
-                }
-
-                if v <= s.active_lines() {
-                    let line_counter = s.line_counter();
-                    s.set_line_counter(line_counter.wrapping_sub(1));
-                    if s.line_counter() == 0xFF {
-                        let reg_line_counter = s.reg_line_counter();
-                        s.set_line_counter(reg_line_counter);
-                        s.set_line_interrupt_pending(true);
-                    }
-                } else {
-                    let reg_line_counter = s.reg_line_counter();
-                    s.set_line_counter(reg_line_counter);
-                }
-
-                let new_v = (v + 1) % s.total_lines();
-
-                s.set_v(new_v);
-
-                if new_v == 0 {
-                    s.render()?;
-                    let reg9 = unsafe { s.register_unchecked(9) };
-                    s.set_y_scroll(reg9);
-                }
-
-                let cycles = s.cycles();
-                s.set_cycles(cycles + 342);
-
-                return Ok(());
-            }
+            use super::super::Resolution::*;
 
             let v = s.v();
 
             if v >= s.active_lines() {
-                return finish(s);
+                return real_finish_line(s);
             }
 
             let active_lines = s.active_lines() as u32;
@@ -126,7 +155,7 @@ pub mod simple {
                         },
                     );
                 }
-                return finish(s);
+                return real_finish_line(s);
             }
 
             let mut line_buffer = [0x80u8; 256];
@@ -220,7 +249,7 @@ pub mod simple {
                 s.paint(x, v as u32, color);
             }
 
-            return finish(s);
+            return real_finish_line(s);
         }
     }
 }
