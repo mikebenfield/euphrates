@@ -1,10 +1,3 @@
-// Copyright 2017 Michael Benfield <mike.benfield@gmail.com>
-// This file is part of Attalus. You may distribute and/or modify Attalus under
-// the terms of the GNU General Public License as published by the Free Sofware
-// Foundation, either kind 3 of the license or (at your option) any later
-// kind. You should have received a copy of the GNU General Public License
-// along with Attalus. If not, see <http://www.gnu.org/licenses/>.
-
 extern crate attalus;
 
 extern "win64" {
