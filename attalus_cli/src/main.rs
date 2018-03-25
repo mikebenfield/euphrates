@@ -12,10 +12,11 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use failure::Error;
 
 use attalus::host_multimedia::{SimpleAudio, SimpleGraphics};
-use attalus::hardware::memory_16_8;
+use attalus::hardware::{memory_16_8, z80};
 use attalus::memo::NothingInbox;
+use attalus::save;
 use attalus::sdl_wrap;
-use attalus::systems::sega_master_system::{self, HardwareBuilder, System};
+use attalus::systems::sega_master_system::{self, Hardware, HardwareBuilder, Recording, System};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -73,164 +74,105 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
     Ok(())
 }
 
-fn run_playback(_matches: &ArgMatches) -> Result<()> {
-    unimplemented!();
+fn run_playback(matches: &ArgMatches) -> Result<()> {
+    let load_filename = matches.value_of("loadfile").unwrap();
 
-    // XXX - fix
+    let sdl = sdl2::init().unwrap();
 
-    // let load_filename = matches.value_of("loadfile").unwrap();
+    let recording: Recording<Hardware<memory_16_8::sega::T>> =
+        save::deserialize_at(&load_filename)?;
+    let mut user_interface =
+        sdl_wrap::master_system_user_interface::PlaybackInterface::new(&recording.player_statuses);
 
-    // let sdl = sdl2::init().unwrap();
+    let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
+    let graphics: Box<SimpleGraphics> = {
+        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
+        win.set_size(768, 576);
+        win.set_texture_size(256, 192);
+        win.set_title("Attalus");
+        Box::new(win)
+    };
 
-    // let mut emulator = sega_master_system::Emulator::new(
-    //     sega_master_system::Frequency::Unlimited,
-    //     <z80::Interpreter as Default>::default(),
-    //     <vdp::SimpleEmulator as Default>::default(),
-    // );
+    let mut master_system = System::new(NothingInbox, recording.hardware, graphics, audio);
 
-    // let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
-    // let mut first_line = String::new();
-    // load_file.read_line(&mut first_line)?;
-    // first_line.pop(); // remove the newline
-    // load_file.seek(SeekFrom::Start(0))?;
+    let start_cycles = <z80::internal::T>::cycles(&master_system);
 
-    // let mut start_cycles = 0u64;
-    // let mut end_cycles = 0u64;
-    // let mut time = Duration::from_millis(0);
+    let time = user_interface.run(&mut master_system, sega_master_system::Frequency::Unlimited)?;
 
-    // type_for! {
-    //     T in [
-    //               Recording<System<NothingInbox, memory_16_8::sega::T>>,
-    //               Recording<System<NothingInbox, memory_16_8::codemasters::T>>,
-    //          ];
-    //     let str_ref: &str = first_line.as_ref();
-    //     if <T as Tag>::TAG == str_ref {
-    //         let mut recording = <T as Tag>::read(&mut load_file)?;
-    //         let mut user_interface =
-    //             sdl_wrap::master_system_user_interface::PlaybackInterface::new(
-    //                 &recording.player_statuses
-    //             );
+    let end_cycles = <z80::internal::T>::cycles(&master_system);
 
-    //         start_cycles = <AsRef<z80::Component>>::as_ref(
-    //             &recording.master_system
-    //         ).cycles;
+    let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
+    println!("Total cycles: {}", end_cycles - start_cycles);
+    println!("Time: {} secs", sec_time);
+    println!(
+        "Frequency: {} Hz",
+        (end_cycles - start_cycles) as f64 / sec_time
+    );
 
-    //         time = user_interface.run(
-    //             &sdl,
-    //             &mut emulator,
-    //             &mut recording.master_system,
-    //         )?;
-
-    //         end_cycles = <AsRef<z80::Component>>::as_ref(
-    //             &recording.master_system
-    //         ).cycles;
-
-    //         break;
-    //     }
-    // };
-
-    // let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
-    // println!("Total cycles: {}", end_cycles - start_cycles);
-    // println!("Time: {} secs", sec_time);
-    // println!(
-    //     "Frequency: {} Hz",
-    //     (end_cycles - start_cycles) as f64 / sec_time
-    // );
-
-    // Ok(())
+    Ok(())
 }
 
-fn run_load(_matches: &ArgMatches) -> Result<()> {
-    unimplemented!();
+fn run_load(matches: &ArgMatches) -> Result<()> {
+    let load_filename = matches.value_of("loadfile").unwrap();
+    let save_directory = match matches.value_of("savedirectory") {
+        None => None,
+        Some(s) => Some(PathBuf::from(s)),
+    };
 
-    // let load_filename = matches.value_of("loadfile").unwrap();
-    // let save_directory = match matches.value_of("savedirectory") {
-    //     None => None,
-    //     Some(s) => Some(PathBuf::from(s)),
-    // };
+    let sdl = sdl2::init().unwrap();
 
-    // let sdl = sdl2::init().unwrap();
+    let hardware = save::deserialize_at(&load_filename)?;
 
-    // let mut emulator = sega_master_system::Emulator::new(
-    //     sega_master_system::Frequency::Ntsc,
-    //     <z80::Interpreter as Default>::default(),
-    //     <vdp::SimpleEmulator as Default>::default(),
-    // );
+    let mut user_interface =
+        sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
 
-    // let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
+    let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
+    let graphics: Box<SimpleGraphics> = {
+        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
+        win.set_size(768, 576);
+        win.set_texture_size(256, 192);
+        win.set_title("Attalus");
+        Box::new(win)
+    };
 
-    // let mut first_line = String::new();
-    // load_file.read_line(&mut first_line)?;
-    // first_line.pop(); // remove the newline
-    // load_file.seek(SeekFrom::Start(0))?;
+    let mut master_system = System::new(NothingInbox, hardware, graphics, audio);
+    user_interface.run(&mut master_system, sega_master_system::Frequency::Ntsc)?;
 
-    // type_for! {
-    //     T in [
-    //               System<NothingInbox, memory_16_8::sega::T>,
-    //               System<NothingInbox, memory_16_8::codemasters::T>,
-    //          ];
-    //     let str_ref: &str = first_line.as_ref();
-    //     if <T as Tag>::TAG == str_ref {
-    //         let mut user_interface =
-    //             sdl_wrap::master_system_user_interface::UserInterface::new(
-    //                 &sdl,
-    //                 save_directory,
-    //                 &[]
-    //             )?;
-
-    //         let mut master_system = <T as Tag>::read(&mut load_file)?;
-    //         user_interface.run(&sdl, &mut emulator, &mut master_system)?;
-    //         break;
-    //     }
-    // }
-
-    // Ok(())
+    Ok(())
 }
 
-fn run_record(_matches: &ArgMatches) -> Result<()> {
-    unimplemented!();
+fn run_record(matches: &ArgMatches) -> Result<()> {
+    let load_filename = matches.value_of("loadfile").unwrap();
+    // let memory_map = matches.value_of("memorymap").unwrap();
+    let save_directory = match matches.value_of("savedirectory") {
+        None => None,
+        Some(s) => Some(PathBuf::from(s)),
+    };
 
-    // let load_filename = matches.value_of("loadfile").unwrap();
-    // let save_directory = match matches.value_of("savedirectory") {
-    //     None => None,
-    //     Some(s) => Some(PathBuf::from(s)),
-    // };
+    let sdl = sdl2::init().unwrap();
 
-    // let sdl = sdl2::init().unwrap();
+    let recording: Recording<Hardware<memory_16_8::sega::T>> =
+        save::deserialize_at(&load_filename)?;
+    let mut user_interface = sdl_wrap::master_system_user_interface::UserInterface::new(
+        &sdl,
+        save_directory,
+        &recording.player_statuses,
+    )?;
 
-    // let mut emulator = sega_master_system::Emulator::new(
-    //     sega_master_system::Frequency::Ntsc,
-    //     <z80::Interpreter as Default>::default(),
-    //     <vdp::SimpleEmulator as Default>::default(),
-    // );
+    let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
+    let graphics: Box<SimpleGraphics> = {
+        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
+        win.set_size(768, 576);
+        win.set_texture_size(256, 192);
+        win.set_title("Attalus");
+        Box::new(win)
+    };
 
-    // let mut load_file = BufReader::with_capacity(1024, File::open(load_filename)?);
+    let mut master_system = System::new(NothingInbox, recording.hardware, graphics, audio);
 
-    // let mut first_line = String::new();
-    // load_file.read_line(&mut first_line)?;
-    // first_line.pop(); // remove the newline
-    // load_file.seek(SeekFrom::Start(0))?;
+    user_interface.run(&mut master_system, sega_master_system::Frequency::Ntsc)?;
 
-    // type_for! {
-    //     T in [
-    //               Recording<System<NothingInbox, memory_16_8::sega::T>>,
-    //               Recording<System<NothingInbox, memory_16_8::codemasters::T>>,
-    //          ];
-    //     let str_ref: &str = first_line.as_ref();
-    //     if <T as Tag>::TAG == str_ref {
-    //         let mut recording = <T as Tag>::read(&mut load_file)?;
-    //         let mut user_interface =
-    //             sdl_wrap::master_system_user_interface::UserInterface::new(
-    //                 &sdl,
-    //                 save_directory,
-    //                 &recording.player_statuses
-    //             )?;
-    //         user_interface.run(&sdl, &mut emulator, &mut recording.master_system)?;
-    //         break;
-    //     }
-    // }
-
-    // Ok(())
+    Ok(())
 }
 
 fn run() -> Result<()> {

@@ -1,5 +1,3 @@
-// XXX - fix
-
 use super::*;
 
 /// Contains a saved recording of gameplay, together with the initial state of

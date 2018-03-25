@@ -1,13 +1,8 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::marker::PhantomData;
-use std::path::Path;
-use std::fs::File;
 use std::thread;
 use std::time::{Duration, Instant};
-
-use bincode;
-use failure::{err_msg, Error};
 
 pub fn to16(lo: u8, hi: u8) -> u16 {
     ((hi as u16) << 8) | (lo as u16)
@@ -25,7 +20,7 @@ pub fn clear_bit(dest: &mut u8, bit: u8) {
     *dest &= !(1 << bit);
 }
 
-use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeError, SeqAccess, Visitor};
+use serde::de::{Deserialize, Deserializer, Error as DeError, SeqAccess, Visitor};
 use serde::ser::{Serialize, Serializer};
 
 //// Serializing and deserializing arrays
@@ -388,28 +383,6 @@ macro_rules! serde_struct_arrays {
         }
     }
 }}
-
-//// Serializing and Deserializing
-
-pub fn write<S, P>(s: &S, path: &P) -> Result<(), Error>
-where
-    S: Serialize,
-    P: AsRef<Path> + fmt::Debug,
-{
-    let file = File::create(path)?;
-    bincode::serialize_into(&file, s)
-        .map_err(|e| format_err!("Error while serializing to {:?}: {}", path, e))
-}
-
-pub fn read<T, P>(path: &P) -> Result<T, Error>
-where
-    T: DeserializeOwned,
-    P: AsRef<Path> + fmt::Debug,
-{
-    let file = File::open(path)?;
-    bincode::deserialize_from(file)
-        .map_err(|e| err_msg(format!("Error while deserializing to {:?}: {}", path, e)))
-}
 
 //// Things that are immediately helpful for an emulator
 

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::thread;
+use std::time::{Duration, Instant};
 use std;
 
 use failure::Error;
@@ -8,9 +9,10 @@ use sdl2;
 use hardware::z80;
 use hardware::memory_16_8;
 use host_multimedia::SimpleAudio;
-use systems::sega_master_system::{Frequency, MasterSystem, PlaybackStatus, PlayerStatus, System,
-                                  TimeStatus};
-use utilities::{self, FrameInfo};
+use systems::sega_master_system::{Frequency, Hardware, MasterSystem, PlaybackStatus, PlayerStatus,
+                                  RecordingStatus, System, TimeStatus};
+use utilities::FrameInfo;
+use save;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -44,65 +46,52 @@ pub struct PlaybackInterface {
     playback_status: PlaybackStatus,
 }
 
-// impl PlaybackInterface {
-//     pub fn new(player_statuses: &[PlayerStatus]) -> Self {
-//         PlaybackInterface { playback_status: PlaybackStatus::from_recorded(player_statuses) }
-//     }
+impl PlaybackInterface {
+    pub fn new(player_statuses: &[PlayerStatus]) -> Self {
+        PlaybackInterface {
+            playback_status: PlaybackStatus::from_recorded(player_statuses),
+        }
+    }
 
-//     pub fn run<Z80Emulator, VdpEmulator, S>(
-//         &mut self,
-//         sdl: &sdl2::Sdl,
-//         emulator: &mut Emulator<Z80Emulator, VdpEmulator>,
-//         master_system: &mut S,
-//     ) -> Result<Duration>
-//     where
-//         S: MasterSystem,
-//         Z80Emulator: z80::Emulator<S>,
-//         VdpEmulator: vdp::Emulator<sdl_wrap::simple_graphics::Window>,
-//     {
-//         let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-//         win.set_size(768, 576);
-//         win.set_texture_size(256, 192);
-//         win.set_title("Attalus");
+    pub fn run<I>(
+        &mut self,
+        master_system: &mut System<I, memory_16_8::sega::T>,
+        frequency: Frequency,
+    ) -> Result<Duration>
+    where
+        System<I, memory_16_8::sega::T>: MasterSystem,
+    {
+        master_system.init(frequency)?;
+        let mut frame_info = FrameInfo::default();
 
-//         let mut frame_info = FrameInfo::default();
+        master_system.play()?;
 
-//         master_system.init()?;
-//         master_system.play()?;
+        let time_status = TimeStatus::new(z80::internal::T::cycles(master_system));
 
-//         let time_status =
-//             TimeStatus::new(<S as AsRef<z80::Component>>::as_ref(master_system).cycles);
+        let start = Instant::now();
 
-//         let start = Instant::now();
+        while let Some(player_status) = self.playback_status.pop() {
+            master_system.run_frame(&player_status, &time_status, &mut frame_info)?;
+        }
 
-//         while let Some(player_status) = self.playback_status.pop() {
-//             emulator.run_frame(
-//                 master_system,
-//                 &mut win,
-//                 &player_status,
-//                 &time_status,
-//                 &mut frame_info,
-//             )?;
-//         }
-
-//         let end = Instant::now();
-//         Ok(end.duration_since(start))
-//     }
-// }
+        let end = Instant::now();
+        Ok(end.duration_since(start))
+    }
+}
 
 pub struct UserInterface {
     save_directory: Option<PathBuf>,
     player_status: PlayerStatus,
     event_pump: sdl2::EventPump,
-    // recording_status: RecordingStatus<S>,
-    // playback_status: PlaybackStatus,
+    recording_status: RecordingStatus<Hardware<memory_16_8::sega::T>>,
+    playback_status: PlaybackStatus,
 }
 
 impl UserInterface {
     pub fn new(
         sdl: &sdl2::Sdl,
         save_directory: Option<PathBuf>,
-        _player_statuses: &[PlayerStatus],
+        player_statuses: &[PlayerStatus],
     ) -> Result<Self> {
         sdl.event()
             .map_err(|s| format_err!("Error initializing the SDL event subsystem {}", s))?;
@@ -114,8 +103,8 @@ impl UserInterface {
             save_directory: save_directory,
             player_status: Default::default(),
             event_pump: event_pump,
-            // recording_status: Default::default(),
-            // playback_status: PlaybackStatus::from_recorded(player_statuses),
+            recording_status: Default::default(),
+            playback_status: PlaybackStatus::from_recorded(player_statuses),
         })
     }
 
@@ -141,22 +130,25 @@ impl UserInterface {
                             || keymod.contains(sdl2::keyboard::RSHIFTMOD),
                     ) {
                         (P, _) => self.player_status.pause = true,
-                        // XXX - fix
-                        // (R, false) => self.recording_status.begin_recording(master_system),
-                        // (R, true) => {
-                        //     if let (&Some(ref path), Some(recording)) =
-                        //         (&self.save_directory, self.recording_status.recording())
-                        //     {
-                        //         let z80: &z80::Component = master_system.as_ref();
-                        //         let mut path2 = path.clone();
-                        //         path2.push(format!("{:>0width$X}.record", z80.cycles, width = 20));
-                        //         // XXX
-                        //         unimplemented!();
-                        //         // if let Err(e) = save_tag(path2, recording) {
-                        //         //     eprintln!("Error saving file: {:?}", e);
-                        //         // }
-                        //     }
-                        // }
+                        (R, false) => self.recording_status
+                            .begin_recording(&master_system.hardware),
+                        (R, true) => {
+                            if let (&Some(ref path), Some(recording)) =
+                                (&self.save_directory, self.recording_status.recording())
+                            {
+                                let cycles = z80::internal::T::cycles(master_system);
+                                let mut path2 = path.clone();
+                                let recording2 = recording.clone();
+
+                                thread::spawn(move || {
+                                    path2.push(format!("{:>0width$X}.record", cycles, width = 20));
+
+                                    if let Err(e) = save::serialize_at(&path2, &recording2) {
+                                        eprintln!("Error saving recording: {:?}", e);
+                                    }
+                                });
+                            }
+                        }
                         (Z, _) => {
                             if let Some(ref path) = self.save_directory {
                                 // save in a new thread to avoid UI delay
@@ -166,7 +158,7 @@ impl UserInterface {
                                 thread::spawn(move || {
                                     path2.push(format!("{:>0width$X}.state", cycles, width = 20));
 
-                                    if let Err(e) = utilities::write(&hardware, &path2) {
+                                    if let Err(e) = save::serialize_at(&path2, &hardware) {
                                         eprintln!("Error saving state: {:?}", e);
                                     }
                                 });
@@ -226,14 +218,13 @@ impl UserInterface {
         }
         self.player_status.joypad_b = joypad_b.bits;
 
-        // if self.player_status != Default::default() {
-        //     XXX - fix
-        //     self.playback_status.end_playback();
-        // } else if let Some(player_status) = self.playback_status.pop() {
-        //     self.player_status = player_status;
-        // }
+        if self.player_status != Default::default() {
+            self.playback_status.end_playback();
+        } else if let Some(player_status) = self.playback_status.pop() {
+            self.player_status = player_status;
+        }
 
-        // self.recording_status.update(self.player_status);
+        self.recording_status.update(self.player_status);
 
         true
     }
@@ -248,7 +239,6 @@ impl UserInterface {
     {
         let mut frame_info = FrameInfo::default();
 
-        MasterSystem::init(master_system, frequency)?;
         master_system.init(frequency)?;
         master_system.play()?;
 

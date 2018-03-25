@@ -3,15 +3,13 @@
 //! CodeMasters mapper. Both swap out pages of cartridge ROM according to memory
 //! writes in special locations.
 //!
-//! At the moment only the Sega Memory mapper is implemented (see
-//! [`SegaMemoryMapperHardware`]), and it consists of Rust code manually
-//! translating logical memory addresses to physical memory. Future plans include
+//! At the moment only the Sega Memory mapper works, and it consists of Rust
+//! code manually translating logical memory addresses to physical memory.
+//! Future plans include
 //!
-//! 1. Implement the CodeMasters memory mapper;
+//! 1. Fix the CodeMasters memory mapper;
 //! 2. Implement both memory mappers using native system calls to take advantage
 //! of the native virtual memory system.
-//!
-//! [`SegaMemoryMapperHardware`]: implementation/struct.SegaMemoryMapperHardware.html
 
 pub mod sega;
 pub mod codemasters;
