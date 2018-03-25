@@ -4,33 +4,24 @@ Attalus is an emulator for the Sega Master System. The goal is to produce an
 emulator that is suitable for interactive use as well as for training AI
 video game players.
 
-Currently, I've written a software interpreter for the Z80 that works well,
-having been tested against Udo Monk's `z80sim` emulator.
+## Status
 
-## Plan of attack
+The emulator works and plays lots of games. But some other games don't work,
+including those from CodeMasters, and this is still a prerelease project.
 
-Here, roughly in chronological order, are the major tasks I'm planning on,
-some of which I've already accomplished:
+If you just want to play a game; see the `attalus_cli` subcrate.
 
-- [x] emulate the Z80 processor using a software interpreter;
+## Future
 
-- [x] emulate the standard Sega memory mapper with an index array;
+In roughly chronological order, here are the tasks I'm planning on:
 
-- [x] emulate the Video Display Processor, drawing graphics with SDL;
-
-- [x] emulate controller input so that it's possible to play some games;
-
-- [x] emulate the SN76489 sound chip;
-
-- [ ] implement VDP modes and other features necessary to also play Game Gear
-games;
-
-- [x] emulate the CodeMasters memory mapper with an index array;
+- [ ] get the emulate CodeMasters memory mapper working;
 
 - [ ] emulate the YM2413 FM sound unit;
 
-- [ ] implement some sort of graphical interface for settings and maybe ROM
-selection;
+- [ ] get a game controller working;
+
+- [ ] get Game Gear emulation working;
 
 - [ ] implement alternate emulations of the memory mappers using OS virtual
 memory via `mmap`;
