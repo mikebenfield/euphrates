@@ -1,12 +1,15 @@
-use std::path::{PathBuf};
+use std::path::PathBuf;
+use std::thread;
 use std;
 
 use failure::Error;
 use sdl2;
 
 use hardware::z80;
-use systems::sega_master_system::{Frequency, MasterSystem, PlayerStatus, TimeStatus};
-use utilities::FrameInfo;
+use hardware::memory_16_8;
+use host_multimedia::SimpleAudio;
+use systems::sega_master_system::{Frequency, MasterSystem, PlayerStatus, System, TimeStatus};
+use utilities::{self, FrameInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -100,13 +103,11 @@ impl UserInterface {
         save_directory: Option<PathBuf>,
         _player_statuses: &[PlayerStatus],
     ) -> Result<Self> {
-        sdl.event().map_err(|s| {
-            format_err!("Error initializing the SDL event subsystem {}", s)
-        })?;
+        sdl.event()
+            .map_err(|s| format_err!("Error initializing the SDL event subsystem {}", s))?;
 
-        let event_pump = sdl.event_pump().map_err(|s| {
-            format_err!("Error obtaining the SDL event pump {}", s)
-        })?;
+        let event_pump = sdl.event_pump()
+            .map_err(|s| format_err!("Error obtaining the SDL event pump {}", s))?;
 
         Ok(UserInterface {
             save_directory: save_directory,
@@ -117,9 +118,9 @@ impl UserInterface {
         })
     }
 
-    fn frame_update<S>(&mut self, _master_system: &S) -> bool
+    fn frame_update<I>(&mut self, master_system: &System<I, memory_16_8::sega::T>) -> bool
     where
-        S: MasterSystem,
+        System<I, memory_16_8::sega::T>: MasterSystem,
     {
         self.player_status.pause = false;
 
@@ -135,8 +136,8 @@ impl UserInterface {
                 } => {
                     match (
                         k,
-                        keymod.contains(sdl2::keyboard::LSHIFTMOD) ||
-                            keymod.contains(sdl2::keyboard::RSHIFTMOD),
+                        keymod.contains(sdl2::keyboard::LSHIFTMOD)
+                            || keymod.contains(sdl2::keyboard::RSHIFTMOD),
                     ) {
                         (P, _) => self.player_status.pause = true,
                         // XXX - fix
@@ -156,15 +157,22 @@ impl UserInterface {
                         //     }
                         // }
                         (Z, _) => {
-                            if let Some(ref _path) = self.save_directory {
-                                // let z80: &z80::Component = master_system.as_ref();
-                                // let mut path2 = path.clone();
-                                // path2.push(format!("{:>0width$X}.state", z80.cycles, width = 20));
-                                // XXX
-                                unimplemented!();
-                                // if let Err(e) = save_tag(path2, master_system) {
-                                //     eprintln!("Error saving file: {:?}", e);
-                                // }
+                            if let Some(ref path) = self.save_directory {
+                                // save in a new thread to avoid UI delay
+                                let cycles = z80::internal::T::cycles(master_system);
+                                let hardware = master_system.hardware.clone();
+                                let mut path2 = path.clone();
+                                thread::spawn(move || {
+                                    path2.push(format!(
+                                        "{:>0width$X}.state",
+                                        cycles,
+                                        width = 20
+                                    ));
+
+                                    if let Err(e) = utilities::write(&hardware, &path2) {
+                                        eprintln!("Error saving state: {:?}", e);
+                                    }
+                                });
                             }
                         }
                         _ => {}
@@ -233,16 +241,17 @@ impl UserInterface {
         true
     }
 
-    pub fn run<S>(
+    pub fn run<I>(
         &mut self,
-        master_system: &mut S,
+        master_system: &mut System<I, memory_16_8::sega::T>,
         frequency: Frequency,
     ) -> Result<()>
     where
-        S: MasterSystem,
+        System<I, memory_16_8::sega::T>: MasterSystem,
     {
         let mut frame_info = FrameInfo::default();
 
+        MasterSystem::init(master_system, frequency)?;
         master_system.init(frequency)?;
         master_system.play()?;
 
@@ -253,11 +262,7 @@ impl UserInterface {
                 return Ok(());
             }
 
-            master_system.run_frame(
-                &self.player_status,
-                &time_status,
-                &mut frame_info,
-            )?;
+            master_system.run_frame(&self.player_status, &time_status, &mut frame_info)?;
         }
     }
 }

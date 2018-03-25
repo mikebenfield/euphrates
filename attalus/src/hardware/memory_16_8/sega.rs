@@ -3,7 +3,7 @@ use std;
 
 use failure::ResultExt;
 
-use memo::{Inbox, Outbox, Pausable};
+use memo::{Inbox, Pausable};
 use errors::{Error, SimpleKind};
 use super::Impler;
 
@@ -76,14 +76,12 @@ pub struct T {
     // bitmask, with each bit indicating whether the corresponding slot in the pages field
     // can be written to
     slot_writable: u8,
-
-    id: u32,
 }
 
 serde_struct_arrays!{
     impl_serde,
     T,
-    [ram_pages_allocated, reg_fffc, reg_fffd, reg_fffe, reg_ffff, pages, slot_writable, id,],
+    [ram_pages_allocated, reg_fffc, reg_fffd, reg_fffe, reg_ffff, pages, slot_writable,],
     [],
     [memory: [u8; 0x2000],]
 }
@@ -119,20 +117,6 @@ pub enum Memo {
     },
 }
 
-impl Outbox for T {
-    type Memo = Memo;
-
-    #[inline]
-    fn id(&self) -> u32 {
-        self.id
-    }
-
-    #[inline]
-    fn set_id(&mut self, id: u32) {
-        self.id = id;
-    }
-}
-
 fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
     S: Inbox<Memo> + AsMut<T> + AsRef<T>,
@@ -140,9 +124,10 @@ where
     macro_rules! receive {
         ($x: expr) => {
             {
-                let id = s.as_ref().id();
-                let __y = $x;
-                s.receive(id, __y);
+                // XXX - need to fix this when I bring back memos
+                // let id = s.as_ref().id();
+                // let __y = $x;
+                // s.receive(id, __y);
             }
         }
     }
@@ -327,6 +312,7 @@ impl T {
     // that the `Inbox` does nothing, hopefully the compiler sees that this
     // code has no side effects and optimizes it away.
     #[inline(always)]
+    #[allow(dead_code)]
     fn logical_address_to_memory_location(&self, logical_address: u16) -> MemoryLocation {
         if logical_address < 0x400 {
             return MemoryLocation::RomAddress(logical_address as u32);
@@ -433,7 +419,6 @@ impl MasterSystemMemory for T {
             pages: [1, 2, 3, 4, 5, 6, 0, 0],
             // only the system RAM is writable
             slot_writable: 0b11000000,
-            id: 0,
         })
     }
 }
@@ -488,16 +473,16 @@ where
             let impl_page = s.as_ref().pages[impl_slot as usize];
             s.as_ref().memory[impl_page as usize][physical_address as usize]
         };
-        let id = s.as_ref().id();
-        let location = s.as_ref().logical_address_to_memory_location(logical_address);
-        s.receive(
-            id,
-            Memo::Read {
-                logical_address: logical_address,
-                value: result,
-                location,
-            },
-        );
+        // XXX - need to fix this when I bring back memos
+        // let location = s.as_ref().logical_address_to_memory_location(logical_address);
+        // s.receive(
+        //     id,
+        //     Memo::Read {
+        //         logical_address: logical_address,
+        //         value: result,
+        //         location,
+        //     },
+        // );
         result
 
     }
@@ -506,28 +491,29 @@ where
         write_check_register(s, logical_address, value);
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        let id = s.as_ref().id();
-        let location = s.as_ref().logical_address_to_memory_location(logical_address);
+        // let location = s.as_ref().logical_address_to_memory_location(logical_address);
         if s.as_ref().slot_writable & (1 << impl_slot) != 0 {
-            s.receive(
-                id,
-                Memo::Write {
-                    logical_address: logical_address,
-                    value: value,
-                    location,
-                },
-            );
+            // XXX - memos
+            // s.receive(
+            //     id,
+            //     Memo::Write {
+            //         logical_address: logical_address,
+            //         value: value,
+            //         location,
+            //     },
+            // );
             let impl_page = s.as_ref().pages[impl_slot as usize];
             s.as_mut().memory[impl_page as usize][physical_address as usize] = value;
         } else {
-            s.receive(
-                id,
-                Memo::InvalidWrite {
-                    logical_address: logical_address,
-                    value: value,
-                    location,
-                },
-            );
+            // XXX - memos
+            // s.receive(
+            //     id,
+            //     Memo::InvalidWrite {
+            //         logical_address: logical_address,
+            //         value: value,
+            //         location,
+            //     },
+            // );
         }
     }
 }

@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 use std::fmt;
-use std::io::{BufRead, Write};
 use std::marker::PhantomData;
+use std::path::Path;
+use std::fs::File;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use bincode;
-use failure::Error;
+use failure::{err_msg, Error};
 
 pub fn to16(lo: u8, hi: u8) -> u16 {
     ((hi as u16) << 8) | (lo as u16)
@@ -24,7 +25,7 @@ pub fn clear_bit(dest: &mut u8, bit: u8) {
     *dest &= !(1 << bit);
 }
 
-use serde::de::{Deserialize, Deserializer, DeserializeOwned, Error as DeError, SeqAccess, Visitor};
+use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeError, SeqAccess, Visitor};
 use serde::ser::{Serialize, Serializer};
 
 //// Serializing and deserializing arrays
@@ -390,30 +391,24 @@ macro_rules! serde_struct_arrays {
 
 //// Serializing and Deserializing
 
-pub trait Tag: Serialize + DeserializeOwned {
-    const TAG: &'static str;
+pub fn write<S, P>(s: &S, path: &P) -> Result<(), Error>
+where
+    S: Serialize,
+    P: AsRef<Path> + fmt::Debug,
+{
+    let file = File::create(path)?;
+    bincode::serialize_into(&file, s)
+        .map_err(|e| format_err!("Error while serializing to {:?}: {}", path, e))
+}
 
-    fn write<W: Write>(&self, w: &mut W) -> Result<(), Error> {
-        w.write_all(Self::TAG.as_bytes())?;
-        w.write_all(b"\n")?;
-        bincode::serialize_into(w, &self, bincode::Infinite)?;
-        Ok(())
-    }
-
-    fn read<R: BufRead>(r: &mut R) -> Result<Self, Error> {
-        let mut s = String::with_capacity(Self::TAG.len());
-        r.read_line(&mut s)?;
-        s.pop();
-        if <String as AsRef<str>>::as_ref(&s) == Self::TAG {
-            Ok(bincode::deserialize_from(r, bincode::Infinite)?)
-        } else {
-            Err(format_err!(
-                "Incorrect tag {} for this type (should be {})",
-                s,
-                Self::TAG
-            ))
-        }
-    }
+pub fn read<T, P>(path: &P) -> Result<T, Error>
+where
+    T: DeserializeOwned,
+    P: AsRef<Path> + fmt::Debug,
+{
+    let file = File::open(path)?;
+    bincode::deserialize_from(file)
+        .map_err(|e| err_msg(format!("Error while deserializing to {:?}: {}", path, e)))
 }
 
 //// Things that are immediately helpful for an emulator

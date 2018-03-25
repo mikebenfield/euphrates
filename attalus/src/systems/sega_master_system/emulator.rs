@@ -38,7 +38,7 @@ pub struct Hardware<M> {
     pub z80: z80::state::T,
     pub memory: M,
     pub io: io_16_8::sms2::T,
-    pub vdp: sms_vdp::simple::T,
+    pub vdp: sms_vdp::state::T,
     pub sn76489: sn76489::real::T,
     pub interpreter: z80::interpreter::Interpreter<z80::interpreter::Safe>,
 }
@@ -230,7 +230,7 @@ macro_rules! impl_as_ref {
 
 impl_as_ref!{io_16_8::sms2::T, io}
 impl_as_ref!{sn76489::real::T, sn76489}
-impl_as_ref!{sms_vdp::simple::T, vdp}
+impl_as_ref!{sms_vdp::state::T, vdp}
 impl_as_ref!{z80::interpreter::Interpreter<z80::interpreter::Safe>, interpreter}
 impl_as_ref!{z80::state::T, z80}
 
@@ -318,7 +318,7 @@ impl<I, M> z80::higher::T for System<I, M> {}
 
 impl<I, M> z80::part::T for System<I, M>
 where
-    Self: memory_16_8::T + io_16_8::T
+    Self: memory_16_8::T + io_16_8::T,
 {
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {

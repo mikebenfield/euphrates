@@ -24,4 +24,4 @@ pub mod hardware;
 pub mod systems;
 pub mod host_multimedia;
 
-pub use utilities::{FrameInfo, Tag, TimeInfo, time_govern};
+pub use utilities::{FrameInfo, TimeInfo, time_govern};

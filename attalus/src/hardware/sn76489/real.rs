@@ -13,11 +13,11 @@ pub struct T {
     // etc.
     // We only need 10 bits for tone and 4 for volume, but if we just make
     // everything a u16 we can avoid some branches
-    registers: [u16; 8],
-    latch: u8,
-    linear_feedback: u16,
-    counters: [u16; 4],
-    polarity: [i8; 4],
+    pub registers: [u16; 8],
+    pub latch: u8,
+    pub linear_feedback: u16,
+    pub counters: [u16; 4],
+    pub polarity: [i8; 4],
     pub cycles: u64,
 }
 

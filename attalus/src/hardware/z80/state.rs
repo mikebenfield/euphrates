@@ -10,3 +10,23 @@ pub struct T {
     pub iff2: bool,
     pub interrupt_mode: InterruptMode,
 }
+
+pub trait Savable {
+    fn save(&self) -> T;
+}
+
+pub trait Restorable {
+    fn restore(&T) -> Self;
+}
+
+impl Savable for T {
+    fn save(&self) -> T {
+        *self
+    }
+}
+
+impl Restorable for T {
+    fn restore(t: &T) -> Self {
+        *t
+    }
+}

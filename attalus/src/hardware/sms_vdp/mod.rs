@@ -8,6 +8,7 @@ pub mod higher;
 pub mod machine;
 pub mod replaceable;
 pub mod simple;
+pub mod state;
 pub mod part;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
