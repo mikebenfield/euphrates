@@ -8,7 +8,8 @@ use sdl2;
 use hardware::z80;
 use hardware::memory_16_8;
 use host_multimedia::SimpleAudio;
-use systems::sega_master_system::{Frequency, MasterSystem, PlayerStatus, System, TimeStatus};
+use systems::sega_master_system::{Frequency, MasterSystem, PlaybackStatus, PlayerStatus, System,
+                                  TimeStatus};
 use utilities::{self, FrameInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -39,9 +40,9 @@ bitflags! {
     }
 }
 
-// pub struct PlaybackInterface {
-//     playback_status: PlaybackStatus,
-// }
+pub struct PlaybackInterface {
+    playback_status: PlaybackStatus,
+}
 
 // impl PlaybackInterface {
 //     pub fn new(player_statuses: &[PlayerStatus]) -> Self {
@@ -163,11 +164,7 @@ impl UserInterface {
                                 let hardware = master_system.hardware.clone();
                                 let mut path2 = path.clone();
                                 thread::spawn(move || {
-                                    path2.push(format!(
-                                        "{:>0width$X}.state",
-                                        cycles,
-                                        width = 20
-                                    ));
+                                    path2.push(format!("{:>0width$X}.state", cycles, width = 20));
 
                                     if let Err(e) = utilities::write(&hardware, &path2) {
                                         eprintln!("Error saving state: {:?}", e);
