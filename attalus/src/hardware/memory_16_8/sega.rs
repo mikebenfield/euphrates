@@ -9,8 +9,7 @@ use super::Impler;
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize,
-         Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 enum RamPagesAllocated {
     Zero,
     One,
@@ -86,14 +85,14 @@ serde_struct_arrays!{
     [memory: [u8; 0x2000],]
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum MemoryLocation {
     RomAddress(u32),
     SystemRamAddress(u16),
     CartridgeRamAddress(u16),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Memo {
     AllocateFirstPage,
     AllocateSecondPage,
@@ -102,9 +101,18 @@ pub enum Memo {
         value: u8,
         location: MemoryLocation,
     },
-    RegisterWrite { register: u16, value: u8 },
-    MapRom { slot: u8, page: u8 },
-    MapCartridgeRam { page: u8, slot: u8 },
+    RegisterWrite {
+        register: u16,
+        value: u8,
+    },
+    MapRom {
+        slot: u8,
+        page: u8,
+    },
+    MapCartridgeRam {
+        page: u8,
+        slot: u8,
+    },
     Read {
         logical_address: u16,
         value: u8,
@@ -366,19 +374,16 @@ pub trait MasterSystemMemory: Sized {
         use std::fs::File;
         use std::io::Read;
 
-        let mut f = File::open(filename).with_context(|e| {
-            SimpleKind(format!("Unable to open ROM file {}: {}", filename, e))
-        })?;
+        let mut f = File::open(filename)
+            .with_context(|e| SimpleKind(format!("Unable to open ROM file {}: {}", filename, e)))?;
 
         let mut buf: Vec<u8> = Vec::new();
 
-        f.read_to_end(&mut buf).with_context(|e| {
-            SimpleKind(format!("Error reading ROM file {}: {}", filename, e))
-        })?;
+        f.read_to_end(&mut buf)
+            .with_context(|e| SimpleKind(format!("Error reading ROM file {}: {}", filename, e)))?;
 
-        Ok(Self::new(&buf).with_context(|e| {
-            SimpleKind(format!("Error from ROM file {}: {}", filename, e))
-        })?)
+        Ok(Self::new(&buf)
+            .with_context(|e| SimpleKind(format!("Error from ROM file {}: {}", filename, e)))?)
     }
 }
 
@@ -387,7 +392,7 @@ impl MasterSystemMemory for T {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
             Err(SimpleKind(format!(
                 "Invalid Sega Master System ROM size 0x{:0>6X} \
-                         (should be a positive multiple of 0x2000)",
+                 (should be a positive multiple of 0x2000)",
                 rom.len()
             )))?
         }
@@ -484,14 +489,13 @@ where
         //     },
         // );
         result
-
     }
 
     fn write(s: &mut S, logical_address: u16, value: u8) {
         write_check_register(s, logical_address, value);
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-        // let location = s.as_ref().logical_address_to_memory_location(logical_address);
+                                                          // let location = s.as_ref().logical_address_to_memory_location(logical_address);
         if s.as_ref().slot_writable & (1 << impl_slot) != 0 {
             // XXX - memos
             // s.receive(

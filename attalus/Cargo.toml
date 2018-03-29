@@ -8,7 +8,6 @@ name = "attalus"
 path = "src/lib.rs"
 
 [dependencies]
-attalus_derive = { path = "../attalus_derive" }
 bitflags = "1.0"
 sdl2 = "0.31"
 serde = "^1.0.34"

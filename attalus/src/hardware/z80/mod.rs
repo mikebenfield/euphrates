@@ -41,7 +41,7 @@ impl Default for InterruptMode {
 }
 
 #[cfg(target_endian = "little")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg8 {
     C,
     B,
@@ -72,7 +72,7 @@ pub enum Reg8 {
 }
 
 #[cfg(target_endian = "big")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg8 {
     B,
     C,
@@ -136,7 +136,7 @@ impl fmt::Display for Reg8 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg16 {
     BC,
     DE,
@@ -172,7 +172,7 @@ impl fmt::Display for Reg16 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ConditionCode {
     /// Zero flag not set

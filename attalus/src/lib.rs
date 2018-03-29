@@ -9,9 +9,6 @@ extern crate serde_derive;
 extern crate bincode;
 
 #[macro_use]
-extern crate attalus_derive;
-
-#[macro_use]
 mod macros;
 pub mod errors;
 mod runtime_pattern;

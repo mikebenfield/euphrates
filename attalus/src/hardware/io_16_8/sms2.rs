@@ -6,7 +6,7 @@ use hardware::sms_vdp;
 use memo::{Inbox, Outbox};
 use super::Impler;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Memo {
     Input { address: u16, value: u8 },
 

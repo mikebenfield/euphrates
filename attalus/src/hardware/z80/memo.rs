@@ -68,7 +68,7 @@ impl fmt::Display for Parameter {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Matchable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Mnemonic {
     Ld,
     Push,
