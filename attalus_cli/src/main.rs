@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate attalus;
+#[cfg(target_arch = "x86_64")]
 extern crate attalus_x64;
 extern crate clap;
 #[macro_use]

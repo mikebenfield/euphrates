@@ -9,7 +9,7 @@ video game players.
 The emulator works and plays lots of games. But some other games don't work,
 including those from CodeMasters, and this is still a prerelease project.
 
-If you just want to play a game; see the `attalus_cli` subcrate.
+If you just want to play a game, see the `attalus_cli` subcrate.
 
 ## Future
 
@@ -35,7 +35,7 @@ GameBoy Color are likely targets, since they use a CPU related to the Z80).
 
 ## License
 
-Attalus is Copyright 2017, Michael Benfield.
+Attalus is Copyright 2018, Michael Benfield.
 
 You may copy, modify, and/or distribute Attalus under either the terms of the
 Apache License, version 2 (see the file LICENSE-APACHE or
