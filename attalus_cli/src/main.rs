@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate attalus;
-#[cfg(target_arch = "x86_64")]
+#[cfg(attalus_x64)]
 extern crate attalus_x64;
 extern crate clap;
 #[macro_use]
@@ -263,7 +263,7 @@ fn run() -> Result<()> {
 }
 
 fn main() {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(attalus_x64)]
     unsafe {
         attalus_x64::install_pattern_to_palette_indices();
     }

@@ -27,10 +27,14 @@ To play back recorded gameplay:
 cargo run --release -- playback --loadfile PATH_TO_SAVED_GAMEPLAY
 ```
 
-Note that some games don't work yet. Note also that there is some assembly code,
-in the attalus subcrate `attalus_x64`. As currently set up, on the x86-64
-platform there's a hard requirement on clang to act as the assembler. Someday
-I'll make the dependency on attalus_x64 optional.
+Note that some games don't work yet.
+
+If you're on x86-64 and you have `clang` (used for its an assembler), you can
+get about 10% better performance by specifying the extra option
+```
+--features attalus_x64
+```
+with `cargo`.
 
 ## License
 
