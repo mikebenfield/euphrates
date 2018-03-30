@@ -11,9 +11,9 @@ If you want to be able to save states and playback:
 cargo run --release -- rom --rom PATH_TO_ROM --savedirectory PATH_TO_DIRECTORY
 ```
 
-Gameplay: Keys WASD are directions. F and G are up/down. Space is reset. Z saves
-your state, in whatever directory you've specified. R begins recording gameplay,
-and Shift+R stops recording and saves the recorded gameplay.
+Gameplay: Keys WASD are directions. F and G are controller buttons.. Space is
+reset. Z saves your state, in whatever directory you've specified. R begins
+recording gameplay, and Shift+R stops recording and saves the recorded gameplay.
 
 To restore state:
 
