@@ -3,7 +3,7 @@ use std::convert::{AsMut, AsRef};
 use hardware::irq::Irq;
 use hardware::sn76489;
 use hardware::sms_vdp;
-use memo::{Inbox, Outbox};
+use memo::Inbox;
 use super::Impler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -25,20 +25,6 @@ pub struct T {
     joypad_a: u8,
     joypad_b: u8,
     pause: bool,
-}
-
-impl Outbox for T {
-    type Memo = Memo;
-
-    #[inline]
-    fn id(&self) -> u32 {
-        self.id
-    }
-
-    #[inline]
-    fn set_id(&mut self, id: u32) {
-        self.id = id;
-    }
 }
 
 impl Default for T {
@@ -104,12 +90,7 @@ impl Irq for T {
 
 impl<S> Impler<S> for T
 where
-    S: AsMut<T>
-        + AsRef<T>
-        + sms_vdp::part::T
-        + sn76489::hardware::T
-        + Inbox<Memo>
-        + ?Sized,
+    S: AsMut<T> + AsRef<T> + sms_vdp::part::T + sn76489::hardware::T + Inbox + ?Sized,
 {
     fn input(s: &mut S, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
@@ -154,22 +135,19 @@ where
             }
         };
 
-        let id = AsRef::<T>::as_ref(s).id();
-        s.receive(
-            id,
-            Memo::Input {
-                address: address,
-                value: value,
-            },
-        );
+        // s.receive(
+        //     id,
+        //     Memo::Input {
+        //         address: address,
+        //         value: value,
+        //     },
+        // );
 
         value
     }
 
     fn output(s: &mut S, address: u16, value: u8) {
-        let id = AsRef::<T>::as_ref(s).id();
-
-        s.receive(id, Memo::Output { address, value });
+        // s.receive(id, Memo::Output { address, value });
 
         let masked = (address & 0b11000001) as u8;
 
@@ -190,7 +168,7 @@ where
             }
             _ => {
                 // writes to the remaining addresses have no effect
-                s.receive(id, Memo::BogusOutput { address, value });
+                // s.receive(id, Memo::BogusOutput { address, value });
             }
         }
     }

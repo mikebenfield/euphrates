@@ -1,10 +1,10 @@
 use std;
 
 use errors::{Error, SimpleKind};
-use memo::{Inbox, Outbox};
+use memo::Inbox;
 
 use super::Impler;
-use super::sega::{Memo, MasterSystemMemory};
+use super::sega::MasterSystemMemory;
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
@@ -42,47 +42,35 @@ serde_struct_arrays!{
     [memory: [u8; 0x2000],]
 }
 
-impl Outbox for T {
-    type Memo = Memo;
-
-    #[inline]
-    fn id(&self) -> u32 {
-        self.id
-    }
-
-    #[inline]
-    fn set_id(&mut self, id: u32) {
-        self.id = id;
-    }
-}
-
 fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
+    S: Inbox + AsMut<T> + AsRef<T>,
 {
-    macro_rules! receive {
-        ($x: expr) => {
-            {
-                let id = s.as_ref().id();
-                let __y = $x;
-                s.receive(id, __y);
-            }
-        }
-    }
+    // XXX
+    // macro_rules! receive {
+    //     ($x: expr) => {
+    //         {
+    //             let id = s.as_ref().id();
+    //             let __y = $x;
+    //             s.receive(id, __y);
+    //         }
+    //     }
+    // }
 
     fn swap_slot<S>(s: &mut S, sega_slot: usize, value: u8)
     where
-        S: Inbox<Memo> + AsMut<T> + AsRef<T>,
+        S: Inbox + AsMut<T> + AsRef<T>,
     {
-        macro_rules! receive {
-            ($x: expr) => {
-                {
-                    let id = s.as_ref().id();
-                    let __y = $x;
-                    s.receive(id, __y);
-                }
-            }
-        }
+        // XXX
+        // macro_rules! receive {
+        //     ($x: expr) => {
+        //         {
+        //             let id = s.as_ref().id();
+        //             let __y = $x;
+        //             s.receive(id, __y);
+        //         }
+        //     }
+        // }
 
         debug_assert!(sega_slot <= 3);
         let (upper_bit_set, lower_bits) = ((0x80 & value) != 0, 0x7F & value);
@@ -99,22 +87,22 @@ where
         } else {
             lower_bits % rom_sega_page_count
         };
-        receive!(Memo::MapRom {
-            slot: sega_slot as u8,
-            page: sega_page,
-        });
+        // receive!(Memo::MapRom {
+        //     slot: sega_slot as u8,
+        //     page: sega_page,
+        // });
         let impl_page = (sega_page as u16) * 2 + 1;
         if upper_bit_set {
             // RAM goes into the second implementation-slot
             if !s.as_ref().cartridge_ram_allocated {
-                receive!(Memo::AllocateFirstPage);
+                // receive!(Memo::AllocateFirstPage);
                 s.as_mut().memory.push([0; 0x2000]);
                 s.as_mut().memory.shrink_to_fit();
             }
-            receive!(Memo::MapCartridgeRam {
-                slot: sega_slot as u8,
-                page: sega_page,
-            });
+            // receive!(Memo::MapCartridgeRam {
+            //     slot: sega_slot as u8,
+            //     page: sega_page,
+            // });
             let cmm = s.as_mut();
             cmm.pages[impl_slot1] = (cmm.memory.len() - 1) as u16;
             cmm.slot_writable |= 1 << impl_slot1;
@@ -129,26 +117,26 @@ where
 
     let slot = match logical_address {
         0 => {
-            receive!(Memo::RegisterWrite {
-                register: 0,
-                value: value,
-            });
+            // receive!(Memo::RegisterWrite {
+            //     register: 0,
+            //     value: value,
+            // });
             s.as_mut().reg_0000 = value;
             0
         }
         0x4000 => {
-            receive!(Memo::RegisterWrite {
-                register: 0x4000,
-                value: value,
-            });
+            // receive!(Memo::RegisterWrite {
+            //     register: 0x4000,
+            //     value: value,
+            // });
             s.as_mut().reg_4000 = value;
             1
         }
         0x8000 => {
-            receive!(Memo::RegisterWrite {
-                register: 0x8000,
-                value: value,
-            });
+            // receive!(Memo::RegisterWrite {
+            //     register: 0x8000,
+            //     value: value,
+            // });
             s.as_mut().reg_8000 = value;
             2
         }
@@ -160,7 +148,7 @@ where
 
 impl<S> Impler<S> for T
 where
-    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
+    S: Inbox + AsMut<T> + AsRef<T>,
 {
     fn read(s: &mut S, logical_address: u16) -> u8 {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
@@ -190,7 +178,7 @@ impl MasterSystemMemory for T {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
             Err(SimpleKind(format!(
                 "Invalid Sega Master System ROM size 0x{:0>6X} \
-                         (should be a positive multiple of 0x2000)",
+                 (should be a positive multiple of 0x2000)",
                 rom.len()
             )))?
         }

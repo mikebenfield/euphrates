@@ -11,7 +11,7 @@ use hardware::sms_vdp::{self, internal::T as internalT, machine::T as machineT};
 use hardware::sn76489;
 use hardware::z80::{self, machine::T as Z80MachineT};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
-use memo::{Inbox, Pausable};
+use memo::{Inbox, Memo, Pausable};
 use utilities::{self, FrameInfo, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -258,21 +258,21 @@ impl_as_ref_memory_map!{memory_16_8::codemasters::T}
 
 impl<I> memory_16_8::Impl for System<I, memory_16_8::sega::T>
 where
-    I: Inbox<memory_16_8::sega::Memo>,
+    I: Inbox,
 {
     type Impler = memory_16_8::sega::T;
 }
 
 impl<I> memory_16_8::Impl for System<I, memory_16_8::codemasters::T>
 where
-    I: Inbox<memory_16_8::sega::Memo>,
+    I: Inbox,
 {
     type Impler = memory_16_8::codemasters::T;
 }
 
 impl<I, M> io_16_8::Impl for System<I, M>
 where
-    I: Inbox<io_16_8::sms2::Memo>,
+    I: Inbox,
 {
     type Impler = io_16_8::sms2::T;
 }
@@ -300,13 +300,13 @@ where
     }
 }
 
-impl<I, M, T> Inbox<T> for System<I, M>
+impl<I, M> Inbox for System<I, M>
 where
-    I: Inbox<T>,
+    I: Inbox,
 {
     #[inline]
-    fn receive(&mut self, id: u32, memo: T) {
-        self.inbox.receive(id, memo)
+    fn receive(&mut self, memo: Memo) {
+        self.inbox.receive(memo)
     }
 }
 

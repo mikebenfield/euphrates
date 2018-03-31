@@ -3,7 +3,7 @@ use std;
 
 use failure::ResultExt;
 
-use memo::{Inbox, Pausable};
+use memo::{Inbox, Memo, Pausable};
 use errors::{Error, SimpleKind};
 use super::Impler;
 
@@ -93,7 +93,7 @@ pub enum MemoryLocation {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum Memo {
+pub enum MemoX {
     AllocateFirstPage,
     AllocateSecondPage,
     InvalidWrite {
@@ -127,7 +127,7 @@ pub enum Memo {
 
 fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
+    S: Inbox + AsMut<T> + AsRef<T>,
 {
     macro_rules! receive {
         ($x: expr) => {
@@ -452,14 +452,14 @@ impl Pausable for T {
     fn clear_pause(&mut self) {}
 }
 
-impl<M> Inbox<M> for T {
+impl Inbox for T {
     #[inline]
-    fn receive(&mut self, _id: u32, _memo: M) {}
+    fn receive(&mut self, _memo: Memo) {}
 }
 
 impl<S> Impler<S> for T
 where
-    S: Inbox<Memo> + AsMut<T> + AsRef<T>,
+    S: Inbox + AsMut<T> + AsRef<T>,
 {
     fn read(s: &mut S, logical_address: u16) -> u8 {
         let result = if logical_address < 0x400 {
