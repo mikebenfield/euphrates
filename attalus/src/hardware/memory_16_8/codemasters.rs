@@ -1,7 +1,7 @@
 use std;
 
 use errors::{Error, SimpleKind};
-use memo::Inbox;
+// use memo::Inbox;
 
 use super::Impler;
 use super::sega::MasterSystemMemory;
@@ -44,7 +44,7 @@ serde_struct_arrays!{
 
 fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    S: Inbox + AsMut<T> + AsRef<T>,
+    S: AsMut<T> + AsRef<T>,
 {
     // XXX
     // macro_rules! receive {
@@ -59,7 +59,7 @@ where
 
     fn swap_slot<S>(s: &mut S, sega_slot: usize, value: u8)
     where
-        S: Inbox + AsMut<T> + AsRef<T>,
+        S: AsMut<T> + AsRef<T>,
     {
         // XXX
         // macro_rules! receive {
@@ -148,7 +148,7 @@ where
 
 impl<S> Impler<S> for T
 where
-    S: Inbox + AsMut<T> + AsRef<T>,
+    S: AsMut<T> + AsRef<T>,
 {
     fn read(s: &mut S, logical_address: u16) -> u8 {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits

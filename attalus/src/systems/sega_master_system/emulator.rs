@@ -4,6 +4,7 @@ use std;
 
 use failure::{err_msg, Error, ResultExt};
 
+use memo;
 use hardware::io_16_8;
 use hardware::irq::Irq;
 use hardware::memory_16_8;
@@ -11,7 +12,7 @@ use hardware::sms_vdp::{self, internal::T as internalT, machine::T as machineT};
 use hardware::sn76489;
 use hardware::z80::{self, machine::T as Z80MachineT};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
-use memo::{Inbox, Memo, Pausable};
+// use memo::{Inbox, Memo, Pausable};
 use utilities::{self, FrameInfo, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -58,7 +59,6 @@ where
         + memory_16_8::T
         + AsMut<io_16_8::sms2::T>
         + sn76489::machine::T
-        + Pausable,
 {
     fn init(&mut self, frequency: Frequency) -> Result<()> {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
@@ -93,9 +93,9 @@ where
         <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_pause(player_status.pause);
 
         loop {
-            if self.wants_pause() {
-                return Ok(EmulationResult::FrameInterrupted);
-            }
+            // if self.wants_pause() {
+            //     return Ok(EmulationResult::FrameInterrupted);
+            // }
 
             self.draw_line()
                 .with_context(|e| err_msg(format!("Master System emulation: VDP error {}", e)))?;
@@ -105,9 +105,9 @@ where
 
             while z80::internal::T::cycles(self) < z80_target_cycles {
                 self.run(z80_target_cycles);
-                if self.wants_pause() {
-                    return Ok(EmulationResult::FrameInterrupted);
-                }
+                // if self.wants_pause() {
+                //     return Ok(EmulationResult::FrameInterrupted);
+                // }
             }
 
             if self.v() == 0 {
@@ -256,23 +256,31 @@ macro_rules! impl_as_ref_memory_map {
 impl_as_ref_memory_map!{memory_16_8::sega::T}
 impl_as_ref_memory_map!{memory_16_8::codemasters::T}
 
+impl<I, M> memo::PausableImpl for System<I, M> {
+    type Impler = memo::NothingInbox;
+}
+
+impl<I, M> memo::InboxImpl for System<I, M> {
+    type Impler = memo::NothingInbox;
+}
+
 impl<I> memory_16_8::Impl for System<I, memory_16_8::sega::T>
-where
-    I: Inbox,
+// where
+//     I: Inbox,
 {
     type Impler = memory_16_8::sega::T;
 }
 
 impl<I> memory_16_8::Impl for System<I, memory_16_8::codemasters::T>
-where
-    I: Inbox,
+// where
+//     I: Inbox,
 {
     type Impler = memory_16_8::codemasters::T;
 }
 
 impl<I, M> io_16_8::Impl for System<I, M>
-where
-    I: Inbox,
+// where
+//     I: Inbox,
 {
     type Impler = io_16_8::sms2::T;
 }
@@ -285,30 +293,30 @@ impl<I, M> sms_vdp::machine::Impl for System<I, M> {
     type Impler = sms_vdp::machine::simple::T;
 }
 
-impl<I, M> Pausable for System<I, M>
-where
-    I: Pausable,
-{
-    #[inline]
-    fn wants_pause(&self) -> bool {
-        self.inbox.wants_pause()
-    }
+// impl<I, M> Pausable for System<I, M>
+// where
+//     I: Pausable,
+// {
+//     #[inline]
+//     fn wants_pause(&self) -> bool {
+//         self.inbox.wants_pause()
+//     }
 
-    #[inline]
-    fn clear_pause(&mut self) {
-        self.inbox.clear_pause()
-    }
-}
+//     #[inline]
+//     fn clear_pause(&mut self) {
+//         self.inbox.clear_pause()
+//     }
+// }
 
-impl<I, M> Inbox for System<I, M>
-where
-    I: Inbox,
-{
-    #[inline]
-    fn receive(&mut self, memo: Memo) {
-        self.inbox.receive(memo)
-    }
-}
+// impl<I, M> Inbox for System<I, M>
+// where
+//     I: Inbox,
+// {
+//     #[inline]
+//     fn receive(&mut self, memo: Memo) {
+//         self.inbox.receive(memo)
+//     }
+// }
 
 impl<I, M> z80::internal::Impl for System<I, M> {
     type Impler = z80::state::T;

@@ -3,17 +3,46 @@ use std::convert::{AsMut, AsRef};
 use hardware::irq::Irq;
 use hardware::sn76489;
 use hardware::sms_vdp;
-use memo::Inbox;
+// use memo::{Inbox, Memo, Payload};
 use super::Impler;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum Memo {
-    Input { address: u16, value: u8 },
+// pub mod manifests {
+//     use memo::{Item, Manifest, PayloadType};
 
-    Output { address: u16, value: u8 },
+//     pub const DEVICE_STRING: &'static str = &"Sms2Io";
 
-    BogusOutput { address: u16, value: u8 },
-}
+//     const CONTENTS: &'static [Item] = &[
+//         Item {
+//             hex: true,
+//             description: "address",
+//         },
+//         Item {
+//             hex: true,
+//             description: "value",
+//         },
+//     ];
+
+//     pub const INPUT: &'static Manifest = &Manifest {
+//         device: DEVICE_STRING,
+//         summary: &"Input",
+//         payload_type: PayloadType::U16,
+//         contents: CONTENTS,
+//     };
+
+//     pub const OUTPUT: &'static Manifest = &Manifest {
+//         device: DEVICE_STRING,
+//         summary: &"Output to address {:0} with value {:1}",
+//         payload_type: PayloadType::U16,
+//         contents: CONTENTS,
+//     };
+
+//     pub const BOGUS_OUTPUT: &'static Manifest = &Manifest {
+//         device: DEVICE_STRING,
+//         summary: &"Bogus output to address {:0} with value {:1}",
+//         payload_type: PayloadType::U16,
+//         contents: CONTENTS,
+//     };
+// }
 
 /// The IO system in the Sega Master Sytem 2. It's almost identical to that in
 /// the original Sega Master System, but a little simpler to implement.
@@ -90,7 +119,7 @@ impl Irq for T {
 
 impl<S> Impler<S> for T
 where
-    S: AsMut<T> + AsRef<T> + sms_vdp::part::T + sn76489::hardware::T + Inbox + ?Sized,
+    S: AsMut<T> + AsRef<T> + sms_vdp::part::T + sn76489::hardware::T + ?Sized,
 {
     fn input(s: &mut S, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
@@ -135,19 +164,19 @@ where
             }
         };
 
-        // s.receive(
-        //     id,
-        //     Memo::Input {
-        //         address: address,
-        //         value: value,
-        //     },
-        // );
+        // s.receive(Memo::new(
+        //     Payload::U16([address, value as u16, 0, 0]),
+        //     manifests::INPUT,
+        // ));
 
         value
     }
 
     fn output(s: &mut S, address: u16, value: u8) {
-        // s.receive(id, Memo::Output { address, value });
+        // s.receive(Memo::new(
+        //     Payload::U16([address, value as u16, 0, 0]),
+        //     manifests::OUTPUT,
+        // ));
 
         let masked = (address & 0b11000001) as u8;
 
@@ -168,7 +197,10 @@ where
             }
             _ => {
                 // writes to the remaining addresses have no effect
-                // s.receive(id, Memo::BogusOutput { address, value });
+                // s.receive(Memo::new(
+                //     Payload::U16([address, value as u16, 0, 0]),
+                //     manifests::BOGUS_OUTPUT,
+                // ));
             }
         }
     }

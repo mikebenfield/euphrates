@@ -1,3 +1,5 @@
+#![recursion_limit="1024"]
+
 #[macro_use]
 extern crate failure;
 #[macro_use]
@@ -8,13 +10,13 @@ extern crate serde;
 extern crate serde_derive;
 extern crate bincode;
 
+pub mod memo;
 #[macro_use]
 mod macros;
 pub mod errors;
 mod runtime_pattern;
 #[macro_use]
 mod utilities;
-pub mod memo;
 pub mod sdl_wrap;
 #[macro_use]
 pub mod hardware;

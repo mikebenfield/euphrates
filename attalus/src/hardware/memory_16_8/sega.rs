@@ -3,9 +3,101 @@ use std;
 
 use failure::ResultExt;
 
-use memo::{Inbox, Memo, Pausable};
+use memo::{Inbox, Payload};
 use errors::{Error, SimpleKind};
 use super::Impler;
+
+pub mod manifests {
+    use memo::{Descriptions, Manifest, PayloadType};
+    use self::Descriptions::*;
+    use self::PayloadType::*;
+
+    pub const DEVICE: &'static str = &"SegaMemoryMap";
+
+    pub const ALLOCATE_FIRST_PAGE: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "First RAM page allocated",
+        descriptions: Strings(&[]),
+        payload_type: U8,
+    };
+
+    pub const ALLOCATE_SECOND_PAGE: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Second RAM page allocated",
+        descriptions: Strings(&[]),
+        payload_type: U8,
+    };
+
+    pub const SYSTEM_RAM_WRITE: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Write to system RAM",
+        descriptions: Strings(&["logical address", "RAM address", "value"]),
+        payload_type: U16,
+    };
+
+    pub const CARTRIDGE_RAM_WRITE: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Write to cartridge RAM",
+        descriptions: Strings(&["logical address", "RAM address", "value"]),
+        payload_type: U16,
+    };
+
+    pub const SYSTEM_RAM_READ: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Read from system RAM",
+        descriptions: Strings(&["logical address", "RAM address", "value"]),
+        payload_type: U16,
+    };
+
+    pub const CARTRIDGE_RAM_READ: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Read from cartridge RAM",
+        descriptions: Strings(&["logical address", "RAM address", "value"]),
+        payload_type: U16,
+    };
+
+    pub const ROM_READ_LOGICAL_ADDRESS: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Read from ROM",
+        descriptions: Strings(&["logical address", "value"]),
+        payload_type: U16,
+    };
+
+    pub const ROM_READ: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Read from ROM (giving ROM address)",
+        descriptions: Strings(&["ROM address"]),
+        payload_type: U32,
+    };
+
+    pub const INVALID_WRITE: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Invalid write",
+        descriptions: Strings(&["logical address", "value"]),
+        payload_type: PayloadType::U16,
+    };
+
+    pub const REGISTER_WRITE: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Register write",
+        descriptions: Strings(&["register", "value"]),
+        payload_type: PayloadType::U16,
+    };
+
+    pub const MAP_ROM: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Map ROM",
+        descriptions: Strings(&["page", "slot"]),
+        payload_type: PayloadType::U16,
+    };
+
+    pub const MAP_CARTRIDGE_RAM: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Map Cartridge RAM",
+        descriptions: Strings(&["page", "slot"]),
+        payload_type: PayloadType::U16,
+    };
+}
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 
@@ -52,10 +144,11 @@ pub struct T {
     ram_pages_allocated: RamPagesAllocated,
 
     // The special registers that control the memory map. When writing to
-    // `reg_fffc`, we set `reg_fffc` the actual value written. For the others,
-    // which are selectors for the ROM slots, we instead set the register to the
-    // sega-page selected, which may be a modulus of the actual value written.
-    // (In actual hardware these registers are not readable anyway.)
+    // `reg_fffc`, we set `reg_fffc` to the actual value written. For the
+    // others, which are selectors for the ROM slots, we instead set the
+    // register to the sega-page selected, which may be a modulus of the actual
+    // value written. (In actual hardware these registers are not readable
+    // anyway.)
     reg_fffc: u8,
     reg_fffd: u8,
     reg_fffe: u8,
@@ -92,58 +185,28 @@ pub enum MemoryLocation {
     CartridgeRamAddress(u16),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum MemoX {
-    AllocateFirstPage,
-    AllocateSecondPage,
-    InvalidWrite {
-        logical_address: u16,
-        value: u8,
-        location: MemoryLocation,
-    },
-    RegisterWrite {
-        register: u16,
-        value: u8,
-    },
-    MapRom {
-        slot: u8,
-        page: u8,
-    },
-    MapCartridgeRam {
-        page: u8,
-        slot: u8,
-    },
-    Read {
-        logical_address: u16,
-        value: u8,
-        location: MemoryLocation,
-    },
-    Write {
-        logical_address: u16,
-        value: u8,
-        location: MemoryLocation,
-    },
-}
-
 fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    S: Inbox + AsMut<T> + AsRef<T>,
+    S: AsMut<T> + AsRef<T> + Inbox,
 {
-    macro_rules! receive {
-        ($x: expr) => {
-            {
-                // XXX - need to fix this when I bring back memos
-                // let id = s.as_ref().id();
-                // let __y = $x;
-                // s.receive(id, __y);
-            }
-        }
-    }
+    // macro_rules! receive {
+    //     ($x: expr) => {
+    //         {
+    //             // XXX - need to fix this when I bring back memos
+    //             // let id = s.as_ref().id();
+    //             // let __y = $x;
+    //             // s.receive(id, __y);
+    //         }
+    //     }
+    // }
 
     macro_rules! ensure_one_page_allocated {
         () => {
             if s.as_ref().ram_pages_allocated == Zero {
-                receive!(Memo::AllocateFirstPage);
+                manifests::ALLOCATE_FIRST_PAGE.send(
+                    s,
+                    Payload::U8([0,0,0,0,0,0,0,0])
+                );
                 let smm = s.as_mut();
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
@@ -156,8 +219,14 @@ where
     macro_rules! ensure_two_pages_allocated {
         () => {
             if s.as_ref().ram_pages_allocated == Zero {
-                receive!(Memo::AllocateFirstPage);
-                receive!(Memo::AllocateSecondPage);
+                manifests::ALLOCATE_FIRST_PAGE.send(
+                    s,
+                    Payload::U8([0,0,0,0,0,0,0,0])
+                );
+                manifests::ALLOCATE_SECOND_PAGE.send(
+                    s,
+                    Payload::U8([0,0,0,0,0,0,0,0])
+                );
                 let smm = s.as_mut();
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
@@ -165,7 +234,10 @@ where
                 smm.memory.push([0; 0x2000]);
                 smm.memory.shrink_to_fit();
             } else if s.as_ref().ram_pages_allocated == One {
-                receive!(Memo::AllocateSecondPage);
+                manifests::ALLOCATE_SECOND_PAGE.send(
+                    s,
+                    Payload::U8([0,0,0,0,0,0,0,0])
+                );
                 let smm = s.as_mut();
                 assert!(smm.memory.len() >= 3);
                 // the first sega-page of cartridge RAM needs to come last, so
@@ -221,15 +293,12 @@ where
             // XXX - there is an unimplemented feature in which, if bit 4 is
             // set, the fist sega-page of Cartridge RAM is mapped into sega-slot
             // 3. But "no known software" uses this feature.
-            receive!(Memo::RegisterWrite {
-                register: 0xFFFC,
-                value: value,
-            });
+            manifests::REGISTER_WRITE.send(s, Payload::U16([0xFFFC, value as u16, 0, 0]));
             let impl_page = match value & 0b1100 {
                 0b1000 => {
                     // sega-slot 2 mapped to sega-page 0 of cartridge RAM
                     ensure_one_page_allocated!();
-                    receive!(Memo::MapCartridgeRam { page: 0, slot: 2 });
+                    manifests::MAP_CARTRIDGE_RAM.send(s, Payload::U16([0, 2, 0, 0]));
                     let smm = s.as_mut();
                     smm.slot_writable |= 1 << 4;
                     smm.slot_writable |= 1 << 5;
@@ -238,7 +307,7 @@ where
                 0b1100 => {
                     // sega-slot 2 mapped to sega-page 1 of cartridge RAM
                     ensure_two_pages_allocated!();
-                    receive!(Memo::MapCartridgeRam { page: 1, slot: 2 });
+                    manifests::MAP_CARTRIDGE_RAM.send(s, Payload::U16([1, 2, 0, 0]));
                     let smm = s.as_mut();
                     smm.slot_writable |= 1 << 4;
                     smm.slot_writable |= 1 << 5;
@@ -247,10 +316,8 @@ where
                 _ => {
                     // sega-slot 2 mapped to page of ROM indicated by register
                     // 0xFFFF
-                    receive!(Memo::MapRom {
-                        page: s.as_ref().reg_ffff,
-                        slot: 2,
-                    });
+                    let reg = s.as_ref().reg_ffff as u16;
+                    manifests::MAP_ROM.send(s, Payload::U16([reg, 2, 0, 0]));
                     let smm = s.as_mut();
                     smm.slot_writable &= !(1 << 4);
                     smm.slot_writable &= !(1 << 5);
@@ -263,14 +330,8 @@ where
             smm.reg_fffc = value;
         }
         0xFFFD => {
-            receive!(Memo::RegisterWrite {
-                register: 0xFFFD,
-                value: value,
-            });
-            receive!(Memo::MapRom {
-                page: sega_page,
-                slot: 0,
-            });
+            manifests::REGISTER_WRITE.send(s, Payload::U16([0xFFFD, value as u16, 0, 0]));
+            manifests::MAP_ROM.send(s, Payload::U16([sega_page as u16, 0, 0, 0]));
             let smm = s.as_mut();
             smm.pages[0] = impl_page;
             smm.pages[1] = impl_page + 1;
@@ -279,14 +340,8 @@ where
             smm.reg_fffd = sega_page;
         }
         0xFFFE => {
-            receive!(Memo::RegisterWrite {
-                register: 0xFFFE,
-                value: value,
-            });
-            receive!(Memo::MapRom {
-                page: sega_page,
-                slot: 1,
-            });
+            manifests::REGISTER_WRITE.send(s, Payload::U16([0xFFFE, value as u16, 0, 0]));
+            manifests::MAP_ROM.send(s, Payload::U16([sega_page as u16, 1, 0, 0]));
             let smm = s.as_mut();
             smm.pages[2] = impl_page;
             smm.pages[3] = impl_page + 1;
@@ -295,15 +350,9 @@ where
             smm.reg_fffe = sega_page;
         }
         0xFFFF => {
-            receive!(Memo::RegisterWrite {
-                register: 0xFFFF,
-                value: value,
-            });
+            manifests::REGISTER_WRITE.send(s, Payload::U16([0xFFFF, value as u16, 0, 0]));
             if s.as_ref().reg_ffff & 0b1000 == 0 {
-                receive!(Memo::MapRom {
-                    page: sega_page,
-                    slot: 1,
-                });
+                manifests::MAP_ROM.send(s, Payload::U16([sega_page as u16, 1, 0, 0]));
                 let smm = s.as_mut();
                 smm.pages[4] = impl_page;
                 smm.pages[5] = impl_page + 1;
@@ -442,24 +491,9 @@ impl AsMut<T> for T {
     }
 }
 
-impl Pausable for T {
-    #[inline]
-    fn wants_pause(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn clear_pause(&mut self) {}
-}
-
-impl Inbox for T {
-    #[inline]
-    fn receive(&mut self, _memo: Memo) {}
-}
-
 impl<S> Impler<S> for T
 where
-    S: Inbox + AsMut<T> + AsRef<T>,
+    S: AsMut<T> + AsRef<T> + Inbox,
 {
     fn read(s: &mut S, logical_address: u16) -> u8 {
         let result = if logical_address < 0x400 {
@@ -479,15 +513,24 @@ where
             s.as_ref().memory[impl_page as usize][physical_address as usize]
         };
         // XXX - need to fix this when I bring back memos
-        // let location = s.as_ref().logical_address_to_memory_location(logical_address);
-        // s.receive(
-        //     id,
-        //     Memo::Read {
-        //         logical_address: logical_address,
-        //         value: result,
-        //         location,
-        //     },
-        // );
+        let location = s.as_ref()
+            .logical_address_to_memory_location(logical_address);
+
+        match location {
+            MemoryLocation::SystemRamAddress(address) => manifests::SYSTEM_RAM_READ.send(
+                s,
+                Payload::U16([logical_address, address, result as u16, 0]),
+            ),
+            MemoryLocation::CartridgeRamAddress(address) => manifests::CARTRIDGE_RAM_READ.send(
+                s,
+                Payload::U16([logical_address, address, result as u16, 0]),
+            ),
+            MemoryLocation::RomAddress(address) => {
+                manifests::ROM_READ_LOGICAL_ADDRESS
+                    .send(s, Payload::U16([logical_address, result as u16, 0, 0]));
+                manifests::ROM_READ.send(s, Payload::U32([address, 0]));
+            }
+        }
         result
     }
 
@@ -495,29 +538,20 @@ where
         write_check_register(s, logical_address, value);
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
         let impl_slot = (logical_address & 0xE000) >> 13; // high order 3 bits
-                                                          // let location = s.as_ref().logical_address_to_memory_location(logical_address);
+        let location = s.as_ref()
+            .logical_address_to_memory_location(logical_address);
         if s.as_ref().slot_writable & (1 << impl_slot) != 0 {
-            // XXX - memos
-            // s.receive(
-            //     id,
-            //     Memo::Write {
-            //         logical_address: logical_address,
-            //         value: value,
-            //         location,
-            //     },
-            // );
+            match location {
+                MemoryLocation::SystemRamAddress(address) => manifests::SYSTEM_RAM_WRITE
+                    .send(s, Payload::U16([logical_address, address, value as u16, 0])),
+                MemoryLocation::CartridgeRamAddress(address) => manifests::CARTRIDGE_RAM_WRITE
+                    .send(s, Payload::U16([logical_address, address, value as u16, 0])),
+                _ => unreachable!("ROM Address marked writable?"),
+            }
             let impl_page = s.as_ref().pages[impl_slot as usize];
             s.as_mut().memory[impl_page as usize][physical_address as usize] = value;
         } else {
-            // XXX - memos
-            // s.receive(
-            //     id,
-            //     Memo::InvalidWrite {
-            //         logical_address: logical_address,
-            //         value: value,
-            //         location,
-            //     },
-            // );
+            manifests::INVALID_WRITE.send(s, Payload::U16([logical_address, value as u16, 0, 0]));
         }
     }
 }

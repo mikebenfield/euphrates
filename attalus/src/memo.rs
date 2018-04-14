@@ -2,10 +2,25 @@
 ///
 /// Memos are useful for debugging.
 
-use std::cmp::{Eq, PartialEq};
+use std::fmt::{self, Write};
+use std::mem::transmute;
 use std::hash::{Hash, Hasher};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Payload {
+    U8([u8; 8]),
+    U16([u16; 4]),
+    U32([u32; 2]),
+    U64([u64; 1]),
+    I8([i8; 8]),
+    I16([i16; 4]),
+    I32([i32; 2]),
+    I64([i64; 1]),
+    F32([f32; 2]),
+    F64([f64; 1]),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PayloadType {
     U8,
     U16,
@@ -15,93 +30,54 @@ pub enum PayloadType {
     I16,
     I32,
     I64,
+    F32,
+    F64,
 }
 
-impl PayloadType {
-    /// How many bytes are in each entity in such a payload?
-    pub fn size(self) -> usize {
-        match self {
-            PayloadType::U8 => 1,
-            PayloadType::U16 => 2,
-            PayloadType::U32 => 4,
-            PayloadType::U64 => 8,
-            PayloadType::I8 => 1,
-            PayloadType::I16 => 2,
-            PayloadType::I32 => 4,
-            PayloadType::I64 => 8,
-        }
-    }
+#[derive(Clone, Debug)]
+pub enum Descriptions {
+    Strings(&'static [&'static str]),
+    Function(fn(u64) -> String),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum Payload {
-    U8([u8; 8]),
-    U16([u16; 4]),
-    U32([u32; 2]),
-    U64(u64),
-    I8([i8; 8]),
-    I16([i16; 4]),
-    I32([i32; 2]),
-    I64(i64),
-}
-
-impl Payload {
-    pub fn typ(self) -> PayloadType {
-        match self {
-            Payload::U8(_) => PayloadType::U8,
-            Payload::U16(_) => PayloadType::U16,
-            Payload::U32(_) => PayloadType::U32,
-            Payload::U64(_) => PayloadType::U64,
-            Payload::I8(_) => PayloadType::I8,
-            Payload::I16(_) => PayloadType::I16,
-            Payload::I32(_) => PayloadType::I32,
-            Payload::I64(_) => PayloadType::I64,
-        }
-    }
-}
-
-/// A description or type of a Memo.
-///
-/// For instance, if a device wants to send memos for memory reads, all its
-/// memory reads should have the same `Manifest`.
-///
-/// Note that equality for `Manifest`s is pointer equality, because it is
-/// intended that they be compared quickly to see if two `Memo`s are the same
-/// type, and they are stored as static references in `Memo`s.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Manifest {
-    pub summary: &'static str,
     pub device: &'static str,
-
-    // saves memory to have payload_type as part of the manifest, instead of
-    // having Memo have a Payload
+    pub summary: &'static str,
+    pub descriptions: Descriptions,
     pub payload_type: PayloadType,
-    pub content: &'static [&'static str],
 }
 
-impl Hash for Manifest {
+impl Manifest {
     #[inline]
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        state.write_usize(self as *const _ as usize)
+    pub fn send<I: Inbox>(&'static self, inbox: &mut I, payload: Payload) {
+        let memo = Memo::new(payload, self);
+        inbox.receive(memo);
     }
 }
 
-impl PartialEq<Manifest> for Manifest {
+impl PartialEq<Self> for Manifest {
     #[inline]
-    fn eq(&self, other: &Manifest) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self as *const _ == other as *const _
     }
 }
 
 impl Eq for Manifest {}
 
+impl Hash for Manifest {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        state.write_usize(self as *const _ as *const u8 as usize);
+    }
+}
+
 /// A message sent from a device to the user.
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq)]
 pub struct Memo {
-    payload: [u8; 8],
+    payload: u64,
     manifest: &'static Manifest,
 }
 
@@ -110,10 +86,11 @@ impl Memo {
     ///
     /// Will panic if the type of the Payload and payload_type in the `manifest`
     /// don't correspond.
+
+    // inline must be available so that it can be compiled away when Memos are
+    // ignored
     #[inline]
     pub fn new(payload: Payload, manifest: &'static Manifest) -> Memo {
-        use std::mem::transmute;
-
         let payload2 = match (payload, manifest.payload_type) {
             (Payload::U8(x), PayloadType::U8) => unsafe { transmute(x) },
             (Payload::U16(x), PayloadType::U16) => unsafe { transmute(x) },
@@ -123,6 +100,8 @@ impl Memo {
             (Payload::I16(x), PayloadType::I16) => unsafe { transmute(x) },
             (Payload::I32(x), PayloadType::I32) => unsafe { transmute(x) },
             (Payload::I64(x), PayloadType::I64) => unsafe { transmute(x) },
+            (Payload::F64(x), PayloadType::F64) => unsafe { transmute(x) },
+            (Payload::F32(x), PayloadType::F32) => unsafe { transmute(x) },
             _ => panic!("Payload and PayloadType must match"),
         };
 
@@ -132,9 +111,10 @@ impl Memo {
         }
     }
 
+    // inline must be available so that it can be compiled away when Memos are
+    // ignored
+    #[inline]
     pub fn payload(&self) -> Payload {
-        use std::mem::transmute;
-
         match self.manifest.payload_type {
             PayloadType::U8 => Payload::U8(unsafe { transmute(self.payload) }),
             PayloadType::U16 => Payload::U16(unsafe { transmute(self.payload) }),
@@ -144,7 +124,59 @@ impl Memo {
             PayloadType::I16 => Payload::I16(unsafe { transmute(self.payload) }),
             PayloadType::I32 => Payload::I32(unsafe { transmute(self.payload) }),
             PayloadType::I64 => Payload::I64(unsafe { transmute(self.payload) }),
+            PayloadType::F32 => Payload::F32(unsafe { transmute(self.payload) }),
+            PayloadType::F64 => Payload::F64(unsafe { transmute(self.payload) }),
         }
+    }
+}
+
+impl fmt::Display for Memo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let manifest = self.manifest;
+
+        let s = format!("{:10}: {}.", manifest.device, manifest.summary);
+
+        fn format_items<T: Copy, F: Fn(T) -> String>(
+            display: F,
+            items: &[T],
+            descriptions: &'static [&'static str],
+        ) -> String {
+            let mut s = if descriptions.len() != 0 {
+                format!(" -- {}: {}", descriptions[0], display(items[0]))
+            } else {
+                String::new()
+            };
+
+            for (item, description) in items[1..].iter().zip(descriptions[1..].iter()) {
+                write!(s, ", {}: {}", display(*item), description).unwrap();
+            }
+
+            return s;
+        }
+
+        let s2 = match manifest.descriptions {
+            Descriptions::Function(f) => f(self.payload),
+            Descriptions::Strings(descriptions) => match self.payload() {
+                Payload::U8(ref x) => format_items(|i| format!("{:0>2}", i), x, descriptions),
+                Payload::U16(ref x) => format_items(|i| format!("{:0>4}", i), x, descriptions),
+                Payload::U32(ref x) => format_items(|i| format!("{:0>8}", i), x, descriptions),
+                Payload::U64(ref x) => {
+                    format_items(|i| format!("{:0>width$}", i, width = 16), x, descriptions)
+                }
+                Payload::I8(ref x) => format_items(|i| format!("{:0>+2}", i), x, descriptions),
+                Payload::I16(ref x) => format_items(|i| format!("{:0>+4}", i), x, descriptions),
+                Payload::I32(ref x) => format_items(|i| format!("{:0>+8}", i), x, descriptions),
+                Payload::I64(ref x) => {
+                    format_items(|i| format!("{:0>+width$}", i, width = 16), x, descriptions)
+                }
+                Payload::F32(ref x) => format_items(|i| format!("{: >+8.5}", i), x, descriptions),
+                Payload::F64(ref x) => format_items(|i| format!("{: >+8.5}", i), x, descriptions),
+            },
+        };
+
+        let result = format!("{}{}", s, s2);
+
+        f.pad(&result)
     }
 }
 
