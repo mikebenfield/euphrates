@@ -1,7 +1,10 @@
+use memo::Payload;
+
 use super::InterruptMode::*;
 use super::Reg16::*;
 use super::Reg8::*;
 use super::ConditionCode;
+use super::memo::manifests;
 use super::higher;
 use super::part::{self, Address, Changeable, Viewable};
 use super::{Reg16, Reg8};
@@ -82,7 +85,7 @@ where
 {
     // The Z80 manual implies that IFF2 is set to IFF1, but this
     // is false (see Young 5.3)
-    // receive(z, Memo::NonmaskableInterrupt);
+    manifests::NONMASKABLE_INTERRUPT.send(z, Payload::U64([0]));
     z.inc_r(1);
     z.set_iff1(false);
     z.clear_nmi();
@@ -99,7 +102,7 @@ where
     Z: part::T + ?Sized,
 {
     if z.iff1() {
-        // receive(z, Memo::MaskableInterruptAllowed);
+        manifests::MASKABLE_INTERRUPT_ALLOWED.send(z, Payload::U64([0]));
 
         z.inc_r(1);
 
@@ -127,7 +130,7 @@ where
         }
         true
     } else {
-        // receive(z, Memo::MaskableInterruptDenied);
+        manifests::MASKABLE_INTERRUPT_DENIED.send(z, Payload::U64([0]));
         false
     }
 }
@@ -337,8 +340,7 @@ where
         cpi(z);
         z.inc_cycles(2);
         BC.view(z) != 0 && !z.is_set_flag(higher::ZF)
-    }
-    {
+    } {
         // r was already incremented twice by `run`
         z.inc_r(2);
     }
@@ -361,8 +363,7 @@ where
         cpd(z);
         z.inc_cycles(21);
         BC.view(z) != 0 && !z.is_set_flag(higher::ZF)
-    }
-    {
+    } {
         // r was already incremented twice by `run`
         z.inc_r(2);
     }
@@ -423,11 +424,7 @@ where
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.is_set_flag(higher::CF) {
-        1u8
-    } else {
-        0u8
-    };
+    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
     let a = arg1.view(z);
     let x = arg2.view(z);
     let result = add_impl(z, a, x, cf);
@@ -465,11 +462,7 @@ where
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.is_set_flag(higher::CF) {
-        1u8
-    } else {
-        0u8
-    };
+    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
     let a = arg1.view(z);
     let x = arg2.view(z);
     let result = sub_impl(z, a, x, cf);
@@ -765,11 +758,7 @@ where
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.is_set_flag(higher::CF) {
-        1u8
-    } else {
-        0u8
-    };
+    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
     let result = adc16_impl(z, x, y, cf as u16);
     arg1.change(z, result);
 }
@@ -780,11 +769,7 @@ where
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.is_set_flag(higher::CF) {
-        1u8
-    } else {
-        0u8
-    };
+    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
     let result = adc16_impl(z, x, !y, (1 ^ cf) as u16);
     arg1.change(z, result);
     let cf = z.is_set_flag(higher::CF);
@@ -1250,8 +1235,7 @@ where
     while {
         z.inc_cycles(21);
         inid_impl(z, 1) != 0
-    }
-    {
+    } {
         // r was already incremented twice by `run`
         z.inc_r(2);
     }
@@ -1278,8 +1262,7 @@ where
     while {
         z.inc_cycles(21);
         inid_impl(z, 0xFFFF) != 0
-    }
-    {
+    } {
         // r was already incremented twice by `run`
         z.inc_r(2);
     }
@@ -1348,8 +1331,7 @@ where
         z.inc_cycles(21);
         outid_impl(z, 1);
         B.view(z) != 0
-    }
-    {
+    } {
         // r was already incremented twice by `run`
         z.inc_r(2);
     }
@@ -1378,8 +1360,7 @@ where
         z.inc_cycles(21);
         outid_impl(z, 0xFFFF);
         B.view(z) != 0
-    }
-    {
+    } {
         // r was already incremented twice by `run`
         z.inc_r(2);
     }

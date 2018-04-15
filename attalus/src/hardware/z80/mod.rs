@@ -41,6 +41,7 @@ impl Default for InterruptMode {
 }
 
 #[cfg(target_endian = "little")]
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg8 {
     C,
@@ -72,6 +73,7 @@ pub enum Reg8 {
 }
 
 #[cfg(target_endian = "big")]
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Reg8 {
     B,
@@ -137,6 +139,7 @@ impl fmt::Display for Reg8 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum Reg16 {
     BC,
     DE,

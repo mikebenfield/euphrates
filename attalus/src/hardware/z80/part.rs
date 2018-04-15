@@ -1,12 +1,14 @@
 use std::fmt;
 
+use memo::Inbox;
+
 use hardware::io_16_8;
 use hardware::memory_16_8;
 use super::higher;
 use super::{Reg16, Reg8, ConditionCode};
 use utilities;
 
-pub trait T: higher::T + io_16_8::T + memory_16_8::T {
+pub trait T: higher::T + io_16_8::T + memory_16_8::T + Inbox {
     fn requesting_mi(&self) -> Option<u8>;
     fn requesting_nmi(&self) -> bool;
 

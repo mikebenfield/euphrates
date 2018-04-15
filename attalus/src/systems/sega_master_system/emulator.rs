@@ -12,7 +12,6 @@ use hardware::sms_vdp::{self, internal::T as internalT, machine::T as machineT};
 use hardware::sn76489;
 use hardware::z80::{self, machine::T as Z80MachineT};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
-// use memo::{Inbox, Memo, Pausable};
 use utilities::{self, FrameInfo, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -260,8 +259,12 @@ impl<I, M> memo::PausableImpl for System<I, M> {
     type Impler = memo::NothingInbox;
 }
 
+// impl<I, M> memo::InboxImpl for System<I, M> {
+//     type Impler = memo::NothingInbox;
+// }
+
 impl<I, M> memo::InboxImpl for System<I, M> {
-    type Impler = memo::NothingInbox;
+    type Impler = memo::PrintingInbox;
 }
 
 impl<I> memory_16_8::Impl for System<I, memory_16_8::sega::T>

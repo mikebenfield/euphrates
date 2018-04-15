@@ -1,261 +1,323 @@
-// use std::collections::VecDeque;
-// use std::fmt::Write;
+use std::collections::VecDeque;
+use std::fmt::Write;
+use std::time::{Duration, Instant};
 
-// use hardware::io_16_8;
-// use hardware::memory_16_8;
-// use hardware::z80::Opcode;
-// use memo::{Inbox, NothingInbox, Pausable};
+use hardware::z80::memo::Opcode;
+use memo::{InboxImpler, Memo, PausableImpler};
 
-// #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-// pub enum MemoX {
-//     Memory(memory_16_8::sega::MemoX),
-//     Io(io_16_8::sms2::Memo),
-// }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Query {
+    Disassemble(u16),
+    RecentMemos,
+}
 
-// #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-// pub enum Query {
-//     Disassemble(u16),
-//     RecentMemos,
-// }
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum QueryResult {
+    Ok(String),
+    Unsupported,
+}
 
-// #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-// pub enum Command {
-//     Hold,
-//     Resume,
-//     Step,
-//     BreakAtPc(u16),
-//     RemovePcBreakpoints,
-//     // BreakAtMemo(MemoPattern),
-//     // RemoveBreakMemos,
-// }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Command {
+    Hold,
+    Resume,
+    Step,
+    BreakAtPc(u16),
+    RemovePcBreakpoints,
+    // BreakAtMemo(MemoPattern),
+    // RemoveBreakMemos,
+}
 
-// pub trait MasterSystemInbox
-//     : Inbox<Memo>
-//     + Inbox<memory_16_8::sega::Memo>
-//     + Inbox<io_16_8::sms2::Memo>
-//     + Default {
-//     fn command(&mut self, command: Command);
-//     fn query(&mut self, query: Query) -> String;
-// }
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum CommandResult {
+    Ok,
+    Unsupported,
+}
 
-// impl MasterSystemInbox for NothingInbox {
-//     #[inline]
-//     fn command(&mut self, _command: Command) {}
+pub trait Debugger {
+    fn command(&mut self, command: Command) -> CommandResult;
+    fn query(&mut self, query: Query) -> QueryResult;
+    fn hold_duration(&self) -> Duration;
+}
 
-//     #[inline]
-//     fn query(&mut self, _query: Query) -> String {
-//         String::new()
-//     }
-// }
+pub trait DebuggerImpler<S: ?Sized> {
+    fn command(&mut S, command: Command) -> CommandResult;
+    fn query(&mut S, query: Query) -> QueryResult;
+    fn hold_duration(&S) -> Duration;
+}
 
-// #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-// enum DebugStatus {
-//     Step,
-//     None,
-// }
+pub trait DebuggerImpl {
+    type Impler: DebuggerImpler<Self>;
+}
 
-// impl Default for DebugStatus {
-//     fn default() -> Self {
-//         DebugStatus::None
-//     }
-// }
+impl<S> Debugger for S
+where
+    S: DebuggerImpl + ?Sized,
+{
+    #[inline]
+    fn command(&mut self, command: Command) -> CommandResult {
+        <S::Impler as DebuggerImpler<Self>>::command(self, command)
+    }
 
-// const MAX_MESSAGES: usize = 50;
+    #[inline]
+    fn query(&mut self, query: Query) -> QueryResult {
+        <S::Impler as DebuggerImpler<Self>>::query(self, query)
+    }
 
-// #[derive(Clone)]
-// pub struct DebuggingInbox {
-//     last_pc: u16,
-//     opcodes: [Option<Opcode>; 0x10000],
-//     hold: bool,
-//     status: DebugStatus,
-//     pc_breakpoints: Vec<u16>,
-//     // memo_patterns: Vec<MemoPattern>,
-//     recent_memos: VecDeque<Memo>,
-// }
+    #[inline]
+    fn hold_duration(&self) -> Duration {
+        <S::Impler as DebuggerImpler<Self>>::hold_duration(self)
+    }
+}
 
-// serde_struct_arrays!{
-//     impl_serde,
-//     DebuggingInbox,
-//     [last_pc, hold, status, pc_breakpoints, recent_memos,],
-//     [opcodes: [Option<::hardware::z80::Opcode>; 0x10000],],
-//     []
-// }
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct HoldingDebugger {
+    hold_duration: Duration,
+    hold: Option<Instant>,
+}
 
+impl HoldingDebugger {
+    pub fn new(hold_duration: Duration, hold: Option<Instant>) -> HoldingDebugger {
+        HoldingDebugger { hold_duration, hold }
+    }
+}
 
-// impl Default for DebuggingInbox {
-//     fn default() -> Self {
-//         DebuggingInbox::new()
-//     }
-// }
+impl<S> PausableImpler<S> for HoldingDebugger
+where
+    S: ?Sized + AsMut<HoldingDebugger> + AsRef<HoldingDebugger>,
+{
+    #[inline]
+    fn wants_pause(s: &S) -> bool {
+        s.as_ref().hold.is_some()
+    }
 
-// impl Pausable for DebuggingInbox {
-//     #[inline]
-//     fn wants_pause(&self) -> bool {
-//         self.hold
-//     }
+    #[inline]
+    fn clear_pause(_s: &mut S) {}
+}
 
-//     #[inline]
-//     fn clear_pause(&mut self) {}
-// }
+impl<S> DebuggerImpler<S> for HoldingDebugger
+where
+    S: ?Sized + AsRef<HoldingDebugger> + AsMut<HoldingDebugger>,
+{
+    #[inline]
+    fn command(s: &mut S, command: Command) -> CommandResult {
+        use self::Command::*;
+        match (command, s.as_ref().hold) {
+            (Hold, None) => s.as_mut().hold = Some(Instant::now()),
+            (Resume, Some(instant)) => {
+                s.as_mut().hold = None;
+                let elapsed = Instant::now().duration_since(instant);
+                s.as_mut().hold_duration += elapsed;
+            }
+            _ => return CommandResult::Unsupported,
+        }
+        return CommandResult::Ok;
+    }
 
-// macro_rules! impl_inbox {
-//     ($typename: ty, $variant: ident) => {
-//         impl Inbox<$typename> for DebuggingInbox {
-//             #[inline]
-//             fn receive(&mut self, _id: u32, memo: $typename) {
-//                 self.receive_general(
-//                     Memo::$variant(memo)
-//                 )
-//             }
-//         }
-//     }
-// }
+    #[inline]
+    fn query(_s: &mut S, _query: Query) -> QueryResult {
+        QueryResult::Unsupported
+    }
 
-// impl_inbox!{memory_16_8::sega::Memo, Memory}
-// impl_inbox!{io_16_8::sms2::Memo, Io}
+    #[inline]
+    fn hold_duration(s: &S) -> Duration {
+        s.as_ref().hold_duration
+    }
+}
 
-// impl Inbox<Memo> for DebuggingInbox {
-//     #[inline]
-//     fn receive(&mut self, _id: u32, memo: Memo) {
-//         self.receive_general(memo)
-//     }
-// }
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+enum DebugStatus {
+    None,
+    Step,
+}
 
-// impl DebuggingInbox {
-//     fn new() -> Self {
-//         DebuggingInbox {
-//             last_pc: 0,
-//             opcodes: [None; 0x10000],
-//             hold: true,
-//             status: DebugStatus::None,
-//             pc_breakpoints: Vec::new(),
-//             recent_memos: VecDeque::new(),
-//         }
-//     }
+impl Default for DebugStatus {
+    fn default() -> Self {
+        DebugStatus::None
+    }
+}
 
-//     fn receive_general(&mut self, message: Memo) {
-//         if self.recent_memos.len() >= MAX_MESSAGES {
-//             self.recent_memos.pop_front();
-//         }
-//         // XXX
-//         // if self.memo_patterns.iter().any(|pattern| {
-//         //     let mut patt: WholePattern<Memo, MemoPattern> = WholePattern::Patt(pattern.clone());
-//         //     message.matc(&mut patt)
-//         // })
-//         {
-//             self.hold = true;
-//         }
-//         self.recent_memos.push_back(message);
-//     }
+const MAX_MESSAGES: usize = 50;
 
-//     /// Find the PC pointing at the instruction immediately before pc, if it exists
-//     fn back_1(&self, pc: u16) -> Option<u16> {
-//         for i in 1..5 {
-//             if pc < i {
-//                 return None;
-//             }
-//             match (self.opcodes[(pc - i) as usize], i) {
-//                 (Some(Opcode::OneByte(_)), 1) => return Some(pc - i),
-//                 (Some(Opcode::TwoBytes(_)), 2) => return Some(pc - i),
-//                 (Some(Opcode::ThreeBytes(_)), 3) => return Some(pc - i),
-//                 (Some(Opcode::FourBytes(_)), 4) => return Some(pc - i),
-//                 _ => {}
-//             }
-//         }
-//         return None;
-//     }
+#[derive(Clone)]
+pub struct DebuggingInbox {
+    last_pc: u16,
+    opcodes: [Option<Opcode>; 0x10000],
+    hold_duration: Duration,
+    hold: Option<Instant>,
+    status: DebugStatus,
+    pc_breakpoints: Vec<u16>,
+    // memo_patterns: Vec<MemoPattern>,
+    recent_memos: VecDeque<Memo>,
+}
 
-//     /// Find the earliest PC pointing at an opcode, at most n steps back
-//     fn back_n(&self, n: u16, pc: u16) -> u16 {
-//         let mut pc_current = pc;
-//         for _ in 0..n {
-//             match self.back_1(pc_current) {
-//                 None => return pc_current,
-//                 Some(pc_new) => pc_current = pc_new,
-//             }
-//         }
-//         return pc_current;
-//     }
+impl DebuggingInbox {
+    fn new(hold_duration: Duration, hold: Option<Instant>) -> Self {
+        DebuggingInbox {
+            last_pc: 0,
+            opcodes: [None; 0x10000],
+            hold_duration,
+            hold,
+            status: DebugStatus::None,
+            pc_breakpoints: Vec::new(),
+            recent_memos: VecDeque::new(),
+        }
+    }
 
-//     fn disassembly_around(&self, pc: u16) -> String {
-//         let mut pc_current = self.back_n(5, pc);
-//         let mut result = "".to_owned();
-//         for _ in 0..10 {
-//             let opcode = match self.opcodes[pc_current as usize] {
-//                 None => return result,
-//                 Some(x) => x,
-//             };
-//             result.push_str(&format!(
-//                 "{:0>4X}: {: <width$}",
-//                 pc_current,
-//                 opcode,
-//                 width = 12
-//             ));
-//             match opcode.mnemonic() {
-//                 None => result.push_str("Unknown opcode"),
-//                 Some(x) => result.push_str(&format!("{}", x)),
-//             }
-//             if pc_current == pc {
-//                 result.push_str(" <<<");
-//             }
-//             result.push('\n');
-//             // XXX use wrapping add?
-//             pc_current += match opcode {
-//                 Opcode::OneByte(_) => 1,
-//                 Opcode::TwoBytes(_) => 2,
-//                 Opcode::ThreeBytes(_) => 3,
-//                 Opcode::FourBytes(_) => 4,
-//             };
-//         }
-//         result
-//     }
-// }
+    /// Find the PC pointing at the instruction immediately before pc, if it exists
+    fn back_1(&self, pc: u16) -> Option<u16> {
+        for i in 1..5 {
+            if pc < i {
+                return None;
+            }
+            match (self.opcodes[(pc - i) as usize], i) {
+                (Some(Opcode::OneByte(_)), 1) => return Some(pc - i),
+                (Some(Opcode::TwoBytes(_)), 2) => return Some(pc - i),
+                (Some(Opcode::ThreeBytes(_)), 3) => return Some(pc - i),
+                (Some(Opcode::FourBytes(_)), 4) => return Some(pc - i),
+                _ => {}
+            }
+        }
+        return None;
+    }
 
-// impl MasterSystemInbox for DebuggingInbox {
-//     fn query(&mut self, query: Query) -> String {
-//         use self::Query::*;
-//         match query {
-//             RecentMemos => {
-//                 let mut result = String::new();
-//                 for memo in self.recent_memos.iter() {
-//                     writeln!(result, "{:?}", memo).unwrap();
-//                 }
-//                 result
-//             }
-//             Disassemble(pc) => format!("{}", self.disassembly_around(pc)),
-//         }
-//     }
+    /// Find the earliest PC pointing at an opcode, at most n steps back
+    fn back_n(&self, n: u16, pc: u16) -> u16 {
+        let mut pc_current = pc;
+        for _ in 0..n {
+            match self.back_1(pc_current) {
+                None => return pc_current,
+                Some(pc_new) => pc_current = pc_new,
+            }
+        }
+        return pc_current;
+    }
 
-//     fn command(&mut self, command: Command) {
-//         use self::Command::*;
-//         match command {
-//             Hold => self.hold = true,
-//             Resume => self.hold = false,
-//             BreakAtPc(pc) => self.pc_breakpoints.push(pc),
-//             RemovePcBreakpoints => self.pc_breakpoints = Vec::new(),
-//             Step => self.status = DebugStatus::Step,
-//             // BreakAtMemo(pattern) => self.memo_patterns.push(pattern),
-//             // RemoveBreakMemos => self.memo_patterns = Vec::new(),
-//         }
+    fn disassembly_around(&self, pc: u16) -> String {
+        let mut pc_current = self.back_n(5, pc);
+        let mut result = "".to_owned();
+        for _ in 0..10 {
+            let opcode = match self.opcodes[pc_current as usize] {
+                None => return result,
+                Some(x) => x,
+            };
+            result.push_str(&format!(
+                "{:0>4X}: {: <width$}",
+                pc_current,
+                opcode,
+                width = 12
+            ));
+            match opcode.mnemonic() {
+                None => result.push_str("Unknown opcode"),
+                Some(x) => result.push_str(&format!("{}", x)),
+            }
+            if pc_current == pc {
+                result.push_str(" <<<");
+            }
+            result.push('\n');
+            pc_current = pc_current.wrapping_add(match opcode {
+                Opcode::OneByte(_) => 1,
+                Opcode::TwoBytes(_) => 2,
+                Opcode::ThreeBytes(_) => 3,
+                Opcode::FourBytes(_) => 4,
+            });
+        }
+        result
+    }
+}
 
-//         // let mut holding_time = if self.hold {
-//         //     self.hold = false;
-//         //     Some(std::time::SystemTime::now())
-//         // } else {
-//         //     None
-//         // };
+impl Default for DebuggingInbox {
+    fn default() -> Self {
+        DebuggingInbox::new(Duration::from_millis(0), None)
+    }
+}
 
-//         //     if f(z80) {
-//         //         return None;
-//         //     }
-//         //     if holding_time.is_none() {
-//         //         return Some(std::time::Duration::from_millis(0));
-//         //     }
-//         //     std::thread::sleep(std::time::Duration::from_millis(50));
-//         // }
-//         // match holding_time {
-//         //     None => return Some(std::time::Duration::from_millis(0)),
-//         //     Some(x) => return Some(x.elapsed().unwrap()),
-//         // }
-//     }
-// }
+impl<S> InboxImpler<S> for DebuggingInbox
+where
+    S: ?Sized + AsMut<DebuggingInbox> + AsRef<DebuggingInbox>,
+{
+    fn receive(s: &mut S, memo: Memo) {
+        use std::mem::transmute;
+        use hardware::z80::memo::manifests::INSTRUCTION;
+        use memo::Payload;
+
+        if s.as_ref().recent_memos.len() >= MAX_MESSAGES {
+            s.as_mut().recent_memos.pop_front();
+        }
+
+        if memo.has_manifest(INSTRUCTION) {
+            let payload = match memo.payload() {
+                Payload::U8(x) => x,
+                _ => unreachable!("INSTRUCTION payload not of U8 type?"),
+            };
+            let pc_array: [u8; 2] = [payload[0], payload[1]];
+            let pc: u16 = unsafe { transmute(pc_array) };
+            let opcode = Opcode::from_payload(payload);
+            s.as_mut().opcodes[pc as usize] = Some(opcode);
+            s.as_mut().last_pc = pc;
+        }
+
+        // if the new memo matches a pattern, hold
+
+        s.as_mut().recent_memos.push_back(memo);
+    }
+}
+
+impl<S> PausableImpler<S> for DebuggingInbox
+where
+    S: ?Sized + AsMut<DebuggingInbox> + AsRef<DebuggingInbox>,
+{
+    #[inline]
+    fn wants_pause(s: &S) -> bool {
+        s.as_ref().hold.is_some()
+    }
+
+    #[inline]
+    fn clear_pause(_s: &mut S) {}
+}
+
+impl<S> DebuggerImpler<S> for DebuggingInbox
+where
+    S: ?Sized + AsRef<DebuggingInbox> + AsMut<DebuggingInbox>,
+{
+    fn query(s: &mut S, query: Query) -> QueryResult {
+        use self::Query::*;
+        let result = match query {
+            RecentMemos => {
+                let mut result = String::new();
+                for memo in s.as_ref().recent_memos.iter() {
+                    writeln!(result, "{}", memo).unwrap();
+                }
+                result
+            }
+            Disassemble(pc) => s.as_ref().disassembly_around(pc),
+        };
+        QueryResult::Ok(result)
+    }
+
+    fn command(s: &mut S, command: Command) -> CommandResult {
+        use self::Command::*;
+
+        match (command, s.as_ref().hold) {
+            (Hold, None) => s.as_mut().hold = Some(Instant::now()),
+            (Resume, Some(instant)) => {
+                s.as_mut().hold = None;
+                let elapsed = Instant::now().duration_since(instant);
+                s.as_mut().hold_duration += elapsed;
+            }
+            (BreakAtPc(pc), _) => s.as_mut().pc_breakpoints.push(pc),
+            (RemovePcBreakpoints, _) => s.as_mut().pc_breakpoints = Vec::new(),
+            (Step, _) => s.as_mut().status = DebugStatus::Step,
+            // BreakAtMemo(pattern) => self.memo_patterns.push(pattern),
+            // RemoveBreakMemos => self.memo_patterns = Vec::new(),
+            _ => {}
+        }
+
+        CommandResult::Ok
+    }
+
+    #[inline]
+    fn hold_duration(s: &S) -> Duration {
+        s.as_ref().hold_duration
+    }
+}

@@ -1,7 +1,3 @@
-//! XXX
-//! I'm not really using the things in this module right now. I don't remember exactly
-//! what they are for.
-
 use std;
 use std::fmt;
 
@@ -266,6 +262,17 @@ macro_rules! function_to_mnemonic {
 }
 
 impl Opcode {
+    pub fn from_payload(payload: [u8; 8]) -> Opcode {
+        let bytes = payload[2];
+        match bytes {
+            1 => Opcode::OneByte([payload[3]]),
+            2 => Opcode::TwoBytes([payload[3], payload[4]]),
+            3 => Opcode::ThreeBytes([payload[3], payload[4], payload[5]]),
+            4 => Opcode::FourBytes([payload[3], payload[4], payload[5], payload[6]]),
+            _ => panic!("payload incorrectly formatted for from_payload"),
+        }
+    }
+
     pub fn mnemonic(&self) -> Option<FullMnemonic> {
         // rustc insists these do not need to be mutable. Somehow it isn't
         // seeing the assignments behind the macros?
@@ -549,25 +556,96 @@ impl Opcode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum Memo {
-    Reg8Changed {
-        register: Reg8,
-        old_value: u8,
-        new_value: u8,
-    },
+pub mod manifests {
+    use memo::{Descriptions, Manifest, PayloadType};
+    use self::Descriptions::*;
+    use self::PayloadType::*;
+    use super::super::{Reg16, Reg8};
+    use super::Opcode;
 
-    Reg16Changed {
-        register: Reg16,
-        old_value: u16,
-        new_value: u16,
-    },
+    pub const DEVICE: &'static str = &"Z80";
 
-    ReadingPcToExecute(u16),
-    InstructionAtPc(u16),
-    InstructionOpcode(Opcode),
+    fn reg8_changed_description(payload: u64) -> String {
+        use std::mem::transmute;
 
-    MaskableInterruptDenied,
-    MaskableInterruptAllowed,
-    NonmaskableInterrupt,
+        let payload2: [u8; 8] = unsafe { transmute(payload) };
+        let reg: Reg8 = unsafe { transmute(payload2[0]) };
+        format!(
+            "register: {}, new value: {:0>2x}, old value: {:0>2x}",
+            reg, payload2[1], payload2[2]
+        )
+    }
+
+    pub const REG8_CHANGED: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "8 bit register changed",
+        payload_type: U8,
+        descriptions: Function(reg8_changed_description),
+    };
+
+    fn reg16_changed_description(payload: u64) -> String {
+        use std::mem::transmute;
+
+        let payload2: [u16; 4] = unsafe { transmute(payload) };
+        let reg: Reg16 = unsafe { transmute(payload2[0] as u8) };
+        format!(
+            "register: {}, new value: {:0>4x}, old value: {:0>4x}",
+            reg, payload2[1], payload2[2]
+        )
+    }
+
+    pub const REG16_CHANGED: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "16 bit register changed",
+        payload_type: U16,
+        descriptions: Function(reg16_changed_description),
+    };
+
+    fn instruction_description(payload: u64) -> String {
+        use std::mem::transmute;
+
+        let payload2: [u8; 8] = unsafe { transmute(payload) };
+
+        let pc_array: [u8; 2] = [payload2[0], payload2[1]];
+        let pc: u16 = unsafe { transmute(pc_array) };
+
+        let opcode = Opcode::from_payload(payload2);
+        let mnemonic_string = match opcode.mnemonic() {
+            None => "(Unknown opcode)".to_owned(),
+            Some(mnemonic) => format!("{}", mnemonic),
+        };
+
+        format!(" -- {:0>4x} -- {:11} -- {}", pc, opcode, mnemonic_string)
+    }
+
+    /// Two bytes: PC, native endianness
+    /// One byte: number of bytes in the instruction
+    /// One to four bytes: the opcode
+    pub const INSTRUCTION: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Instruction",
+        payload_type: U8,
+        descriptions: Function(instruction_description),
+    };
+
+    pub const MASKABLE_INTERRUPT_DENIED: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Maskable interrupt denied",
+        payload_type: U64,
+        descriptions: Strings(&[]),
+    };
+
+    pub const MASKABLE_INTERRUPT_ALLOWED: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Maskable interrupt allowed",
+        payload_type: U64,
+        descriptions: Strings(&[]),
+    };
+
+    pub const NONMASKABLE_INTERRUPT: &'static Manifest = &Manifest {
+        device: DEVICE,
+        summary: "Nonmaskable interrupt",
+        payload_type: U64,
+        descriptions: Strings(&[]),
+    };
 }

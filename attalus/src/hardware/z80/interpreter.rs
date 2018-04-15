@@ -1,7 +1,12 @@
+use std::mem::transmute;
+
+use memo::Payload;
+use utilities;
+
 use super::instructions;
 use super::part::{self, Address, Changeable, Shift, Viewable};
 use super::machine;
-use utilities;
+use super::memo::manifests;
 
 use super::Reg16::*;
 use super::Reg8::*;
@@ -220,48 +225,36 @@ where
 
     macro_rules! send_instruction {
         ([$code0: expr]) => {
-            // let pc_op = PC.view(z).wrapping_sub(1);
-            // receive(
-            //     z,
-            //     Memo::InstructionAtPc(pc_op),
-            // );
-            // receive(
-            //     z,
-            //     Memo::InstructionOpcode(Opcode::OneByte([$code0])),
-            // );
+            let pc_op = PC.view(z).wrapping_sub(1);
+            let pc_array: [u8; 2] = unsafe { transmute(pc_op) };
+            manifests::INSTRUCTION.send(
+                z,
+                Payload::U8([pc_array[0], pc_array[1], 1, $code0, 0, 0, 0, 0])
+            );
         };
         ([$code0: expr, $code1: expr]) => {
-            // let pc_op = PC.view(z).wrapping_sub(2);
-            // receive(
-            //     z,
-            //     Memo::InstructionAtPc(pc_op),
-            // );
-            // receive(
-            //     z,
-            //     Memo::InstructionOpcode(Opcode::TwoBytes([$code0, $code1])),
-            // );
+            let pc_op = PC.view(z).wrapping_sub(2);
+            let pc_array: [u8; 2] = unsafe { transmute(pc_op) };
+            manifests::INSTRUCTION.send(
+                z,
+                Payload::U8([pc_array[0], pc_array[1], 2, $code0, $code1, 0, 0, 0])
+            );
         };
         ([$code0: expr, $code1: expr, $code2: expr]) => {
-            // let pc_op = PC.view(z).wrapping_sub(3);
-            // receive(
-            //     z,
-            //     Memo::InstructionAtPc(pc_op),
-            // );
-            // receive(
-            //     z,
-            //     Memo::InstructionOpcode(Opcode::ThreeBytes([$code0, $code1, $code2])),
-            // );
+            let pc_op = PC.view(z).wrapping_sub(3);
+            let pc_array: [u8; 2] = unsafe { transmute(pc_op) };
+            manifests::INSTRUCTION.send(
+                z,
+                Payload::U8([pc_array[0], pc_array[1], 3, $code0, $code1, $code2, 0, 0])
+            );
         };
         ([$code0: expr, $code1: expr, $code2: expr, $code3: expr]) => {
-            // let pc_op = PC.view(z).wrapping_sub(4);
-            // receive(
-            //     z,
-            //     Memo::InstructionAtPc(pc_op),
-            // );
-            // receive(
-            //     z,
-            //     Memo::InstructionOpcode(Opcode::FourBytes([$code0, $code1, $code2, $code3])),
-            // );
+            let pc_op = PC.view(z).wrapping_sub(4);
+            let pc_array: [u8; 2] = unsafe { transmute(pc_op) };
+            manifests::INSTRUCTION.send(
+                z,
+                Payload::U8([pc_array[0], pc_array[1], 3, $code0, $code1, $code2, $code3, 0])
+            );
         };
     }
 
@@ -645,8 +638,7 @@ where
                 process_instructions!(instruction_ddcb, d, e, n, nn);
                 panic!(
                     "Z80: can't happen: missing opcode DD CB {:0>2X} {:0>2X}",
-                    d as u8,
-                    opcode
+                    d as u8, opcode
                 );
             }
             Prefix::Fdcb => {
@@ -656,8 +648,7 @@ where
                 process_instructions!(instruction_fdcb, d, e, n, nn);
                 panic!(
                     "Z80: can't happen: missing opcode FD CB {:0>2X} {:0>2X}",
-                    d as u8,
-                    opcode
+                    d as u8, opcode
                 );
             }
             Prefix::Dd => {
@@ -746,10 +737,7 @@ where
 
 impl<S, SafetyLevel> machine::Impler<S> for Interpreter<SafetyLevel>
 where
-    S: part::T
-        + AsRef<Interpreter<SafetyLevel>>
-        + AsMut<Interpreter<SafetyLevel>>
-        + ?Sized,
+    S: part::T + AsRef<Interpreter<SafetyLevel>> + AsMut<Interpreter<SafetyLevel>> + ?Sized,
     SafetyLevel: Safety,
 {
     #[inline]

@@ -50,7 +50,7 @@ pub struct Manifest {
 
 impl Manifest {
     #[inline]
-    pub fn send<I: Inbox>(&'static self, inbox: &mut I, payload: Payload) {
+    pub fn send<I: Inbox + ?Sized>(&'static self, inbox: &mut I, payload: Payload) {
         let memo = Memo::new(payload, self);
         inbox.receive(memo);
     }
@@ -75,7 +75,7 @@ impl Hash for Manifest {
 }
 
 /// A message sent from a device to the user.
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 pub struct Memo {
     payload: u64,
     manifest: &'static Manifest,
@@ -128,13 +128,18 @@ impl Memo {
             PayloadType::F64 => Payload::F64(unsafe { transmute(self.payload) }),
         }
     }
+
+    #[inline]
+    pub fn has_manifest(&self, manifest: &Manifest) -> bool {
+        self.manifest == manifest
+    }
 }
 
 impl fmt::Display for Memo {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let manifest = self.manifest;
 
-        let s = format!("{:10}: {}.", manifest.device, manifest.summary);
+        let s = format!("{:16}: {}.", manifest.device, manifest.summary);
 
         fn format_items<T: Copy, F: Fn(T) -> String>(
             display: F,
@@ -148,7 +153,7 @@ impl fmt::Display for Memo {
             };
 
             for (item, description) in items[1..].iter().zip(descriptions[1..].iter()) {
-                write!(s, ", {}: {}", display(*item), description).unwrap();
+                write!(s, ", {}: {}", description, display(*item)).unwrap();
             }
 
             return s;
@@ -157,17 +162,17 @@ impl fmt::Display for Memo {
         let s2 = match manifest.descriptions {
             Descriptions::Function(f) => f(self.payload),
             Descriptions::Strings(descriptions) => match self.payload() {
-                Payload::U8(ref x) => format_items(|i| format!("{:0>2}", i), x, descriptions),
-                Payload::U16(ref x) => format_items(|i| format!("{:0>4}", i), x, descriptions),
-                Payload::U32(ref x) => format_items(|i| format!("{:0>8}", i), x, descriptions),
+                Payload::U8(ref x) => format_items(|i| format!("{:0>2x}", i), x, descriptions),
+                Payload::U16(ref x) => format_items(|i| format!("{:0>4x}", i), x, descriptions),
+                Payload::U32(ref x) => format_items(|i| format!("{:0>8x}", i), x, descriptions),
                 Payload::U64(ref x) => {
-                    format_items(|i| format!("{:0>width$}", i, width = 16), x, descriptions)
+                    format_items(|i| format!("{:0>width$x}", i, width = 16), x, descriptions)
                 }
-                Payload::I8(ref x) => format_items(|i| format!("{:0>+2}", i), x, descriptions),
-                Payload::I16(ref x) => format_items(|i| format!("{:0>+4}", i), x, descriptions),
-                Payload::I32(ref x) => format_items(|i| format!("{:0>+8}", i), x, descriptions),
+                Payload::I8(ref x) => format_items(|i| format!("{:0>+2x}", i), x, descriptions),
+                Payload::I16(ref x) => format_items(|i| format!("{:0>+4x}", i), x, descriptions),
+                Payload::I32(ref x) => format_items(|i| format!("{:0>+8x}", i), x, descriptions),
                 Payload::I64(ref x) => {
-                    format_items(|i| format!("{:0>+width$}", i, width = 16), x, descriptions)
+                    format_items(|i| format!("{:0>+width$x}", i, width = 16), x, descriptions)
                 }
                 Payload::F32(ref x) => format_items(|i| format!("{: >+8.5}", i), x, descriptions),
                 Payload::F64(ref x) => format_items(|i| format!("{: >+8.5}", i), x, descriptions),
@@ -209,7 +214,7 @@ pub trait PausableImpl {
 
 impl<S> Pausable for S
 where
-    S: PausableImpl,
+    S: PausableImpl + ?Sized,
 {
     #[inline]
     fn wants_pause(&self) -> bool {
@@ -239,7 +244,7 @@ pub trait InboxImpl {
 
 impl<S> Inbox for S
 where
-    S: Pausable + InboxImpl,
+    S: Pausable + InboxImpl + ?Sized,
 {
     #[inline]
     fn receive(&mut self, memo: Memo) {
@@ -282,4 +287,13 @@ impl Inbox for NothingInbox {
 impl<S> InboxImpler<S> for NothingInbox {
     #[inline]
     fn receive(_: &mut S, _memo: Memo) {}
+}
+
+pub struct PrintingInbox;
+
+impl<S> InboxImpler<S> for PrintingInbox {
+    #[inline]
+    fn receive(_: &mut S, memo: Memo) {
+        println!("{}", memo);
+    }
 }
