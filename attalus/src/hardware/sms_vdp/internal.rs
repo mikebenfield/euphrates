@@ -2,12 +2,12 @@
 //!
 //! The types here follow the Impler pattern.
 //!
-//! `T` is the trait of primary interest here.
+//! `SmsVdpInternal` is the trait of primary interest here.
 //!
-//! A type wishing to provide an implementation of `T` for a type `S` may
-//! implement `Impler<S>`.
+//! A type wishing to provide an implementation of `SmsVdpInternal` for a type `S` may
+//! implement `SmsVdpInternalImpler<S>`.
 //!
-//! A type wishing to use a type `U`'s `Impler` may implement `Impl`, specifying
+//! A type wishing to use a type `U`'s `SmsVdpInternalImpler` may implement `SmsVdpInternalImpl`, specifying
 //! `type Impler = U`.
 
 use super::{TvSystem, Kind};
@@ -16,7 +16,7 @@ use super::{TvSystem, Kind};
 /// VDP.
 ///
 /// Implementing this trait is just a matter of writing getters and setters.
-pub trait T {
+pub trait SmsVdpInternal {
     /// A latch register used by the GameGear VDP.
     ///
     /// For the Game Gear VDP only, using the data port to write to CRAM (that
@@ -129,7 +129,7 @@ pub trait T {
     ///
     /// The VDP takes one cycle to process a pixel; since there are 342 pixels
     /// per line, this will be 342 times the number of times `draw_line` from
-    /// `machine::T` has been called.
+    /// `machine::SmsVdpInternal` has been called.
     fn cycles(&self) -> u64;
 
     /// Set the number of cycles this VDP has been running.
@@ -175,8 +175,8 @@ pub trait T {
     unsafe fn set_register_unchecked(&mut self, index: u16, value: u8);
 }
 
-/// A type able to provide an implementation of `T` for `S`.
-pub trait Impler<S>
+/// A type able to provide an implementation of `SmsVdpInternal` for `S`.
+pub trait SmsVdpInternalImpler<S>
 where
     S: ?Sized,
 {
@@ -213,167 +213,167 @@ where
     unsafe fn set_register_unchecked(&mut S, index: u16, value: u8);
 }
 
-/// A type which wishes to use `Impler`'s implementation of `T`.
-pub trait Impl {
-    type Impler: Impler<Self>;
+/// A type which wishes to use `Impler`'s implementation of `SmsVdpInternal`.
+pub trait SmsVdpInternalImpl {
+    type Impler: SmsVdpInternalImpler<Self>;
 }
 
-impl<S> T for S
+impl<S> SmsVdpInternal for S
 where
-    S: Impl,
+    S: SmsVdpInternalImpl,
 {
     #[inline]
     fn cram_latch(&self) -> u8 {
-        <S::Impler as Impler<Self>>::cram_latch(self)
+        S::Impler::cram_latch(self)
     }
 
     #[inline]
     fn set_cram_latch(&mut self, x: u8) {
-        <S::Impler as Impler<Self>>::set_cram_latch(self, x)
+        S::Impler::set_cram_latch(self, x)
     }
 
     #[inline]
     fn data_buffer(&self) -> u8 {
-        <S::Impler as Impler<Self>>::data_buffer(self)
+        S::Impler::data_buffer(self)
     }
 
     #[inline]
     fn set_data_buffer(&mut self, x: u8) {
-        <S::Impler as Impler<Self>>::set_data_buffer(self, x)
+        S::Impler::set_data_buffer(self, x)
     }
 
     #[inline]
     fn status_flags(&self) -> u8 {
-        <S::Impler as Impler<Self>>::status_flags(self)
+        S::Impler::status_flags(self)
     }
 
     #[inline]
     fn set_status_flags(&mut self, x: u8) {
-        <S::Impler as Impler<Self>>::set_status_flags(self, x)
+        S::Impler::set_status_flags(self, x)
     }
 
     #[inline]
     fn control_flag(&self) -> bool {
-        <S::Impler as Impler<Self>>::control_flag(self)
+        S::Impler::control_flag(self)
     }
 
     #[inline]
     fn set_control_flag(&mut self, x: bool) {
-        <S::Impler as Impler<Self>>::set_control_flag(self, x)
+        S::Impler::set_control_flag(self, x)
     }
 
     #[inline]
     fn line_interrupt_pending(&self) -> bool {
-        <S::Impler as Impler<Self>>::line_interrupt_pending(self)
+        S::Impler::line_interrupt_pending(self)
     }
 
     #[inline]
     fn set_line_interrupt_pending(&mut self, x: bool) {
-        <S::Impler as Impler<Self>>::set_line_interrupt_pending(self, x)
+        S::Impler::set_line_interrupt_pending(self, x)
     }
 
     #[inline]
     fn y_scroll(&self) -> u8 {
-        <S::Impler as Impler<Self>>::y_scroll(self)
+        S::Impler::y_scroll(self)
     }
 
     #[inline]
     fn set_y_scroll(&mut self, x: u8) {
-        <S::Impler as Impler<Self>>::set_y_scroll(self, x)
+        S::Impler::set_y_scroll(self, x)
     }
 
     #[inline]
     fn tv_system(&self) -> TvSystem {
-        <S::Impler as Impler<Self>>::tv_system(self)
+        S::Impler::tv_system(self)
     }
 
     #[inline]
     fn set_tv_system(&mut self, x: TvSystem) {
-        <S::Impler as Impler<Self>>::set_tv_system(self, x)
+        S::Impler::set_tv_system(self, x)
     }
 
     #[inline]
     fn kind(&self) -> Kind {
-        <S::Impler as Impler<Self>>::kind(self)
+        S::Impler::kind(self)
     }
 
     #[inline]
     fn h(&self) -> u16 {
-        <S::Impler as Impler<Self>>::h(self)
+        S::Impler::h(self)
     }
 
     #[inline]
     fn set_h(&mut self, x: u16) {
-        <S::Impler as Impler<Self>>::set_h(self, x)
+        S::Impler::set_h(self, x)
     }
 
     #[inline]
     fn v(&self) -> u16 {
-        <S::Impler as Impler<Self>>::v(self)
+        S::Impler::v(self)
     }
 
     #[inline]
     fn set_v(&mut self, x: u16) {
-        <S::Impler as Impler<Self>>::set_v(self, x)
+        S::Impler::set_v(self, x)
     }
 
     #[inline]
     fn line_counter(&self) -> u8 {
-        <S::Impler as Impler<Self>>::line_counter(self)
+        S::Impler::line_counter(self)
     }
 
     #[inline]
     fn set_line_counter(&mut self, x: u8) {
-        <S::Impler as Impler<Self>>::set_line_counter(self, x)
+        S::Impler::set_line_counter(self, x)
     }
 
     #[inline]
     fn code_address(&self) -> u16 {
-        <S::Impler as Impler<Self>>::code_address(self)
+        S::Impler::code_address(self)
     }
 
     #[inline]
     fn set_code_address(&mut self, x: u16) {
-        <S::Impler as Impler<Self>>::set_code_address(self, x)
+        S::Impler::set_code_address(self, x)
     }
 
     #[inline]
     fn cycles(&self) -> u64 {
-        <S::Impler as Impler<Self>>::cycles(self)
+        S::Impler::cycles(self)
     }
 
     #[inline]
     fn set_cycles(&mut self, x: u64) {
-        <S::Impler as Impler<Self>>::set_cycles(self, x)
+        S::Impler::set_cycles(self, x)
     }
 
     #[inline]
     unsafe fn vram_unchecked(&self, index: u16) -> u8 {
-        <S::Impler as Impler<Self>>::vram_unchecked(self, index)
+        S::Impler::vram_unchecked(self, index)
     }
 
     #[inline]
     unsafe fn set_vram_unchecked(&mut self, index: u16, value: u8) {
-        <S::Impler as Impler<Self>>::set_vram_unchecked(self, index, value)
+        S::Impler::set_vram_unchecked(self, index, value)
     }
 
     #[inline]
     unsafe fn cram_unchecked(&self, index: u16) -> u16 {
-        <S::Impler as Impler<Self>>::cram_unchecked(self, index)
+        S::Impler::cram_unchecked(self, index)
     }
 
     #[inline]
     unsafe fn set_cram_unchecked(&mut self, index: u16, value: u16) {
-        <S::Impler as Impler<Self>>::set_cram_unchecked(self, index, value)
+        S::Impler::set_cram_unchecked(self, index, value)
     }
 
     #[inline]
     unsafe fn register_unchecked(&self, index: u16) -> u8 {
-        <S::Impler as Impler<Self>>::register_unchecked(self, index)
+        S::Impler::register_unchecked(self, index)
     }
 
     #[inline]
     unsafe fn set_register_unchecked(&mut self, index: u16, value: u8) {
-        <S::Impler as Impler<Self>>::set_register_unchecked(self, index, value)
+        S::Impler::set_register_unchecked(self, index, value)
     }
 }

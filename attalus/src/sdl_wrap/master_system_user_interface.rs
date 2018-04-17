@@ -7,7 +7,7 @@ use failure::Error;
 use sdl2;
 
 use hardware::z80;
-use hardware::memory_16_8;
+use hardware::memory_16_8::sega::SegaMemoryMap;
 use host_multimedia::SimpleAudio;
 use systems::sega_master_system::{Frequency, Hardware, MasterSystem, PlaybackStatus, PlayerStatus,
                                   RecordingStatus, System, TimeStatus};
@@ -55,11 +55,11 @@ impl PlaybackInterface {
 
     pub fn run<I>(
         &mut self,
-        master_system: &mut System<I, memory_16_8::sega::T>,
+        master_system: &mut System<I, SegaMemoryMap>,
         frequency: Frequency,
     ) -> Result<Duration>
     where
-        System<I, memory_16_8::sega::T>: MasterSystem,
+        System<I, SegaMemoryMap>: MasterSystem,
     {
         master_system.init(frequency)?;
         let mut frame_info = FrameInfo::default();
@@ -83,7 +83,7 @@ pub struct UserInterface {
     save_directory: Option<PathBuf>,
     player_status: PlayerStatus,
     event_pump: sdl2::EventPump,
-    recording_status: RecordingStatus<Hardware<memory_16_8::sega::T>>,
+    recording_status: RecordingStatus<Hardware<SegaMemoryMap>>,
     playback_status: PlaybackStatus,
 }
 
@@ -108,9 +108,9 @@ impl UserInterface {
         })
     }
 
-    fn frame_update<I>(&mut self, master_system: &System<I, memory_16_8::sega::T>) -> bool
+    fn frame_update<I>(&mut self, master_system: &System<I, SegaMemoryMap>) -> bool
     where
-        System<I, memory_16_8::sega::T>: MasterSystem,
+        System<I, SegaMemoryMap>: MasterSystem,
     {
         self.player_status.pause = false;
 
@@ -231,11 +231,11 @@ impl UserInterface {
 
     pub fn run<I>(
         &mut self,
-        master_system: &mut System<I, memory_16_8::sega::T>,
+        master_system: &mut System<I, SegaMemoryMap>,
         frequency: Frequency,
     ) -> Result<()>
     where
-        System<I, memory_16_8::sega::T>: MasterSystem,
+        System<I, SegaMemoryMap>: MasterSystem,
     {
         let mut frame_info = FrameInfo::default();
 

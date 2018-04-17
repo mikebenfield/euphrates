@@ -1,11 +1,10 @@
 //! A trait with methods building on those from `internal::T`.
 
-use super::internal;
+use super::*;
 use super::replaceable;
-use super::{Kind, Resolution, TvSystem, SPRITE_COLLISION_FLAG, SPRITE_OVERFLOW_FLAG};
 
 /// Methods providing a higher level view of the internal components of the VDP
-pub trait T: internal::T {
+pub trait T: SmsVdpInternal {
     /// A number in [0, 3], determined by the upper 2 bits of `code_address`.
     ///
     /// This code is used to determine whether writes to the control port should
@@ -539,4 +538,4 @@ pub trait T: internal::T {
     }
 }
 
-impl<S: internal::T> T for S {}
+impl<S: SmsVdpInternal> T for S {}

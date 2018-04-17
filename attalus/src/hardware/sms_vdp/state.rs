@@ -12,8 +12,8 @@ pub const CONTROL_FLAG: u8 = 0x1;
 pub const LINE_INTERRUPT_FLAG: u8 = 0x2;
 
 /// For now this cannot do the Game Gear VDP.
-#[derive(Copy)]
-pub struct T {
+#[derive(Clone, Copy)]
+pub struct SmsVdpState {
     pub cycles: u64,
     pub kind: Kind,
     pub tv_system: TvSystem,
@@ -31,18 +31,18 @@ pub struct T {
 
 serde_struct_arrays!{
     impl_serde,
-    T,
+    SmsVdpState,
     [cycles, kind, tv_system, status_flags, h, v, address, buffer, reg,
     cram, line_counter, y_scroll,],
     [vram: [u8; 0x4000],],
     []
 }
 
-impl std::fmt::Debug for T {
+impl std::fmt::Debug for SmsVdpState {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "vdp::Simple \
+            "SmsVdpState \
             {{ \n\
                 status_flags: {:?}, \n\
                 h: {:?}, \n\
@@ -63,9 +63,9 @@ impl std::fmt::Debug for T {
     }
 }
 
-impl Default for T {
+impl Default for SmsVdpState {
     fn default() -> Self {
-        T {
+        SmsVdpState {
             cycles: 0,
             kind: Default::default(),
             tv_system: Default::default(),
@@ -83,28 +83,22 @@ impl Default for T {
     }
 }
 
-impl Clone for T {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
 pub trait Savable {
-    fn save(&self) -> T;
+    fn save(&self) -> SmsVdpState;
 }
 
 pub trait Restorable {
-    fn restore(&T) -> Self;
+    fn restore(&SmsVdpState) -> Self;
 }
 
-impl Savable for T {
-    fn save(&self) -> T {
+impl Savable for SmsVdpState {
+    fn save(&self) -> SmsVdpState {
         *self
     }
 }
 
-impl Restorable for T {
-    fn restore(t: &T) -> Self {
+impl Restorable for SmsVdpState {
+    fn restore(t: &SmsVdpState) -> Self {
         *t
     }
 }

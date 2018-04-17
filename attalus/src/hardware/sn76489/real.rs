@@ -4,10 +4,13 @@ use failure::Error;
 
 use host_multimedia::SimpleAudio;
 
-use super::{hardware, machine};
+use super::*;
 
+/// A simple impler for `Sn76489`.
+///
+/// You just need to implement `SimpleAudio`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct T {
+pub struct SimpleSn76489 {
     // registers for the 4 different channels, in this order:
     // [channel 0 tone], [channel 0 volume], [channel 1 tone], [channel 1 volume],
     // etc.
@@ -21,9 +24,9 @@ pub struct T {
     pub cycles: u64,
 }
 
-impl Default for T {
+impl Default for SimpleSn76489 {
     fn default() -> Self {
-        T {
+        SimpleSn76489 {
             registers: [0, 0xF, 0, 0xF, 0, 0xF, 0, 0xF],
             latch: 0,
             linear_feedback: 0x8000,
@@ -34,9 +37,9 @@ impl Default for T {
     }
 }
 
-impl<S> hardware::Impler<S> for T
+impl<S> Sn76489HardwareImpler<S> for SimpleSn76489
 where
-    S: AsMut<T>,
+    S: AsMut<SimpleSn76489>,
 {
     /// If bit 7 is 1, this is a latch byte. In this case,
     /// bits 0-3 are data to be written,
@@ -86,9 +89,9 @@ macro_rules! min_nonzero {
     };
 }
 
-impl<S> machine::Impler<S> for T
+impl<S> Sn76489Impler<S> for SimpleSn76489
 where
-    S: SimpleAudio + AsRef<T> + AsMut<T> + ?Sized,
+    S: SimpleAudio + AsRef<SimpleSn76489> + AsMut<SimpleSn76489> + ?Sized,
 {
     fn queue(s: &mut S, target_cycles: u64) -> Result<(), Error> {
         if s.as_ref().cycles >= target_cycles {

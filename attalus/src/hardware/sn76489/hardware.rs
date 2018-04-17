@@ -1,24 +1,24 @@
-pub trait T {
+pub trait Sn76489Hardware {
     fn write(&mut self, data: u8);
 }
 
-pub trait Impler<S>
+pub trait Sn76489HardwareImpler<S>
 where
     S: ?Sized,
 {
     fn write(&mut S, data: u8);
 }
 
-pub trait Impl {
-    type Impler: Impler<Self>;
+pub trait Sn76489HardwareImpl {
+    type Impler: Sn76489HardwareImpler<Self>;
 }
 
-impl<S> T for S
+impl<S> Sn76489Hardware for S
 where
-    S: Impl
+    S: Sn76489HardwareImpl,
 {
     #[inline]
     fn write(&mut self, data: u8) {
-        <<S as Impl>::Impler as Impler<Self>>::write(self, data)
+        <<S as Sn76489HardwareImpl>::Impler as Sn76489HardwareImpler<Self>>::write(self, data)
     }
 }

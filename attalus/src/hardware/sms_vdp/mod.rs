@@ -3,13 +3,16 @@
 //! The traits here are organized into submodules generally following the Impler
 //! pattern.
 
-pub mod internal;
+mod internal;
 pub mod higher;
 pub mod machine;
 pub mod replaceable;
 pub mod simple;
-pub mod state;
+mod state;
 pub mod part;
+
+pub use self::internal::*;
+pub use self::state::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum TvSystem {

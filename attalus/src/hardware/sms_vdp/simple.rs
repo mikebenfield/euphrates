@@ -1,12 +1,13 @@
 //! Provides a simple type implementating the traits in `sms_vdp`.
 
-use super::{state, Kind, TvSystem};
+use super::*;
+use super::{Kind, TvSystem};
 
 pub struct T;
 
-impl<S> super::internal::Impler<S> for T
+impl<S> SmsVdpInternalImpler<S> for T
 where
-    S: AsMut<state::T> + AsRef<state::T>,
+    S: AsMut<SmsVdpState> + AsRef<SmsVdpState>,
 {
     #[inline]
     fn cram_latch(_s: &S) -> u8 {

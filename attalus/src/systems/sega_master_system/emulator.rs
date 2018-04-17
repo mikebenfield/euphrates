@@ -5,11 +5,14 @@ use std;
 use failure::{err_msg, Error, ResultExt};
 
 use memo;
-use hardware::io_16_8;
+use hardware::io_16_8::{Io16_8, Io16_8Impl, sms2::Sms2Io};
 use hardware::irq::Irq;
-use hardware::memory_16_8;
-use hardware::sms_vdp::{self, internal::T as internalT, machine::T as machineT};
-use hardware::sn76489;
+use hardware::memory_16_8::{Memory16, Memory16Impl};
+use hardware::memory_16_8::codemasters::CodemastersMemoryMap;
+use hardware::memory_16_8::sega::{MasterSystemMemory, SegaMemoryMap};
+use hardware::sms_vdp::{self, SmsVdpInternal, SmsVdpInternalImpl, SmsVdpState,
+                        machine::T as machineT};
+use hardware::sn76489::{SimpleSn76489, Sn76489, Sn76489HardwareImpl, Sn76489Impl};
 use hardware::z80::{self, machine::T as Z80MachineT};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
 use utilities::{self, FrameInfo, TimeInfo};
@@ -17,12 +20,8 @@ use utilities::{self, FrameInfo, TimeInfo};
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait MasterSystem
-    : z80::machine::T
-    + sms_vdp::machine::T
-    + memory_16_8::T
-    + AsMut<io_16_8::sms2::T>
-    + sn76489::machine::T
-    + SimpleAudio {
+    : z80::machine::T + sms_vdp::machine::T + Memory16 + AsMut<Sms2Io> + Sn76489 + SimpleAudio
+    {
     fn init(&mut self, frequency: Frequency) -> Result<()>;
 
     fn run_frame(
@@ -37,9 +36,9 @@ pub trait MasterSystem
 pub struct Hardware<M> {
     pub z80: z80::state::T,
     pub memory: M,
-    pub io: io_16_8::sms2::T,
-    pub vdp: sms_vdp::state::T,
-    pub sn76489: sn76489::real::T,
+    pub io: Sms2Io,
+    pub vdp: SmsVdpState,
+    pub sn76489: SimpleSn76489,
     pub interpreter: z80::interpreter::Interpreter<z80::interpreter::Safe>,
 }
 
@@ -53,11 +52,7 @@ pub struct System<I, M> {
 
 impl<I, M> MasterSystem for System<I, M>
 where
-    Self: z80::machine::T
-        + sms_vdp::machine::T
-        + memory_16_8::T
-        + AsMut<io_16_8::sms2::T>
-        + sn76489::machine::T
+    Self: z80::machine::T + sms_vdp::machine::T + Memory16 + AsMut<Sms2Io> + Sn76489,
 {
     fn init(&mut self, frequency: Frequency) -> Result<()> {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
@@ -87,9 +82,9 @@ where
     ) -> Result<EmulationResult> {
         // audio already configured, start time, etc
 
-        <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_joypad_a(player_status.joypad_a);
-        <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_joypad_b(player_status.joypad_b);
-        <Self as AsMut<io_16_8::sms2::T>>::as_mut(self).set_pause(player_status.pause);
+        <Self as AsMut<Sms2Io>>::as_mut(self).set_joypad_a(player_status.joypad_a);
+        <Self as AsMut<Sms2Io>>::as_mut(self).set_joypad_b(player_status.joypad_b);
+        <Self as AsMut<Sms2Io>>::as_mut(self).set_pause(player_status.pause);
 
         loop {
             // if self.wants_pause() {
@@ -99,7 +94,7 @@ where
             self.draw_line()
                 .with_context(|e| err_msg(format!("Master System emulation: VDP error {}", e)))?;
 
-            let vdp_cycles = <Self as sms_vdp::internal::T>::cycles(self);
+            let vdp_cycles = <Self as SmsVdpInternal>::cycles(self);
             let z80_target_cycles = 2 * vdp_cycles / 3;
 
             while z80::internal::T::cycles(self) < z80_target_cycles {
@@ -112,7 +107,7 @@ where
             if self.v() == 0 {
                 if let Some(_) = self.z80_frequency {
                     let sound_target_cycles = z80::internal::T::cycles(self) / 16;
-                    sn76489::machine::T::queue(self, sound_target_cycles).with_context(|e| {
+                    Sn76489::queue(self, sound_target_cycles).with_context(|e| {
                         format_err!("Master System emulation: error queueing audio {}", e)
                     })?;
                 }
@@ -227,9 +222,9 @@ macro_rules! impl_as_ref {
     }
 }
 
-impl_as_ref!{io_16_8::sms2::T, io}
-impl_as_ref!{sn76489::real::T, sn76489}
-impl_as_ref!{sms_vdp::state::T, vdp}
+impl_as_ref!{Sms2Io, io}
+impl_as_ref!{SimpleSn76489, sn76489}
+impl_as_ref!{SmsVdpState, vdp}
 impl_as_ref!{z80::interpreter::Interpreter<z80::interpreter::Safe>, interpreter}
 impl_as_ref!{z80::state::T, z80}
 
@@ -252,8 +247,8 @@ macro_rules! impl_as_ref_memory_map {
     }
 }
 
-impl_as_ref_memory_map!{memory_16_8::sega::T}
-impl_as_ref_memory_map!{memory_16_8::codemasters::T}
+impl_as_ref_memory_map!{SegaMemoryMap}
+impl_as_ref_memory_map!{CodemastersMemoryMap}
 
 impl<I, M> memo::PausableImpl for System<I, M> {
     type Impler = memo::NothingInbox;
@@ -267,28 +262,19 @@ impl<I, M> memo::InboxImpl for System<I, M> {
     type Impler = memo::PrintingInbox;
 }
 
-impl<I> memory_16_8::Impl for System<I, memory_16_8::sega::T>
-// where
-//     I: Inbox,
-{
-    type Impler = memory_16_8::sega::T;
+impl<I> Memory16Impl for System<I, SegaMemoryMap> {
+    type Impler = SegaMemoryMap;
 }
 
-impl<I> memory_16_8::Impl for System<I, memory_16_8::codemasters::T>
-// where
-//     I: Inbox,
-{
-    type Impler = memory_16_8::codemasters::T;
+impl<I> Memory16Impl for System<I, CodemastersMemoryMap> {
+    type Impler = CodemastersMemoryMap;
 }
 
-impl<I, M> io_16_8::Impl for System<I, M>
-// where
-//     I: Inbox,
-{
-    type Impler = io_16_8::sms2::T;
+impl<I, M> Io16_8Impl for System<I, M> {
+    type Impler = Sms2Io;
 }
 
-impl<I, M> sms_vdp::internal::Impl for System<I, M> {
+impl<I, M> SmsVdpInternalImpl for System<I, M> {
     type Impler = sms_vdp::simple::T;
 }
 
@@ -329,7 +315,7 @@ impl<I, M> z80::higher::T for System<I, M> {}
 
 impl<I, M> z80::part::T for System<I, M>
 where
-    Self: memory_16_8::T + io_16_8::T,
+    Self: Memory16 + Io16_8,
 {
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {
@@ -355,12 +341,12 @@ where
     type Impler = z80::interpreter::Interpreter<z80::interpreter::Safe>;
 }
 
-impl<I, M> sn76489::hardware::Impl for System<I, M> {
-    type Impler = sn76489::real::T;
+impl<I, M> Sn76489HardwareImpl for System<I, M> {
+    type Impler = SimpleSn76489;
 }
 
-impl<I, M> sn76489::machine::Impl for System<I, M> {
-    type Impler = sn76489::real::T;
+impl<I, M> Sn76489Impl for System<I, M> {
+    type Impler = SimpleSn76489;
 }
 
 //// Builders and other useful types
@@ -442,7 +428,7 @@ impl HardwareBuilder {
 
     pub fn build_from_rom<M>(&self, rom: &[u8]) -> Result<Hardware<M>>
     where
-        M: memory_16_8::sega::MasterSystemMemory,
+        M: MasterSystemMemory,
     {
         let memory = M::new(rom)?;
         Ok(self.build(memory))
@@ -450,7 +436,7 @@ impl HardwareBuilder {
 
     pub fn build_from_file<M>(&self, filename: &str) -> Result<Hardware<M>>
     where
-        M: memory_16_8::sega::MasterSystemMemory,
+        M: MasterSystemMemory,
     {
         let memory = M::new_from_file(filename)?;
         Ok(self.build(memory))

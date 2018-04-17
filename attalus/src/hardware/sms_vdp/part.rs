@@ -1,14 +1,12 @@
-use super::FRAME_INTERRUPT_FLAG;
 use super::higher;
-use super::internal;
-use super::{Kind, Resolution, TvSystem};
+use super::*;
 
 /// Methods for the VDP that other pieces of hardware, in particular the IO
 /// system, should be able to use.
 ///
 /// An implementation is provided for any type implementing `internal::T` and
 /// `higher::T`; there should be no reason to change it.
-pub trait T: internal::T + higher::T {
+pub trait T: SmsVdpInternal + higher::T {
     /// Hardware method providing access to the VDP's `v` counter.
     ///
     /// Each time a line is drawn, the `v` counter is incremented. When the last
@@ -133,8 +131,8 @@ pub trait T: internal::T + higher::T {
     fn requesting_mi(&self) -> Option<u8> {
         let frame_interrupt = self.status_flags() & FRAME_INTERRUPT_FLAG != 0;
         let line_interrupt = self.line_interrupt_pending();
-        if (frame_interrupt && self.frame_irq_enabled()) ||
-            (line_interrupt && self.line_irq_enabled())
+        if (frame_interrupt && self.frame_irq_enabled())
+            || (line_interrupt && self.line_irq_enabled())
         {
             Some(0xFF)
         } else {
@@ -235,6 +233,6 @@ pub trait T: internal::T + higher::T {
 
 impl<S> T for S
 where
-    S: internal::T + higher::T,
+    S: SmsVdpInternal + higher::T,
 {
 }

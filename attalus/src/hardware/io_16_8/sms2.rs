@@ -4,7 +4,7 @@ use hardware::irq::Irq;
 use hardware::sn76489;
 use hardware::sms_vdp;
 // use memo::{Inbox, Memo, Payload};
-use super::Impler;
+use super::Io16_8Impler;
 
 // pub mod manifests {
 //     use memo::{Item, Manifest, PayloadType};
@@ -44,10 +44,12 @@ use super::Impler;
 //     };
 // }
 
-/// The IO system in the Sega Master Sytem 2. It's almost identical to that in
-/// the original Sega Master System, but a little simpler to implement.
+/// The IO system in the Sega Master Sytem 2.
+///
+/// It's almost identical to that in the original Sega Master System, but a
+/// little simpler to implement.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct T {
+pub struct Sms2Io {
     memory_control: u8,
     io_control: u8,
     id: u32,
@@ -56,9 +58,9 @@ pub struct T {
     pause: bool,
 }
 
-impl Default for T {
+impl Default for Sms2Io {
     fn default() -> Self {
-        T {
+        Sms2Io {
             memory_control: 0,
             io_control: 0,
             id: 0,
@@ -69,8 +71,8 @@ impl Default for T {
     }
 }
 
-impl T {
-    pub fn new() -> T {
+impl Sms2Io {
+    pub fn new() -> Sms2Io {
         Default::default()
     }
 
@@ -105,7 +107,7 @@ impl T {
     }
 }
 
-impl Irq for T {
+impl Irq for Sms2Io {
     #[inline]
     fn requesting_nmi(&self) -> bool {
         self.pause
@@ -117,9 +119,9 @@ impl Irq for T {
     }
 }
 
-impl<S> Impler<S> for T
+impl<S> Io16_8Impler<S> for Sms2Io
 where
-    S: AsMut<T> + AsRef<T> + sms_vdp::part::T + sn76489::hardware::T + ?Sized,
+    S: AsMut<Sms2Io> + AsRef<Sms2Io> + sms_vdp::part::T + sn76489::Sn76489Hardware + ?Sized,
 {
     fn input(s: &mut S, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
@@ -153,11 +155,11 @@ where
             }
             0b11000000 => {
                 // IO port A/B register
-                AsRef::<T>::as_ref(s).joypad_a()
+                AsRef::<Sms2Io>::as_ref(s).joypad_a()
             }
             0b11000001 => {
                 // IO port B register
-                AsRef::<T>::as_ref(s).joypad_b()
+                AsRef::<Sms2Io>::as_ref(s).joypad_b()
             }
             _ => {
                 unreachable!("Missing IO address in input");
@@ -182,10 +184,10 @@ where
 
         match masked {
             0b00000000 => {
-                AsMut::<T>::as_mut(s).memory_control = value;
+                AsMut::<Sms2Io>::as_mut(s).memory_control = value;
             }
             0b00000001 => {
-                AsMut::<T>::as_mut(s).io_control = value;
+                AsMut::<Sms2Io>::as_mut(s).io_control = value;
             }
             0b01000000 => s.write(value),
             0b01000001 => s.write(value),

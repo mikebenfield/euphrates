@@ -5,7 +5,8 @@ use failure::ResultExt;
 
 use memo::{Inbox, Payload};
 use errors::{Error, SimpleKind};
-use super::Impler;
+
+use super::*;
 
 pub mod manifests {
     use memo::{Descriptions, Manifest, PayloadType};
@@ -113,7 +114,7 @@ use self::RamPagesAllocated::*;
 /// The so-called Sega memory map, used in the large majority of games for the
 /// Sega Master System.
 #[derive(Clone)]
-pub struct T {
+pub struct SegaMemoryMap {
     // memory is a sequence of 8 KiB implementation-pages. The first
     // implementation-page corresponds to the 8 KiB of system memory.
     // Then successive pairs of implementation-pages correspond to
@@ -172,7 +173,7 @@ pub struct T {
 
 serde_struct_arrays!{
     impl_serde,
-    T,
+    SegaMemoryMap,
     [ram_pages_allocated, reg_fffc, reg_fffd, reg_fffe, reg_ffff, pages, slot_writable,],
     [],
     [memory: [u8; 0x2000],]
@@ -187,7 +188,7 @@ pub enum MemoryLocation {
 
 fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    S: AsMut<T> + AsRef<T> + Inbox,
+    S: AsMut<SegaMemoryMap> + AsRef<SegaMemoryMap> + Inbox,
 {
     // macro_rules! receive {
     //     ($x: expr) => {
@@ -363,7 +364,7 @@ where
     }
 }
 
-impl T {
+impl SegaMemoryMap {
     /// For use in a `Memo`.
     // Always inline: the result will be passed to a `Inbox`. In the case
     // that the `Inbox` does nothing, hopefully the compiler sees that this
@@ -436,7 +437,7 @@ pub trait MasterSystemMemory: Sized {
     }
 }
 
-impl MasterSystemMemory for T {
+impl MasterSystemMemory for SegaMemoryMap {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
             Err(SimpleKind(format!(
@@ -460,7 +461,7 @@ impl MasterSystemMemory for T {
             memory.push(impl_page);
         }
 
-        Ok(T {
+        Ok(SegaMemoryMap {
             memory: memory,
             ram_pages_allocated: Zero,
             // supposedly these registers are undefined after a reset, but
@@ -477,23 +478,23 @@ impl MasterSystemMemory for T {
     }
 }
 
-impl AsRef<T> for T {
+impl AsRef<SegaMemoryMap> for SegaMemoryMap {
     #[inline]
-    fn as_ref(&self) -> &T {
+    fn as_ref(&self) -> &SegaMemoryMap {
         self
     }
 }
 
-impl AsMut<T> for T {
+impl AsMut<SegaMemoryMap> for SegaMemoryMap {
     #[inline]
-    fn as_mut(&mut self) -> &mut T {
+    fn as_mut(&mut self) -> &mut SegaMemoryMap {
         self
     }
 }
 
-impl<S> Impler<S> for T
+impl<S> Memory16Impler<S> for SegaMemoryMap
 where
-    S: AsMut<T> + AsRef<T> + Inbox,
+    S: AsMut<SegaMemoryMap> + AsRef<SegaMemoryMap> + Inbox,
 {
     fn read(s: &mut S, logical_address: u16) -> u8 {
         let result = if logical_address < 0x400 {

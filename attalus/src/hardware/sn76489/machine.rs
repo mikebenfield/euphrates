@@ -1,34 +1,33 @@
-
 use std;
 
 use failure::Error;
 
-use super::hardware;
+use super::*;
 
 type Result<T> = std::result::Result<T, Error>;
 
-pub trait T: hardware::T {
+pub trait Sn76489: Sn76489Hardware {
     fn queue(&mut self, target_cycles: u64) -> Result<()>;
 }
 
-pub trait Impler<S>
+pub trait Sn76489Impler<S>
 where
     S: ?Sized,
 {
     fn queue(&mut S, target_cycles: u64) -> Result<()>;
 }
 
-pub trait Impl {
-    type Impler: Impler<Self>;
+pub trait Sn76489Impl {
+    type Impler: Sn76489Impler<Self>;
 }
 
 
-impl<S> T for S
+impl<S> Sn76489 for S
 where
-    S: Impl + hardware::T + ?Sized
+    S: Sn76489Impl + Sn76489Hardware + ?Sized
 {
     #[inline]
     fn queue(&mut self, target_cycles: u64) -> Result<()> {
-        <<S as Impl>::Impler as Impler<Self>>::queue(self, target_cycles)
+        <<S as Sn76489Impl>::Impler as Sn76489Impler<Self>>::queue(self, target_cycles)
     }
 }

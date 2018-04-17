@@ -16,13 +16,13 @@ pub mod codemasters;
 
 use std::convert::{AsMut, AsRef};
 
-/// A machine that has a memory map with 16 bit addresses and 8 bit data.
-pub trait T {
+/// A machine that has a memory map with 16 bit addresses.
+pub trait Memory16 {
     fn read(&mut self, logical_address: u16) -> u8;
     fn write(&mut self, logical_address: u16, value: u8);
 }
 
-pub trait Impler<S>
+pub trait Memory16Impler<S>
 where
     S: ?Sized,
 {
@@ -30,26 +30,26 @@ where
     fn write(&mut S, logical_address: u16, value: u8);
 }
 
-pub trait Impl {
-    type Impler: Impler<Self>;
+pub trait Memory16Impl {
+    type Impler: Memory16Impler<Self>;
 }
 
-impl<S> T for S
+impl<S> Memory16 for S
 where
-    S: Impl,
+    S: Memory16Impl,
 {
     #[inline]
     fn read(&mut self, logical_address: u16) -> u8 {
-        <S::Impler as Impler<Self>>::read(self, logical_address)
+        S::Impler::read(self, logical_address)
     }
 
     #[inline]
     fn write(&mut self, logical_address: u16, value: u8) {
-        <S::Impler as Impler<Self>>::write(self, logical_address, value)
+        S::Impler::write(self, logical_address, value)
     }
 }
 
-impl<S> Impler<S> for [u8; 0x10000]
+impl<S> Memory16Impler<S> for [u8; 0x10000]
 where
     S: AsMut<[u8; 0x10000]> + AsRef<[u8; 0x10000]>,
 {
@@ -64,7 +64,7 @@ where
     }
 }
 
-impl T for [u8; 0x10000] {
+impl Memory16 for [u8; 0x10000] {
     #[inline]
     fn read(&mut self, logical_address: u16) -> u8 {
         self[logical_address as usize]

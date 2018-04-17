@@ -3,7 +3,7 @@ use std;
 use errors::{Error, SimpleKind};
 // use memo::Inbox;
 
-use super::Impler;
+use super::*;
 use super::sega::MasterSystemMemory;
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
@@ -11,8 +11,8 @@ pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;
 /// The Codemasters memory map, used in Sega Master System games created by
 /// British game developer Codemasters.
 #[derive(Clone)]
-pub struct T {
-    // As in the `sega::T`, memory is a sequence of 8 KiB
+pub struct CodemastersMemoryMap {
+    // As in the `SegaMemoryMap`, memory is a sequence of 8 KiB
     // implementation-pages. The first implementation-page corresponds to the
     // console RAM, and then pairs of pages correspond to 16 KiB
     // codemasters-pages of cartridge ROM. Finally, there *may* be a final 8 KiB
@@ -22,7 +22,7 @@ pub struct T {
     cartridge_ram_allocated: bool,
 
     // The `pages` field works identically to the corresponding field in
-    // `sega::T`.
+    // `SegaMemoryMap`.
     pages: [u16; 8],
 
     reg_0000: u8,
@@ -36,7 +36,7 @@ pub struct T {
 
 serde_struct_arrays!{
     impl_serde,
-    T,
+    CodemastersMemoryMap,
     [cartridge_ram_allocated, pages, reg_0000, reg_4000, reg_8000, slot_writable, id,],
     [],
     [memory: [u8; 0x2000],]
@@ -44,7 +44,7 @@ serde_struct_arrays!{
 
 fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
-    S: AsMut<T> + AsRef<T>,
+    S: AsMut<CodemastersMemoryMap> + AsRef<CodemastersMemoryMap>,
 {
     // XXX
     // macro_rules! receive {
@@ -59,7 +59,7 @@ where
 
     fn swap_slot<S>(s: &mut S, sega_slot: usize, value: u8)
     where
-        S: AsMut<T> + AsRef<T>,
+        S: AsMut<CodemastersMemoryMap> + AsRef<CodemastersMemoryMap>,
     {
         // XXX
         // macro_rules! receive {
@@ -146,9 +146,9 @@ where
     swap_slot(s, slot as usize, value);
 }
 
-impl<S> Impler<S> for T
+impl<S> Memory16Impler<S> for CodemastersMemoryMap
 where
-    S: AsMut<T> + AsRef<T>,
+    S: AsMut<CodemastersMemoryMap> + AsRef<CodemastersMemoryMap>,
 {
     fn read(s: &mut S, logical_address: u16) -> u8 {
         let physical_address = logical_address & 0x1FFF; // low order 13 bits
@@ -173,7 +173,7 @@ where
     }
 }
 
-impl MasterSystemMemory for T {
+impl MasterSystemMemory for CodemastersMemoryMap {
     fn new(rom: &[u8]) -> Result<Self> {
         if rom.len() % 0x2000 != 0 || rom.len() == 0 {
             Err(SimpleKind(format!(
@@ -197,7 +197,7 @@ impl MasterSystemMemory for T {
             memory.push(impl_page);
         }
 
-        Ok(T {
+        Ok(CodemastersMemoryMap {
             memory: memory,
             cartridge_ram_allocated: false,
             // according to smspower.org, the mapper is initialized with
