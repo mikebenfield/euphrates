@@ -1,11 +1,12 @@
-//! Provides a simple type implementating the traits in `sms_vdp`.
-
 use super::*;
 use super::{Kind, TvSystem};
 
-pub struct T;
+/// A simple `SmsVdpInternalImpler`.
+///
+/// Just implement `AsMut<SmsVdpState>` and `AsRef<SmsVdpState>`.
+pub struct SimpleSmsVdpInternal;
 
-impl<S> SmsVdpInternalImpler<S> for T
+impl<S> SmsVdpInternalImpler<S> for SimpleSmsVdpInternal
 where
     S: AsMut<SmsVdpState> + AsRef<SmsVdpState>,
 {

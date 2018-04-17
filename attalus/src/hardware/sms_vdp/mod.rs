@@ -1,18 +1,15 @@
 //! The Sega Master System's Video Display Processor.
-//!
-//! The traits here are organized into submodules generally following the Impler
-//! pattern.
 
-mod internal;
-pub mod higher;
-pub mod machine;
 pub mod replaceable;
-pub mod simple;
+mod internal;
+mod machine;
+mod simple;
 mod state;
-pub mod part;
 
 pub use self::internal::*;
 pub use self::state::*;
+pub use self::simple::*;
+pub use self::machine::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum TvSystem {

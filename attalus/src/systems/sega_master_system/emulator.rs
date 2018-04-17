@@ -10,8 +10,8 @@ use hardware::irq::Irq;
 use hardware::memory_16_8::{Memory16, Memory16Impl};
 use hardware::memory_16_8::codemasters::CodemastersMemoryMap;
 use hardware::memory_16_8::sega::{MasterSystemMemory, SegaMemoryMap};
-use hardware::sms_vdp::{self, SmsVdpInternal, SmsVdpInternalImpl, SmsVdpState,
-                        machine::T as machineT};
+use hardware::sms_vdp::{self, SimpleSmsVdp, SimpleSmsVdpInternal, SmsVdp, SmsVdpImpl,
+                        SmsVdpInternal, SmsVdpInternalImpl, SmsVdpState};
 use hardware::sn76489::{SimpleSn76489, Sn76489, Sn76489HardwareImpl, Sn76489Impl};
 use hardware::z80::{self, machine::T as Z80MachineT};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
@@ -20,7 +20,7 @@ use utilities::{self, FrameInfo, TimeInfo};
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait MasterSystem
-    : z80::machine::T + sms_vdp::machine::T + Memory16 + AsMut<Sms2Io> + Sn76489 + SimpleAudio
+    : z80::machine::T + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489 + SimpleAudio
     {
     fn init(&mut self, frequency: Frequency) -> Result<()>;
 
@@ -52,7 +52,7 @@ pub struct System<I, M> {
 
 impl<I, M> MasterSystem for System<I, M>
 where
-    Self: z80::machine::T + sms_vdp::machine::T + Memory16 + AsMut<Sms2Io> + Sn76489,
+    Self: z80::machine::T + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489,
 {
     fn init(&mut self, frequency: Frequency) -> Result<()> {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
@@ -275,11 +275,11 @@ impl<I, M> Io16_8Impl for System<I, M> {
 }
 
 impl<I, M> SmsVdpInternalImpl for System<I, M> {
-    type Impler = sms_vdp::simple::T;
+    type Impler = SimpleSmsVdpInternal;
 }
 
-impl<I, M> sms_vdp::machine::Impl for System<I, M> {
-    type Impler = sms_vdp::machine::simple::T;
+impl<I, M> SmsVdpImpl for System<I, M> {
+    type Impler = SimpleSmsVdp;
 }
 
 // impl<I, M> Pausable for System<I, M>
@@ -319,8 +319,7 @@ where
 {
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {
-        <Self as sms_vdp::part::T>::requesting_mi(&self)
-            .or_else(|| self.hardware.io.requesting_mi())
+        <Self as SmsVdpInternal>::requesting_mi(&self).or_else(|| self.hardware.io.requesting_mi())
     }
 
     #[inline]
