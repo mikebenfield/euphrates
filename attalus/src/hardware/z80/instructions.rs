@@ -18,8 +18,8 @@ macro_rules! rotate_shift_functions_noa_impl {
     $fn_general: ident $fn_store: ident) => {
         fn $fn_impl2<Z, T1>(z: &mut Z, arg: T1) -> u8
         where
-            Z: Z80Internal + Memory16 + ?Sized,
-            T1: Changeable<u8>,
+            Z: Z80Internal + ?Sized,
+            T1: Changeable<u8, Z>,
         {
             let a = arg.view(z);
             let result = $fn_impl(z, a);
@@ -30,8 +30,8 @@ macro_rules! rotate_shift_functions_noa_impl {
 
         pub fn $fn_general<Z, T1>(z: &mut Z, arg: T1)
         where
-            Z: Z80Internal + Memory16 + ?Sized,
-            T1: Changeable<u8>,
+            Z: Z80Internal + ?Sized,
+            T1: Changeable<u8, Z>,
         {
             let result = $fn_impl2(z, arg);
             z.set_parity(result);
@@ -41,8 +41,8 @@ macro_rules! rotate_shift_functions_noa_impl {
 
         pub fn $fn_store<Z, T1>(z: &mut Z, arg: T1, store: Reg8)
         where
-            Z: Z80Internal + Memory16 + ?Sized,
-            T1: Changeable<u8>,
+            Z: Z80Internal + ?Sized,
+            T1: Changeable<u8, Z>,
         {
             let result = $fn_impl2(z, arg);
             z.set_parity(result);
@@ -58,7 +58,7 @@ macro_rules! rotate_shift_functions_impl {
     $fn_store: ident $fn_a: ident) => {
         pub fn $fn_a<Z>(z: &mut Z)
         where
-            Z: Z80Internal + Memory16 + ?Sized
+            Z: Z80Internal + ?Sized
         {
             $fn_impl2(z, A);
         }
@@ -140,9 +140,9 @@ where
 
 pub fn ld<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8>,
-    T2: Viewable<u8>,
+    Z: Z80Internal + ?Sized,
+    T1: Changeable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let val = arg2.view(z);
     arg1.change(z, val);
@@ -151,7 +151,7 @@ where
 // XXX text about interrupts in manual
 pub fn ld_ir<Z>(z: &mut Z, arg1: Reg8, arg2: Reg8)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let val = arg2.view(z);
     arg1.change(z, val);
@@ -167,9 +167,9 @@ where
 
 pub fn ld16<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u16>,
-    T2: Viewable<u16>,
+    Z: Z80Internal + ?Sized,
+    T1: Changeable<u16, Z>,
+    T2: Viewable<u16, Z>,
 {
     let val = arg2.view(z);
     arg1.change(z, val);
@@ -202,8 +202,8 @@ where
 
 pub fn ex<Z, T1>(z: &mut Z, reg1: T1, reg2: Reg16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u16>,
+    Z: Z80Internal + ?Sized,
+    T1: Changeable<u16, Z>,
 {
     let val1 = reg1.view(z);
     let val2 = reg2.view(z);
@@ -213,7 +213,7 @@ where
 
 pub fn exx<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     for &(reg1, reg2) in [(BC, BC0), (DE, DE0), (HL, HL0)].iter() {
         let val1 = reg1.view(z);
@@ -231,7 +231,7 @@ where
     let de = DE.view(z);
     let bc = BC.view(z);
 
-    let phl = Viewable::<u8>::view(Address(hl), z);
+    let phl = Viewable::<u8, Z>::view(Address(hl), z);
     Address(de).change(z, phl);
 
     HL.change(z, hl.wrapping_add(inc));
@@ -270,8 +270,8 @@ where
 
         // check the possibility that we have overwritten our own opcode
         let pc = PC.view(z);
-        let apc1 = Viewable::<u8>::view(Address(pc.wrapping_sub(2)), z);
-        let apc2 = Viewable::<u8>::view(Address(pc.wrapping_sub(1)), z);
+        let apc1 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(2)), z);
+        let apc2 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(1)), z);
         if apc1 != 0xED || apc2 != 0xB0 {
             PC.change(z, pc.wrapping_sub(2));
             return;
@@ -294,8 +294,8 @@ where
 
         // check the possibility that we have overwritten our own opcode
         let pc = PC.view(z);
-        let apc1 = Viewable::<u8>::view(Address(pc.wrapping_sub(2)), z);
-        let apc2 = Viewable::<u8>::view(Address(pc.wrapping_sub(1)), z);
+        let apc1 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(2)), z);
+        let apc2 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(1)), z);
         if apc1 != 0xED || apc2 != 0xB8 {
             PC.change(z, pc.wrapping_sub(1));
             return;
@@ -409,8 +409,8 @@ where
 pub fn add<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8>,
-    T2: Viewable<u8>,
+    T1: Changeable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let a = arg1.view(z);
     let b = arg2.view(z);
@@ -421,8 +421,8 @@ where
 pub fn adc<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8>,
-    T2: Viewable<u8>,
+    T1: Changeable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
     let a = arg1.view(z);
@@ -447,8 +447,8 @@ where
 pub fn sub<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8>,
-    T2: Viewable<u8>,
+    T1: Changeable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let a = arg1.view(z);
     let x = arg2.view(z);
@@ -459,8 +459,8 @@ where
 pub fn sbc<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8>,
-    T2: Viewable<u8>,
+    T1: Changeable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
     let a = arg1.view(z);
@@ -486,7 +486,7 @@ where
 pub fn and<Z, T1>(z: &mut Z, arg: T1)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8>,
+    T1: Viewable<u8, Z>,
 {
     let result = arg.view(z) & A.view(z);
     andor_impl(z, result);
@@ -496,7 +496,7 @@ where
 pub fn or<Z, T1>(z: &mut Z, arg: T1)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8>,
+    T1: Viewable<u8, Z>,
 {
     let result = arg.view(z) | A.view(z);
     andor_impl(z, result);
@@ -505,7 +505,7 @@ where
 pub fn xor<Z, T1>(z: &mut Z, arg: T1)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8>,
+    T1: Viewable<u8, Z>,
 {
     let result = arg.view(z) ^ A.view(z);
     andor_impl(z, result);
@@ -514,7 +514,7 @@ where
 pub fn cp<Z, T1>(z: &mut Z, arg: T1)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8>,
+    T1: Viewable<u8, Z>,
 {
     let x = arg.view(z);
     let a = A.view(z);
@@ -525,7 +525,7 @@ where
 pub fn inc<Z, T1>(z: &mut Z, arg: T1)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8>,
+    T1: Changeable<u8, Z>,
 {
     let x = arg.view(z);
     let result = x.wrapping_add(1);
@@ -540,7 +540,7 @@ where
 pub fn dec<Z, T1>(z: &mut Z, arg: T1)
 where
     Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8>,
+    T1: Changeable<u8, Z>,
 {
     let x = arg.view(z);
     let result = x.wrapping_sub(1);
@@ -724,7 +724,7 @@ where
 
 pub fn add16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
@@ -754,7 +754,7 @@ where
 
 pub fn adc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
@@ -765,7 +765,7 @@ where
 
 pub fn sbc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
@@ -781,7 +781,7 @@ where
 
 pub fn inc16<Z>(z: &mut Z, arg: Reg16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let val = arg.view(z);
     arg.change(z, val.wrapping_add(1));
@@ -789,7 +789,7 @@ where
 
 pub fn dec16<Z>(z: &mut Z, arg: Reg16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let val = arg.view(z);
     arg.change(z, val.wrapping_sub(1));
@@ -953,8 +953,8 @@ where
 
 pub fn bit<Z, T>(z: &mut Z, b: u8, arg: T)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T: Viewable<u8>,
+    Z: Z80Internal + ?Sized,
+    T: Viewable<u8, Z>,
 {
     let x = arg.view(z);
     let bitflag = 1 << b;
@@ -968,8 +968,8 @@ where
 
 pub fn set<Z, T>(z: &mut Z, b: u8, arg: T)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T: Changeable<u8>,
+    Z: Z80Internal + ?Sized,
+    T: Changeable<u8, Z>,
 {
     let mut x = arg.view(z);
     utilities::set_bit(&mut x, b);
@@ -978,8 +978,8 @@ where
 
 pub fn set_store<Z, T>(z: &mut Z, b: u8, arg: T, reg: Reg8)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T: Changeable<u8>,
+    Z: Z80Internal + ?Sized,
+    T: Changeable<u8, Z>,
 {
     arg.change(z, b);
     let x = arg.view(z);
@@ -988,8 +988,8 @@ where
 
 pub fn res<Z, T>(z: &mut Z, b: u8, arg: T)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T: Changeable<u8>,
+    Z: Z80Internal + ?Sized,
+    T: Changeable<u8, Z>,
 {
     let mut x = arg.view(z);
     utilities::clear_bit(&mut x, b);
@@ -998,8 +998,8 @@ where
 
 pub fn res_store<Z, T>(z: &mut Z, b: u8, arg: T, reg: Reg8)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T: Changeable<u8>,
+    Z: Z80Internal + ?Sized,
+    T: Changeable<u8, Z>,
 {
     res(z, b, arg);
     let x = arg.view(z);
@@ -1011,8 +1011,8 @@ where
 
 pub fn jp<Z, T>(z: &mut Z, arg: T)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T: Viewable<u16>,
+    Z: Z80Internal + ?Sized,
+    T: Viewable<u16, Z>,
 {
     let addr = arg.view(z);
     PC.change(z, addr);
@@ -1020,7 +1020,7 @@ where
 
 pub fn jpcc<Z>(z: &mut Z, cc: ConditionCode, arg: u16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     if cc.view(z) {
         jp(z, arg);
@@ -1029,7 +1029,7 @@ where
 
 pub fn jr<Z>(z: &mut Z, e: i8)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let pc = PC.view(z);
     let new_pc = pc.wrapping_add(e as i16 as u16);
@@ -1038,7 +1038,7 @@ where
 
 pub fn jrcc<Z>(z: &mut Z, cc: ConditionCode, e: i8)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     if cc.view(z) {
         jr(z, e);
@@ -1050,7 +1050,7 @@ where
 
 pub fn djnz<Z>(z: &mut Z, e: i8)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let b = B.view(z);
     let new_b = b.wrapping_sub(1);
@@ -1142,9 +1142,9 @@ where
 
 pub fn in_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
-    T1: Changeable<u8>,
-    T2: Viewable<u8>,
+    Z: Z80Internal + Io16_8 + ?Sized,
+    T1: Changeable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let address_lo = arg2.view(z);
     let address_hi = arg1.view(z);
@@ -1155,8 +1155,8 @@ where
 
 fn in_impl<Z, T1>(z: &mut Z, arg: T1) -> u8
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
-    T1: Viewable<u8>,
+    Z: Z80Internal + Io16_8 + ?Sized,
+    T1: Viewable<u8, Z>,
 {
     let address_lo = arg.view(z);
     let address_hi = B.view(z);
@@ -1173,17 +1173,17 @@ where
 
 pub fn in_f<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
-    T1: Viewable<u8>,
+    Z: Z80Internal + Io16_8 + ?Sized,
+    T1: Viewable<u8, Z>,
 {
     in_impl(z, arg);
 }
 
 pub fn in_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
-    T1: Changeable<u8>,
-    T2: Viewable<u8>,
+    Z: Z80Internal + Io16_8 + ?Sized,
+    T1: Changeable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let x = in_impl(z, arg2);
     arg1.change(z, x);
@@ -1193,7 +1193,7 @@ where
 /// reads from the input ports and sets flags but doesn't change any register.
 pub fn in0<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16_8 + ?Sized,
 {
     let addr = BC.view(z);
     let x = z.input(addr);
@@ -1274,9 +1274,9 @@ where
 
 pub fn out_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
-    T1: Viewable<u8>,
-    T2: Viewable<u8>,
+    Z: Z80Internal + Io16_8 + ?Sized,
+    T1: Viewable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let address_lo = arg1.view(z);
     let address_hi = A.view(z);
@@ -1287,9 +1287,9 @@ where
 
 pub fn out_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
-    T1: Viewable<u8>,
-    T2: Viewable<u8>,
+    Z: Z80Internal + Io16_8 + ?Sized,
+    T1: Viewable<u8, Z>,
+    T2: Viewable<u8, Z>,
 {
     let address_lo = arg1.view(z);
     let address_hi = B.view(z);

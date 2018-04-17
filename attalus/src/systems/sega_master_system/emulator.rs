@@ -20,8 +20,24 @@ use utilities::{self, FrameInfo, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+macro_rules! as_t {
+    ($fn_name: ident, $type_name: ident) => {
+        fn $fn_name(&self) -> &$type_name {
+            self
+        }
+    }
+}
+
+macro_rules! as_mut {
+    ($fn_name: ident, $type_name: ident) => {
+        fn $fn_name(&mut self) -> &mut $type_name {
+            self
+        }
+    }
+}
+
 pub trait MasterSystem
-    : Z80 + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489 + SimpleAudio {
+    : Z80 + SmsVdp + Memory16 + Io16_8 + Sn76489 + SimpleAudio + Sized {
     fn init(&mut self, frequency: Frequency) -> Result<()>;
 
     fn run_frame(
@@ -30,6 +46,17 @@ pub trait MasterSystem
         time_status: &TimeStatus,
         frame_info: &mut FrameInfo,
     ) -> Result<EmulationResult>;
+
+    as_t!(as_z80, Z80);
+    as_mut!(as_mut_z80, Z80);
+    as_t!(as_sms_vdp, SmsVdp);
+    as_mut!(as_mut_sms_vdp, SmsVdp);
+    as_t!(as_sn76489, Sn76489);
+    as_mut!(as_mut_sn76489, Sn76489);
+    as_t!(as_memory16, Memory16);
+    as_mut!(as_mut_memory16, Memory16);
+    as_t!(as_io16, Io16_8);
+    as_mut!(as_mut_io16, Io16_8);
 }
 
 #[derive(Clone, Serialize, Deserialize)]

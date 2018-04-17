@@ -254,10 +254,8 @@ impl fmt::Display for Shift {
 /// This trait (and `Changeable`) exists so that we may implement an instruction
 /// like `ld x, y` with a single generic function, although `x` and `y` may be
 /// memory addresses or registers.
-pub trait Viewable<Output>: Copy {
-    fn view<Z>(self, z: &mut Z) -> Output
-    where
-        Z: Z80Internal + Memory16 + ?Sized;
+pub trait Viewable<Output, Z: ?Sized>: Copy {
+    fn view(self, z: &mut Z) -> Output;
 }
 
 /// An aspect of the Z80 that we can change, like a register or a memory address.
@@ -265,71 +263,63 @@ pub trait Viewable<Output>: Copy {
 /// This trait (and `Viewable`) exists so that we may implement an instruction
 /// like `ld x, y` with a single generic function, although `x` and `y` may be
 /// memory addresses or registers.
-pub trait Changeable<Output>: Viewable<Output> {
-    fn change<Z>(self, z: &mut Z, x: Output)
-    where
-        Z: Z80Internal + Memory16 + ?Sized;
+pub trait Changeable<Output, Z: ?Sized>: Viewable<Output, Z> {
+    fn change(self, z: &mut Z, x: Output);
 }
 
-impl Viewable<u8> for u8 {
-    fn view<Z>(self, _z: &mut Z) -> u8
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z: ?Sized> Viewable<u8, Z> for u8 {
+    fn view(self, _z: &mut Z) -> u8 {
         self
     }
 }
 
-impl Viewable<u16> for u16 {
-    fn view<Z>(self, _z: &mut Z) -> u16
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z: ?Sized> Viewable<u16, Z> for u16 {
+    fn view(self, _z: &mut Z) -> u16 {
         self
     }
 }
 
-impl Viewable<u8> for Reg8 {
-    fn view<Z>(self, z: &mut Z) -> u8
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<u8, Z> for Reg8
+where
+    Z: Z80Internal + ?Sized,
+{
+    fn view(self, z: &mut Z) -> u8 {
         z.reg8(self)
     }
 }
 
-impl Changeable<u8> for Reg8 {
-    fn change<Z>(self, z: &mut Z, x: u8)
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Changeable<u8, Z> for Reg8
+where
+    Z: Z80Internal + ?Sized,
+{
+    fn change(self, z: &mut Z, x: u8) {
         z.set_reg8(self, x);
     }
 }
 
-impl Viewable<u16> for Reg16 {
-    fn view<Z>(self, z: &mut Z) -> u16
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<u16, Z> for Reg16
+where
+    Z: Z80Internal + ?Sized,
+{
+    fn view(self, z: &mut Z) -> u16 {
         z.reg16(self)
     }
 }
 
-impl Changeable<u16> for Reg16 {
-    fn change<Z>(self, z: &mut Z, x: u16)
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Changeable<u16, Z> for Reg16
+where
+    Z: Z80Internal + ?Sized,
+{
+    fn change(self, z: &mut Z, x: u16) {
         z.set_reg16(self, x);
     }
 }
 
-impl Viewable<u16> for Address<Reg16> {
-    fn view<Z>(self, z: &mut Z) -> u16
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<u16, Z> for Address<Reg16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn view(self, z: &mut Z) -> u16 {
         let addr = self.0.view(z);
         let lo = z.read(addr);
         let hi = z.read(addr.wrapping_add(1));
@@ -337,11 +327,11 @@ impl Viewable<u16> for Address<Reg16> {
     }
 }
 
-impl Changeable<u16> for Address<Reg16> {
-    fn change<Z>(self, z: &mut Z, x: u16)
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Changeable<u16, Z> for Address<Reg16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn change(self, z: &mut Z, x: u16) {
         let addr = self.0.view(z);
         let (lo, hi) = utilities::to8(x);
         z.write(addr, lo);
@@ -349,31 +339,31 @@ impl Changeable<u16> for Address<Reg16> {
     }
 }
 
-impl Viewable<u8> for Address<Reg16> {
-    fn view<Z>(self, z: &mut Z) -> u8
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<u8, Z> for Address<Reg16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn view(self, z: &mut Z) -> u8 {
         let addr = self.0.view(z);
         z.read(addr)
     }
 }
 
-impl Changeable<u8> for Address<Reg16> {
-    fn change<Z>(self, z: &mut Z, x: u8)
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Changeable<u8, Z> for Address<Reg16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn change(self, z: &mut Z, x: u8) {
         let addr = self.0.view(z);
         z.write(addr, x);
     }
 }
 
-impl Viewable<u16> for Address<u16> {
-    fn view<Z>(self, z: &mut Z) -> u16
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<u16, Z> for Address<u16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn view(self, z: &mut Z) -> u16 {
         let addr = self.0;
         let lo = z.read(addr);
         let hi = z.read(addr.wrapping_add(1));
@@ -381,11 +371,11 @@ impl Viewable<u16> for Address<u16> {
     }
 }
 
-impl Changeable<u16> for Address<u16> {
-    fn change<Z>(self, z: &mut Z, x: u16)
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Changeable<u16, Z> for Address<u16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn change(self, z: &mut Z, x: u16) {
         let addr = self.0;
         let (lo, hi) = utilities::to8(x);
         z.write(addr, lo);
@@ -393,49 +383,49 @@ impl Changeable<u16> for Address<u16> {
     }
 }
 
-impl Viewable<u8> for Address<u16> {
-    fn view<Z>(self, z: &mut Z) -> u8
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<u8, Z> for Address<u16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn view(self, z: &mut Z) -> u8 {
         z.read(self.0)
     }
 }
 
-impl Changeable<u8> for Address<u16> {
-    fn change<Z>(self, z: &mut Z, x: u8)
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Changeable<u8, Z> for Address<u16>
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn change(self, z: &mut Z, x: u8) {
         z.write(self.0, x);
     }
 }
 
-impl Viewable<u8> for Shift {
-    fn view<Z>(self, z: &mut Z) -> u8
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<u8, Z> for Shift
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn view(self, z: &mut Z) -> u8 {
         let addr = self.0.view(z).wrapping_add(self.1 as i16 as u16);
         Address(addr).view(z)
     }
 }
 
-impl Changeable<u8> for Shift {
-    fn change<Z>(self, z: &mut Z, x: u8)
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Changeable<u8, Z> for Shift
+where
+    Z: Z80Internal + Memory16 + ?Sized,
+{
+    fn change(self, z: &mut Z, x: u8) {
         let addr = self.0.view(z).wrapping_add(self.1 as i16 as u16);
         Address(addr).change(z, x);
     }
 }
 
-impl Viewable<bool> for ConditionCode {
-    fn view<Z>(self, z: &mut Z) -> bool
-    where
-        Z: Z80Internal + Memory16 + ?Sized,
-    {
+impl<Z> Viewable<bool, Z> for ConditionCode
+where
+    Z: Z80Internal + ?Sized,
+{
+    fn view(self, z: &mut Z) -> bool {
         let f = z.reg8(Reg8::F);
         match self {
             ConditionCode::NZcc => f & ZF == 0,
