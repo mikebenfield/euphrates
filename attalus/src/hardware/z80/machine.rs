@@ -1,24 +1,24 @@
-use super::higher;
+use super::*;
 
-pub trait T: higher::T {
+pub trait Z80: Z80Internal {
     /// execute instructions until the total number of cycles run is `cycles`
     fn run(&mut self, cycles: u64);
 }
 
-pub trait Impler<S: ?Sized> {
+pub trait Z80Impler<S: ?Sized> {
     fn run(&mut S, cycles: u64);
 }
 
-pub trait Impl {
-    type Impler: Impler<Self>;
+pub trait Z80Impl {
+    type Impler: Z80Impler<Self>;
 }
 
-impl<S> T for S
+impl<S> Z80 for S
 where
-    S: Impl + higher::T,
+    S: Z80Impl + Z80Internal,
 {
     #[inline]
     fn run(&mut self, cycles: u64) {
-        <S::Impler as Impler<Self>>::run(self, cycles);
+        S::Impler::run(self, cycles);
     }
 }

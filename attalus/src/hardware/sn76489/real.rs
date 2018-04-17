@@ -37,7 +37,7 @@ impl Default for SimpleSn76489 {
     }
 }
 
-impl<S> Sn76489HardwareImpler<S> for SimpleSn76489
+impl<S> Sn76489InternalImpler<S> for SimpleSn76489
 where
     S: AsMut<SimpleSn76489>,
 {

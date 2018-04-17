@@ -1,23 +1,23 @@
 use std::mem::transmute;
 
-use memo::Payload;
+use memo::{Inbox, Payload};
+use hardware::io_16_8::Io16_8;
+use hardware::memory_16_8::Memory16;
 use utilities;
 
-use super::instructions;
-use super::part::{self, Address, Changeable, Shift, Viewable};
-use super::machine;
+use super::*;
 use super::memo::manifests;
 
-use super::Reg16::*;
-use super::Reg8::*;
-use super::ConditionCode::*;
+use self::Reg16::*;
+use self::Reg8::*;
+use self::ConditionCode::*;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Interpreter<SafetyLevel> {
+pub struct Z80Interpreter<SafetyLevel> {
     safety: SafetyLevel,
 }
 
-impl<SafetyLevel: Default> Interpreter<SafetyLevel> {
+impl<SafetyLevel: Default> Z80Interpreter<SafetyLevel> {
     pub fn new() -> Self {
         Default::default()
     }
@@ -27,7 +27,7 @@ mod private {
     pub trait Seal {}
 }
 
-/// The straightforward implementation of the `Interpreter` is vulnerable to an
+/// The straightforward implementation of the `Z80Interpreter` is vulnerable to an
 /// attack in two ways:
 ///
 /// 1. An unending stream of instruction prefixes like `FD` and `DD`. The `run`
@@ -45,7 +45,7 @@ mod private {
 /// row, or how many `ei` instructions. If it appears the entire memory is
 /// filled with them, just give up and return early with a failure. But in my
 /// testing that imposes a runtime penalty of about XXX. The user can use
-/// `Interpreter<Safe>` to use this safety check, or `Interpreter<Unsafe>`
+/// `Z80Interpreter<Safe>` to use this safety check, or `Z80Interpreter<Unsafe>`
 /// to elide the checks and avoid the runtime penalty entirely.
 pub trait Safety: private::Seal {
     fn inc_prefixes(&mut self);
@@ -121,7 +121,14 @@ impl Safety for Unsafe {
 
 fn run2<Z, SafetyLevel>(z: &mut Z, cycles: u64)
 where
-    Z: part::T + AsRef<Interpreter<SafetyLevel>> + AsMut<Interpreter<SafetyLevel>> + ?Sized,
+    Z: Z80Internal
+        + Z80Irq
+        + Inbox
+        + Io16_8
+        + Memory16
+        + AsRef<Z80Interpreter<SafetyLevel>>
+        + AsMut<Z80Interpreter<SafetyLevel>>
+        + ?Sized,
     SafetyLevel: Safety,
 {
     let mut opcode: u8;
@@ -144,7 +151,7 @@ where
 
     fn read_pc<Z>(z: &mut Z) -> u8
     where
-        Z: part::T + ?Sized,
+        Z: Z80Internal + Memory16 + ?Sized,
     {
         let pc = PC.view(z);
         let opcode: u8 = Address(pc).view(z);
@@ -735,9 +742,16 @@ where
     }
 }
 
-impl<S, SafetyLevel> machine::Impler<S> for Interpreter<SafetyLevel>
+impl<S, SafetyLevel> Z80Impler<S> for Z80Interpreter<SafetyLevel>
 where
-    S: part::T + AsRef<Interpreter<SafetyLevel>> + AsMut<Interpreter<SafetyLevel>> + ?Sized,
+    S: Z80Internal
+        + Z80Irq
+        + Io16_8
+        + Memory16
+        + Inbox
+        + AsRef<Z80Interpreter<SafetyLevel>>
+        + AsMut<Z80Interpreter<SafetyLevel>>
+        + ?Sized,
     SafetyLevel: Safety,
 {
     #[inline]

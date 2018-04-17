@@ -6,7 +6,7 @@ use std;
 use failure::Error;
 use sdl2;
 
-use hardware::z80;
+use hardware::z80::Z80Internal;
 use hardware::memory_16_8::sega::SegaMemoryMap;
 use host_multimedia::SimpleAudio;
 use systems::sega_master_system::{Frequency, Hardware, MasterSystem, PlaybackStatus, PlayerStatus,
@@ -66,7 +66,7 @@ impl PlaybackInterface {
 
         master_system.play()?;
 
-        let time_status = TimeStatus::new(z80::internal::T::cycles(master_system));
+        let time_status = TimeStatus::new(Z80Internal::cycles(master_system));
 
         let start = Instant::now();
 
@@ -136,7 +136,7 @@ impl UserInterface {
                             if let (&Some(ref path), Some(recording)) =
                                 (&self.save_directory, self.recording_status.recording())
                             {
-                                let cycles = z80::internal::T::cycles(master_system);
+                                let cycles = Z80Internal::cycles(master_system);
                                 let mut path2 = path.clone();
                                 let recording2 = recording.clone();
 
@@ -152,7 +152,7 @@ impl UserInterface {
                         (Z, _) => {
                             if let Some(ref path) = self.save_directory {
                                 // save in a new thread to avoid UI delay
-                                let cycles = z80::internal::T::cycles(master_system);
+                                let cycles = Z80Internal::cycles(master_system);
                                 let hardware = master_system.hardware.clone();
                                 let mut path2 = path.clone();
                                 thread::spawn(move || {
@@ -242,7 +242,7 @@ impl UserInterface {
         master_system.init(frequency)?;
         master_system.play()?;
 
-        let time_status = TimeStatus::new(z80::internal::T::cycles(master_system));
+        let time_status = TimeStatus::new(Z80Internal::cycles(master_system));
 
         loop {
             if !self.frame_update(master_system) {

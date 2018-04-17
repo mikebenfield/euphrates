@@ -1,4 +1,4 @@
-/// The actual video functionality of the VDP.
+//! The actual video functionality of the VDP.
 
 use std;
 
@@ -88,10 +88,10 @@ where
     }
 }
 
-/// Easiest way to implement `machine::T`.
+/// Easiest way to implement `SmsVdp`.
 ///
 /// If your type implements `SimpleGraphics` and `SmsVdpInternal`, you can just
-/// implement `machine::Impl` with `type Impler = SimpleSmsVdp`.
+/// implement `SmsVdpImpl` with `type Impler = SimpleSmsVdp`.
 pub struct SimpleSmsVdp;
 
 #[inline]

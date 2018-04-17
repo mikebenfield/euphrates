@@ -1,12 +1,15 @@
 use std;
 
-use super::internal;
-use super::state;
-use super::{InterruptMode, Reg8, Reg16};
+use super::*;
 
-impl<S> internal::Impler<S> for state::T
+/// A simple `Z80InternalImpler`.
+///
+/// Just implement `AsRef<Z80State>` and `AsMut<Z80State>`.
+pub struct SimpleZ80Internal;
+
+impl<S> Z80InternalImpler<S> for SimpleZ80Internal
 where
-    S: ?Sized + AsRef<state::T> + AsMut<state::T>,
+    S: ?Sized + AsRef<Z80State> + AsMut<Z80State>,
 {
     #[inline]
     fn cycles(s: &S) -> u64 {

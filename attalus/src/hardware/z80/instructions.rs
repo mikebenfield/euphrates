@@ -1,13 +1,13 @@
-use memo::Payload;
+use memo::{Inbox, Payload};
+use hardware::io_16_8::Io16_8;
+use hardware::memory_16_8::Memory16;
 
+use super::*;
 use super::InterruptMode::*;
 use super::Reg16::*;
 use super::Reg8::*;
 use super::ConditionCode;
 use super::memo::manifests;
-use super::higher;
-use super::part::{self, Address, Changeable, Viewable};
-use super::{Reg16, Reg8};
 use utilities;
 
 /// Most of the functions in the rotate and shift group have similar addressing modes,
@@ -18,19 +18,19 @@ macro_rules! rotate_shift_functions_noa_impl {
     $fn_general: ident $fn_store: ident) => {
         fn $fn_impl2<Z, T1>(z: &mut Z, arg: T1) -> u8
         where
-            Z: part::T + ?Sized,
+            Z: Z80Internal + Memory16 + ?Sized,
             T1: Changeable<u8>,
         {
             let a = arg.view(z);
             let result = $fn_impl(z, a);
             arg.change(z, result);
-            z.clear_flag(higher::HF | higher::NF);
+            z.clear_flag(HF | NF);
             result
         }
 
         pub fn $fn_general<Z, T1>(z: &mut Z, arg: T1)
         where
-            Z: part::T + ?Sized,
+            Z: Z80Internal + Memory16 + ?Sized,
             T1: Changeable<u8>,
         {
             let result = $fn_impl2(z, arg);
@@ -41,7 +41,7 @@ macro_rules! rotate_shift_functions_noa_impl {
 
         pub fn $fn_store<Z, T1>(z: &mut Z, arg: T1, store: Reg8)
         where
-            Z: part::T + ?Sized,
+            Z: Z80Internal + Memory16 + ?Sized,
             T1: Changeable<u8>,
         {
             let result = $fn_impl2(z, arg);
@@ -58,7 +58,7 @@ macro_rules! rotate_shift_functions_impl {
     $fn_store: ident $fn_a: ident) => {
         pub fn $fn_a<Z>(z: &mut Z)
         where
-            Z: part::T + ?Sized
+            Z: Z80Internal + Memory16 + ?Sized
         {
             $fn_impl2(z, A);
         }
@@ -68,7 +68,7 @@ macro_rules! rotate_shift_functions_impl {
 
 pub fn rst<Z>(z: &mut Z, p: u16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let sp = SP.view(z);
     let pch = PCH.view(z);
@@ -81,7 +81,7 @@ where
 
 pub fn nonmaskable_interrupt<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Z80Irq + Inbox + ?Sized,
 {
     // The Z80 manual implies that IFF2 is set to IFF1, but this
     // is false (see Young 5.3)
@@ -99,7 +99,7 @@ where
 
 pub fn maskable_interrupt<Z>(z: &mut Z, x: u8) -> bool
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Z80Irq + Inbox + ?Sized,
 {
     if z.iff1() {
         manifests::MASKABLE_INTERRUPT_ALLOWED.send(z, Payload::U64([0]));
@@ -140,7 +140,7 @@ where
 
 pub fn ld<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
@@ -151,15 +151,15 @@ where
 // XXX text about interrupts in manual
 pub fn ld_ir<Z>(z: &mut Z, arg1: Reg8, arg2: Reg8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let val = arg2.view(z);
     arg1.change(z, val);
     let iff2 = z.iff2();
     z.set_sign(val);
     z.set_zero(val);
-    z.clear_flag(higher::NF | higher::HF);
-    z.set_flag_by(higher::PF, iff2);
+    z.clear_flag(NF | HF);
+    z.set_flag_by(PF, iff2);
 }
 
 //// 16-Bit Load Group
@@ -167,7 +167,7 @@ where
 
 pub fn ld16<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u16>,
     T2: Viewable<u16>,
 {
@@ -177,7 +177,7 @@ where
 
 pub fn push<Z>(z: &mut Z, reg: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let (lo, hi) = utilities::to8(reg.view(z));
     let sp = SP.view(z);
@@ -188,7 +188,7 @@ where
 
 pub fn pop<Z>(z: &mut Z, reg: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let sp = SP.view(z);
     let lo = Address(sp).view(z);
@@ -202,7 +202,7 @@ where
 
 pub fn ex<Z, T1>(z: &mut Z, reg1: T1, reg2: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u16>,
 {
     let val1 = reg1.view(z);
@@ -213,7 +213,7 @@ where
 
 pub fn exx<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     for &(reg1, reg2) in [(BC, BC0), (DE, DE0), (HL, HL0)].iter() {
         let val1 = reg1.view(z);
@@ -225,7 +225,7 @@ where
 
 pub fn ldid<Z>(z: &mut Z, inc: u16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let hl = HL.view(z);
     let de = DE.view(z);
@@ -238,27 +238,27 @@ where
     DE.change(z, de.wrapping_add(inc));
     BC.change(z, bc.wrapping_sub(1));
 
-    z.clear_flag(higher::HF | higher::NF);
-    z.set_flag_by(higher::PF, bc != 1);
+    z.clear_flag(HF | NF);
+    z.set_flag_by(PF, bc != 1);
 }
 
 pub fn ldi<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     ldid(z, 1);
 }
 
 pub fn ldd<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     ldid(z, 0xFFFF);
 }
 
 pub fn ldir<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     loop {
         ldi(z);
@@ -282,7 +282,7 @@ where
 
 pub fn lddr<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     loop {
         ldd(z);
@@ -306,7 +306,7 @@ where
 
 pub fn cpid<Z>(z: &mut Z, inc: u16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let bc = BC.view(z);
     let a = A.view(z);
@@ -320,26 +320,26 @@ where
 
     z.set_sign(result);
     z.set_zero(result);
-    z.set_flag_by(higher::HF, phl & 0xF > a & 0xF);
-    z.set_flag_by(higher::PF, bc != 1);
-    z.set_flag(higher::NF);
+    z.set_flag_by(HF, phl & 0xF > a & 0xF);
+    z.set_flag_by(PF, bc != 1);
+    z.set_flag(NF);
 }
 
 pub fn cpi<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     cpid(z, 1);
 }
 
 pub fn cpir<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     while {
         cpi(z);
         z.inc_cycles(2);
-        BC.view(z) != 0 && !z.is_set_flag(higher::ZF)
+        BC.view(z) != 0 && !z.is_set_flag(ZF)
     } {
         // r was already incremented twice by `run`
         z.inc_r(2);
@@ -350,19 +350,19 @@ where
 
 pub fn cpd<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     cpid(z, 0xFFFF);
 }
 
 pub fn cpdr<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     while {
         cpd(z);
         z.inc_cycles(21);
-        BC.view(z) != 0 && !z.is_set_flag(higher::ZF)
+        BC.view(z) != 0 && !z.is_set_flag(ZF)
     } {
         // r was already incremented twice by `run`
         z.inc_r(2);
@@ -376,7 +376,7 @@ where
 
 fn add_impl<Z>(z: &mut Z, a: u8, x: u8, cf: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     // XXX optimize?
     let result16 = (x as u16).wrapping_add(a as u16).wrapping_add(cf as u16);
@@ -385,13 +385,13 @@ where
     z.set_zero(result8);
     z.set_sign(result8);
 
-    z.set_flag_by(higher::CF, result16 & (1 << 8) != 0);
+    z.set_flag_by(CF, result16 & (1 << 8) != 0);
 
     // carry from bit 3 happened if:
     // x and a have same bit 4 AND result is set OR
     // x and a have different bit 4 AND result is clear
     let hf = (x ^ a ^ result8) & (1 << 4) != 0;
-    z.set_flag_by(higher::HF, hf);
+    z.set_flag_by(HF, hf);
 
     // overflow happened if:
     // x and a both have bit 7 AND result does not OR
@@ -399,16 +399,16 @@ where
     // in other words, x and y have the same bit 7 and
     // result is different
     let overflow = !(x ^ a) & (x ^ result8) & (1 << 7) != 0;
-    z.set_flag_by(higher::PF, overflow);
+    z.set_flag_by(PF, overflow);
 
-    z.clear_flag(higher::NF);
+    z.clear_flag(NF);
 
     result8
 }
 
 pub fn add<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
@@ -420,11 +420,11 @@ where
 
 pub fn adc<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
+    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
     let a = arg1.view(z);
     let x = arg2.view(z);
     let result = add_impl(z, a, x, cf);
@@ -433,20 +433,20 @@ where
 
 fn sub_impl<Z>(z: &mut Z, a: u8, x: u8, cf: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let result = add_impl(z, a, !x, 1 ^ cf);
-    let cf_set = z.is_set_flag(higher::CF);
-    let hf_set = z.is_set_flag(higher::HF);
-    z.set_flag_by(higher::CF, !cf_set);
-    z.set_flag_by(higher::HF, !hf_set);
-    z.set_flag(higher::NF);
+    let cf_set = z.is_set_flag(CF);
+    let hf_set = z.is_set_flag(HF);
+    z.set_flag_by(CF, !cf_set);
+    z.set_flag_by(HF, !hf_set);
+    z.set_flag(NF);
     result
 }
 
 pub fn sub<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
@@ -458,11 +458,11 @@ where
 
 pub fn sbc<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
-    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
+    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
     let a = arg1.view(z);
     let x = arg2.view(z);
     let result = sub_impl(z, a, x, cf);
@@ -471,31 +471,31 @@ where
 
 fn andor_impl<Z>(z: &mut Z, result: u8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     A.change(z, result);
 
-    // note that for AND and OR, the manual says higher::PF is set according to whether
+    // note that for AND and OR, the manual says PF is set according to whether
     // there is overflow. I'm betting that is a mistake.
     z.set_parity(result);
     z.set_sign(result);
     z.set_zero(result);
-    z.clear_flag(higher::HF | higher::NF | higher::CF);
+    z.clear_flag(HF | NF | CF);
 }
 
 pub fn and<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Viewable<u8>,
 {
     let result = arg.view(z) & A.view(z);
     andor_impl(z, result);
-    z.set_flag(higher::HF);
+    z.set_flag(HF);
 }
 
 pub fn or<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Viewable<u8>,
 {
     let result = arg.view(z) | A.view(z);
@@ -504,7 +504,7 @@ where
 
 pub fn xor<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Viewable<u8>,
 {
     let result = arg.view(z) ^ A.view(z);
@@ -513,7 +513,7 @@ where
 
 pub fn cp<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Viewable<u8>,
 {
     let x = arg.view(z);
@@ -524,7 +524,7 @@ where
 
 pub fn inc<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u8>,
 {
     let x = arg.view(z);
@@ -532,14 +532,14 @@ where
     arg.change(z, result);
     z.set_zero(result);
     z.set_sign(result);
-    z.set_flag_by(higher::HF, x & 0xF == 0xF);
-    z.set_flag_by(higher::PF, x == 0x7F);
-    z.clear_flag(higher::NF);
+    z.set_flag_by(HF, x & 0xF == 0xF);
+    z.set_flag_by(PF, x == 0x7F);
+    z.clear_flag(NF);
 }
 
 pub fn dec<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T1: Changeable<u8>,
 {
     let x = arg.view(z);
@@ -547,9 +547,9 @@ where
     arg.change(z, result);
     z.set_zero(result);
     z.set_sign(result);
-    z.set_flag_by(higher::HF, x & 0xF == 0);
-    z.set_flag_by(higher::PF, x == 0x80);
-    z.set_flag(higher::NF);
+    z.set_flag_by(HF, x & 0xF == 0);
+    z.set_flag_by(PF, x == 0x80);
+    z.set_flag(NF);
 }
 
 //// General-Purpose Arithmetic and CPU Control Groups
@@ -557,13 +557,13 @@ where
 
 pub fn daa<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     // see the table in Young
     let a = A.view(z);
-    let cf = z.is_set_flag(higher::CF);
-    let hf = z.is_set_flag(higher::HF);
-    let nf = z.is_set_flag(higher::NF);
+    let cf = z.is_set_flag(CF);
+    let hf = z.is_set_flag(HF);
+    let nf = z.is_set_flag(NF);
     let diff = match (cf, a >> 4, hf, a & 0xF) {
         (false, 0...9, false, 0...9) => 0,
         (false, 0...9, true, 0...9) => 0x6,
@@ -595,65 +595,65 @@ where
     z.set_parity(new_a);
     z.set_zero(new_a);
     z.set_sign(new_a);
-    z.set_flag_by(higher::CF, new_cf != 0);
-    z.set_flag_by(higher::HF, new_hf != 0);
+    z.set_flag_by(CF, new_cf != 0);
+    z.set_flag_by(HF, new_hf != 0);
 }
 
 pub fn cpl<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let a = A.view(z);
     A.change(z, !a);
-    z.set_flag(higher::HF | higher::NF);
+    z.set_flag(HF | NF);
 }
 
 pub fn neg<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     // subtracts A from 0
     let a = A.view(z);
     let result = sub_impl(z, 0, a, 0);
     A.change(z, result);
-    z.set_flag_by(higher::PF, a == 0x80);
-    z.set_flag_by(higher::CF, a != 0);
+    z.set_flag_by(PF, a == 0x80);
+    z.set_flag_by(CF, a != 0);
 }
 
 pub fn ccf<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
-    let cf = z.is_set_flag(higher::CF);
-    z.set_flag_by(higher::HF, cf);
-    z.set_flag_by(higher::CF, !cf);
-    z.clear_flag(higher::NF);
+    let cf = z.is_set_flag(CF);
+    z.set_flag_by(HF, cf);
+    z.set_flag_by(CF, !cf);
+    z.clear_flag(NF);
 }
 
 pub fn scf<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
-    z.clear_flag(higher::HF | higher::NF);
-    z.set_flag(higher::CF);
+    z.clear_flag(HF | NF);
+    z.set_flag(CF);
 }
 
 pub fn nop<Z>(_z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
 }
 
 pub fn halt<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     z.set_halted(true);
 }
 
 pub fn di<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     z.set_iff1(false);
     z.set_iff2(false);
@@ -667,14 +667,14 @@ where
 /// to emulate `ei`.
 pub fn ei<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     z.set_iff2(true);
 }
 
 pub fn im<Z>(z: &mut Z, m: u8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     match m {
         0 => z.set_interrupt_mode(Im0),
@@ -686,14 +686,14 @@ where
 
 pub fn im1<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     z.set_interrupt_mode(Im1);
 }
 
 pub fn im2<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     z.set_interrupt_mode(Im2);
 }
@@ -703,28 +703,28 @@ where
 
 fn add16_impl<Z>(z: &mut Z, x: u16, y: u16, cf: u16) -> u16
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     // XXX optimize?
     let result32 = (x as u32).wrapping_add(y as u32).wrapping_add(cf as u32);
     let result16 = result32 as u16;
 
-    z.set_flag_by(higher::CF, result32 & (1 << 16) != 0);
+    z.set_flag_by(CF, result32 & (1 << 16) != 0);
 
     // carry from bit 11 happened if:
     // x and y have same bit 12 AND result is set OR
     // x and y have different bit 12 AND result is clear
     let hf = (x ^ y ^ result16) & (1 << 12) != 0;
-    z.set_flag_by(higher::HF, hf);
+    z.set_flag_by(HF, hf);
 
-    z.clear_flag(higher::NF);
+    z.clear_flag(NF);
 
     result16
 }
 
 pub fn add16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
@@ -734,7 +734,7 @@ where
 
 fn adc16_impl<Z>(z: &mut Z, x: u16, y: u16, cf: u16) -> u16
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let result = add16_impl(z, x, y, cf as u16);
 
@@ -747,41 +747,41 @@ where
     // in other words, x and y have the same bit 15, which is different from bit
     // 15 of result
     let overflow = !(x ^ y) & (x ^ result) & (1 << 15) != 0;
-    z.set_flag_by(higher::PF, overflow);
+    z.set_flag_by(PF, overflow);
 
     result
 }
 
 pub fn adc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
+    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
     let result = adc16_impl(z, x, y, cf as u16);
     arg1.change(z, result);
 }
 
 pub fn sbc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let x = arg1.view(z);
     let y = arg2.view(z);
-    let cf = if z.is_set_flag(higher::CF) { 1u8 } else { 0u8 };
+    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
     let result = adc16_impl(z, x, !y, (1 ^ cf) as u16);
     arg1.change(z, result);
-    let cf = z.is_set_flag(higher::CF);
-    let hf = z.is_set_flag(higher::HF);
-    z.set_flag_by(higher::CF, !cf);
-    z.set_flag_by(higher::HF, !hf);
-    z.set_flag(higher::NF);
+    let cf = z.is_set_flag(CF);
+    let hf = z.is_set_flag(HF);
+    z.set_flag_by(CF, !cf);
+    z.set_flag_by(HF, !hf);
+    z.set_flag(NF);
 }
 
 pub fn inc16<Z>(z: &mut Z, arg: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let val = arg.view(z);
     arg.change(z, val.wrapping_add(1));
@@ -789,7 +789,7 @@ where
 
 pub fn dec16<Z>(z: &mut Z, arg: Reg16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let val = arg.view(z);
     arg.change(z, val.wrapping_sub(1));
@@ -800,9 +800,9 @@ where
 
 fn rlc_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
-    z.set_flag_by(higher::CF, x & 0x80 != 0);
+    z.set_flag_by(CF, x & 0x80 != 0);
     x.rotate_left(1)
 }
 
@@ -812,15 +812,15 @@ rotate_shift_functions_impl!{
 
 fn rl_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let mut result = x << 1;
-    if z.is_set_flag(higher::CF) {
+    if z.is_set_flag(CF) {
         result |= 1;
     } else {
         result &= !1;
     }
-    z.set_flag_by(higher::CF, x & 0x80 != 0);
+    z.set_flag_by(CF, x & 0x80 != 0);
     result
 }
 
@@ -830,9 +830,9 @@ rotate_shift_functions_impl!{
 
 fn rrc_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
-    z.set_flag_by(higher::CF, x & 1 != 0);
+    z.set_flag_by(CF, x & 1 != 0);
     x.rotate_right(1)
 }
 
@@ -842,15 +842,15 @@ rotate_shift_functions_impl!{
 
 fn rr_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     let mut result = x >> 1;
-    if z.is_set_flag(higher::CF) {
+    if z.is_set_flag(CF) {
         result |= 0x80;
     } else {
         result &= !0x80;
     }
-    z.set_flag_by(higher::CF, x & 1 != 0);
+    z.set_flag_by(CF, x & 1 != 0);
     result
 }
 
@@ -860,9 +860,9 @@ rotate_shift_functions_impl!{
 
 fn sla_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
-    z.set_flag_by(higher::CF, x & 0x80 != 0);
+    z.set_flag_by(CF, x & 0x80 != 0);
     x << 1
 }
 
@@ -873,9 +873,9 @@ rotate_shift_functions_noa_impl!{
 // SLL is undocumented; see Young
 fn sll_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
-    z.set_flag_by(higher::CF, x & 0x80 != 0);
+    z.set_flag_by(CF, x & 0x80 != 0);
     let mut result = x << 1;
     result |= 1;
     result
@@ -887,9 +887,9 @@ rotate_shift_functions_noa_impl!{
 
 fn sra_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
-    z.set_flag_by(higher::CF, x & 1 != 0);
+    z.set_flag_by(CF, x & 1 != 0);
     let result = ((x as i8) >> 1) as u8;
     result
 }
@@ -900,9 +900,9 @@ rotate_shift_functions_noa_impl!{
 
 fn srl_impl<Z>(z: &mut Z, x: u8) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
-    z.set_flag_by(higher::CF, x & 1 != 0);
+    z.set_flag_by(CF, x & 1 != 0);
     x >> 1
 }
 
@@ -912,7 +912,7 @@ rotate_shift_functions_noa_impl!{
 
 pub fn rld<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let hl: u8 = Address(HL).view(z);
     let hl_lo: u8 = 0xF & hl;
@@ -926,12 +926,12 @@ where
     z.set_parity(a);
     z.set_sign(a);
     z.set_zero(a);
-    z.clear_flag(higher::HF | higher::NF);
+    z.clear_flag(HF | NF);
 }
 
 pub fn rrd<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let hl: u8 = Address(HL).view(z);
     let hl_lo: u8 = 0xF & hl;
@@ -945,7 +945,7 @@ where
     z.set_parity(a);
     z.set_sign(a);
     z.set_zero(a);
-    z.clear_flag(higher::HF | higher::NF);
+    z.clear_flag(HF | NF);
 }
 
 //// Bit set, reset, and Test Group
@@ -953,22 +953,22 @@ where
 
 pub fn bit<Z, T>(z: &mut Z, b: u8, arg: T)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T: Viewable<u8>,
 {
     let x = arg.view(z);
     let bitflag = 1 << b;
     let x_contains = x & bitflag != 0;
 
-    z.set_flag_by(higher::ZF | higher::PF, !x_contains);
-    z.set_flag(higher::HF);
-    z.clear_flag(higher::NF);
-    z.set_flag_by(higher::SF, b == 7 && x_contains);
+    z.set_flag_by(ZF | PF, !x_contains);
+    z.set_flag(HF);
+    z.clear_flag(NF);
+    z.set_flag_by(SF, b == 7 && x_contains);
 }
 
 pub fn set<Z, T>(z: &mut Z, b: u8, arg: T)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T: Changeable<u8>,
 {
     let mut x = arg.view(z);
@@ -978,7 +978,7 @@ where
 
 pub fn set_store<Z, T>(z: &mut Z, b: u8, arg: T, reg: Reg8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T: Changeable<u8>,
 {
     arg.change(z, b);
@@ -988,7 +988,7 @@ where
 
 pub fn res<Z, T>(z: &mut Z, b: u8, arg: T)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T: Changeable<u8>,
 {
     let mut x = arg.view(z);
@@ -998,7 +998,7 @@ where
 
 pub fn res_store<Z, T>(z: &mut Z, b: u8, arg: T, reg: Reg8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T: Changeable<u8>,
 {
     res(z, b, arg);
@@ -1011,7 +1011,7 @@ where
 
 pub fn jp<Z, T>(z: &mut Z, arg: T)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
     T: Viewable<u16>,
 {
     let addr = arg.view(z);
@@ -1020,7 +1020,7 @@ where
 
 pub fn jpcc<Z>(z: &mut Z, cc: ConditionCode, arg: u16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     if cc.view(z) {
         jp(z, arg);
@@ -1029,7 +1029,7 @@ where
 
 pub fn jr<Z>(z: &mut Z, e: i8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let pc = PC.view(z);
     let new_pc = pc.wrapping_add(e as i16 as u16);
@@ -1038,7 +1038,7 @@ where
 
 pub fn jrcc<Z>(z: &mut Z, cc: ConditionCode, e: i8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     if cc.view(z) {
         jr(z, e);
@@ -1050,7 +1050,7 @@ where
 
 pub fn djnz<Z>(z: &mut Z, e: i8)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let b = B.view(z);
     let new_b = b.wrapping_sub(1);
@@ -1068,7 +1068,7 @@ where
 
 pub fn call<Z>(z: &mut Z, nn: u16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let pch = PCH.view(z);
     let pcl = PCL.view(z);
@@ -1081,7 +1081,7 @@ where
 
 pub fn callcc<Z>(z: &mut Z, cc: ConditionCode, nn: u16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     if cc.view(z) {
         call(z, nn);
@@ -1093,7 +1093,7 @@ where
 
 pub fn ret<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let sp = SP.view(z);
     let n1 = Address(sp).view(z);
@@ -1105,7 +1105,7 @@ where
 
 pub fn retcc<Z>(z: &mut Z, cc: ConditionCode)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     if cc.view(z) {
         ret(z);
@@ -1117,14 +1117,14 @@ where
 
 pub fn reti<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     retn(z);
 }
 
 pub fn retn<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + ?Sized,
 {
     let iff2 = z.iff2();
     z.set_iff1(iff2);
@@ -1142,7 +1142,7 @@ where
 
 pub fn in_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
@@ -1155,7 +1155,7 @@ where
 
 fn in_impl<Z, T1>(z: &mut Z, arg: T1) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
     T1: Viewable<u8>,
 {
     let address_lo = arg.view(z);
@@ -1166,14 +1166,14 @@ where
     z.set_parity(x);
     z.set_sign(x);
     z.set_zero(x);
-    z.clear_flag(higher::HF | higher::NF);
+    z.clear_flag(HF | NF);
 
     x
 }
 
 pub fn in_f<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
     T1: Viewable<u8>,
 {
     in_impl(z, arg);
@@ -1181,7 +1181,7 @@ where
 
 pub fn in_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
     T1: Changeable<u8>,
     T2: Viewable<u8>,
 {
@@ -1193,7 +1193,7 @@ where
 /// reads from the input ports and sets flags but doesn't change any register.
 pub fn in0<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     let addr = BC.view(z);
     let x = z.input(addr);
@@ -1201,12 +1201,12 @@ where
     z.set_parity(x);
     z.set_sign(x);
     z.set_zero(x);
-    z.clear_flag(higher::HF | higher::NF);
+    z.clear_flag(HF | NF);
 }
 
 fn inid_impl<Z>(z: &mut Z, inc: u16) -> u8
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     let b = B.view(z);
     let hl = HL.view(z);
@@ -1220,17 +1220,17 @@ where
 
 pub fn ini<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     let new_b = inid_impl(z, 1);
 
     z.set_zero(new_b);
-    z.set_flag(higher::NF);
+    z.set_flag(NF);
 }
 
 pub fn inir<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     while {
         z.inc_cycles(21);
@@ -1240,24 +1240,24 @@ where
         z.inc_r(2);
     }
 
-    z.set_flag(higher::ZF | higher::NF);
+    z.set_flag(ZF | NF);
 
     z.inc_cycles(16);
 }
 
 pub fn ind<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     let new_b = inid_impl(z, 0xFFFF);
 
     z.set_zero(new_b);
-    z.set_flag(higher::NF);
+    z.set_flag(NF);
 }
 
 pub fn indr<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     while {
         z.inc_cycles(21);
@@ -1267,14 +1267,14 @@ where
         z.inc_r(2);
     }
 
-    z.set_flag(higher::ZF | higher::NF);
+    z.set_flag(ZF | NF);
 
     z.inc_cycles(16);
 }
 
 pub fn out_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
     T1: Viewable<u8>,
     T2: Viewable<u8>,
 {
@@ -1287,7 +1287,7 @@ where
 
 pub fn out_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
     T1: Viewable<u8>,
     T2: Viewable<u8>,
 {
@@ -1300,7 +1300,7 @@ where
 
 fn outid_impl<Z>(z: &mut Z, inc: u16)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     let b = B.view(z);
     let new_b = b.wrapping_sub(1);
@@ -1314,18 +1314,18 @@ where
 
 pub fn outi<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     outid_impl(z, 1);
     let new_b = B.view(z);
 
     z.set_zero(new_b);
-    z.set_flag(higher::NF);
+    z.set_flag(NF);
 }
 
 pub fn otir<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     while {
         z.inc_cycles(21);
@@ -1336,25 +1336,25 @@ where
         z.inc_r(2);
     }
 
-    z.set_flag(higher::ZF | higher::NF);
+    z.set_flag(ZF | NF);
 
     z.inc_cycles(16);
 }
 
 pub fn outd<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     outid_impl(z, 0xFFFF);
     let new_b = B.view(z);
 
     z.set_zero(new_b);
-    z.set_flag(higher::NF);
+    z.set_flag(NF);
 }
 
 pub fn otdr<Z>(z: &mut Z)
 where
-    Z: part::T + ?Sized,
+    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
 {
     while {
         z.inc_cycles(21);
@@ -1365,7 +1365,7 @@ where
         z.inc_r(2);
     }
 
-    z.set_flag(higher::ZF | higher::NF);
+    z.set_flag(ZF | NF);
 
     z.inc_cycles(16);
 }

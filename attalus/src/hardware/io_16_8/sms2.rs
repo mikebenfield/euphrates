@@ -121,7 +121,7 @@ impl Irq for Sms2Io {
 
 impl<S> Io16_8Impler<S> for Sms2Io
 where
-    S: AsMut<Sms2Io> + AsRef<Sms2Io> + SmsVdpInternal + sn76489::Sn76489Hardware + ?Sized,
+    S: AsMut<Sms2Io> + AsRef<Sms2Io> + SmsVdpInternal + sn76489::Sn76489Internal + ?Sized,
 {
     fn input(s: &mut S, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;

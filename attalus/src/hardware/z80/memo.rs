@@ -1,9 +1,9 @@
 use std;
 use std::fmt;
 
-use super::{ConditionCode, Reg16, Reg8};
-use super::part::{Address, Shift};
 use utilities;
+
+use super::*;
 
 use self::Reg16::*;
 use self::Reg8::*;

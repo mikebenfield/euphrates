@@ -2,7 +2,7 @@ use super::InterruptMode;
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[repr(C)]
-pub struct T {
+pub struct Z80State {
     pub cycles: u64,
     pub registers: [u16; 13],
     pub halted: bool,
@@ -12,21 +12,21 @@ pub struct T {
 }
 
 pub trait Savable {
-    fn save(&self) -> T;
+    fn save(&self) -> Z80State;
 }
 
 pub trait Restorable {
-    fn restore(&T) -> Self;
+    fn restore(&Z80State) -> Self;
 }
 
-impl Savable for T {
-    fn save(&self) -> T {
+impl Savable for Z80State {
+    fn save(&self) -> Z80State {
         *self
     }
 }
 
-impl Restorable for T {
-    fn restore(t: &T) -> Self {
+impl Restorable for Z80State {
+    fn restore(t: &Z80State) -> Self {
         *t
     }
 }

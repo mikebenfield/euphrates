@@ -1,4 +1,5 @@
-//! # Sega Master System Memory Mappers
+//! Sega Master System Memory Mappers
+//!
 //! The SMS has two memory mappers in common use, the Sega memory mapper and the
 //! CodeMasters mapper. Both swap out pages of cartridge ROM according to memory
 //! writes in special locations.
@@ -36,7 +37,7 @@ pub trait Memory16Impl {
 
 impl<S> Memory16 for S
 where
-    S: Memory16Impl,
+    S: Memory16Impl + ?Sized,
 {
     #[inline]
     fn read(&mut self, logical_address: u16) -> u8 {
@@ -51,7 +52,7 @@ where
 
 impl<S> Memory16Impler<S> for [u8; 0x10000]
 where
-    S: AsMut<[u8; 0x10000]> + AsRef<[u8; 0x10000]>,
+    S: AsMut<[u8; 0x10000]> + AsRef<[u8; 0x10000]> + ?Sized,
 {
     #[inline]
     fn read(s: &mut S, logical_address: u16) -> u8 {

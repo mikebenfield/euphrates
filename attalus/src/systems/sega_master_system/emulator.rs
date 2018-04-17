@@ -12,16 +12,16 @@ use hardware::memory_16_8::codemasters::CodemastersMemoryMap;
 use hardware::memory_16_8::sega::{MasterSystemMemory, SegaMemoryMap};
 use hardware::sms_vdp::{self, SimpleSmsVdp, SimpleSmsVdpInternal, SmsVdp, SmsVdpImpl,
                         SmsVdpInternal, SmsVdpInternalImpl, SmsVdpState};
-use hardware::sn76489::{SimpleSn76489, Sn76489, Sn76489HardwareImpl, Sn76489Impl};
-use hardware::z80::{self, machine::T as Z80MachineT};
+use hardware::sn76489::{SimpleSn76489, Sn76489, Sn76489Impl, Sn76489InternalImpl};
+use hardware::z80::{self, SimpleZ80Internal, Z80, Z80Impl, Z80Internal, Z80InternalImpl,
+                    Z80Interpreter, Z80Irq, Z80State};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
 use utilities::{self, FrameInfo, TimeInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait MasterSystem
-    : z80::machine::T + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489 + SimpleAudio
-    {
+    : Z80 + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489 + SimpleAudio {
     fn init(&mut self, frequency: Frequency) -> Result<()>;
 
     fn run_frame(
@@ -34,12 +34,12 @@ pub trait MasterSystem
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Hardware<M> {
-    pub z80: z80::state::T,
+    pub z80: Z80State,
     pub memory: M,
     pub io: Sms2Io,
     pub vdp: SmsVdpState,
     pub sn76489: SimpleSn76489,
-    pub interpreter: z80::interpreter::Interpreter<z80::interpreter::Safe>,
+    pub interpreter: Z80Interpreter<z80::Safe>,
 }
 
 pub struct System<I, M> {
@@ -52,7 +52,7 @@ pub struct System<I, M> {
 
 impl<I, M> MasterSystem for System<I, M>
 where
-    Self: z80::machine::T + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489,
+    Self: Z80 + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489,
 {
     fn init(&mut self, frequency: Frequency) -> Result<()> {
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
@@ -97,7 +97,7 @@ where
             let vdp_cycles = <Self as SmsVdpInternal>::cycles(self);
             let z80_target_cycles = 2 * vdp_cycles / 3;
 
-            while z80::internal::T::cycles(self) < z80_target_cycles {
+            while Z80Internal::cycles(self) < z80_target_cycles {
                 self.run(z80_target_cycles);
                 // if self.wants_pause() {
                 //     return Ok(EmulationResult::FrameInterrupted);
@@ -106,14 +106,14 @@ where
 
             if self.v() == 0 {
                 if let Some(_) = self.z80_frequency {
-                    let sound_target_cycles = z80::internal::T::cycles(self) / 16;
+                    let sound_target_cycles = Z80Internal::cycles(self) / 16;
                     Sn76489::queue(self, sound_target_cycles).with_context(|e| {
                         format_err!("Master System emulation: error queueing audio {}", e)
                     })?;
                 }
 
                 let time_info = TimeInfo {
-                    total_cycles: z80::internal::T::cycles(self),
+                    total_cycles: Z80Internal::cycles(self),
                     cycles_start: time_status.cycles_start,
                     frequency: self.z80_frequency,
                     start_time: time_status.start_time,
@@ -225,8 +225,8 @@ macro_rules! impl_as_ref {
 impl_as_ref!{Sms2Io, io}
 impl_as_ref!{SimpleSn76489, sn76489}
 impl_as_ref!{SmsVdpState, vdp}
-impl_as_ref!{z80::interpreter::Interpreter<z80::interpreter::Safe>, interpreter}
-impl_as_ref!{z80::state::T, z80}
+impl_as_ref!{Z80Interpreter<z80::Safe>, interpreter}
+impl_as_ref!{Z80State, z80}
 
 macro_rules! impl_as_ref_memory_map {
     ($typename: ty) => {
@@ -307,13 +307,11 @@ impl<I, M> SmsVdpImpl for System<I, M> {
 //     }
 // }
 
-impl<I, M> z80::internal::Impl for System<I, M> {
-    type Impler = z80::state::T;
+impl<I, M> Z80InternalImpl for System<I, M> {
+    type Impler = SimpleZ80Internal;
 }
 
-impl<I, M> z80::higher::T for System<I, M> {}
-
-impl<I, M> z80::part::T for System<I, M>
+impl<I, M> Z80Irq for System<I, M>
 where
     Self: Memory16 + Io16_8,
 {
@@ -333,14 +331,14 @@ where
     }
 }
 
-impl<I, M> z80::machine::Impl for System<I, M>
+impl<I, M> Z80Impl for System<I, M>
 where
-    Self: z80::part::T,
+    Self: Z80Internal + Memory16 + Z80Irq,
 {
-    type Impler = z80::interpreter::Interpreter<z80::interpreter::Safe>;
+    type Impler = Z80Interpreter<z80::Safe>;
 }
 
-impl<I, M> Sn76489HardwareImpl for System<I, M> {
+impl<I, M> Sn76489InternalImpl for System<I, M> {
     type Impler = SimpleSn76489;
 }
 

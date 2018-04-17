@@ -6,7 +6,7 @@ use super::*;
 
 type Result<T> = std::result::Result<T, Error>;
 
-pub trait Sn76489: Sn76489Hardware {
+pub trait Sn76489: Sn76489Internal {
     fn queue(&mut self, target_cycles: u64) -> Result<()>;
 }
 
@@ -24,7 +24,7 @@ pub trait Sn76489Impl {
 
 impl<S> Sn76489 for S
 where
-    S: Sn76489Impl + Sn76489Hardware + ?Sized
+    S: Sn76489Impl + Sn76489Internal + ?Sized
 {
     #[inline]
     fn queue(&mut self, target_cycles: u64) -> Result<()> {

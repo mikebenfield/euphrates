@@ -1,16 +1,21 @@
 #[macro_use]
 pub mod instruction_list;
 pub mod instructions;
-pub mod internal;
-pub mod higher;
-pub mod part;
-pub mod state;
-pub mod simple;
-pub mod machine;
-pub mod interpreter;
 pub mod memo;
+mod interpreter;
+mod internal;
+mod irq;
+mod machine;
+mod simple;
+mod state;
 
 pub use self::memo::Opcode;
+pub use self::irq::*;
+pub use self::internal::*;
+pub use self::interpreter::*;
+pub use self::machine::*;
+pub use self::simple::*;
+pub use self::state::*;
 
 use std::fmt;
 

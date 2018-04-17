@@ -8,7 +8,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct FakeSn76489;
 
-impl<S> Sn76489HardwareImpler<S> for FakeSn76489 {
+impl<S> Sn76489InternalImpler<S> for FakeSn76489 {
     #[inline]
     fn write(_s: &mut S, _data: u8) {}
 }
