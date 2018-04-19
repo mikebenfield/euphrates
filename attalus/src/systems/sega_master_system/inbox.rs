@@ -1,9 +1,11 @@
 use std::collections::VecDeque;
 use std::fmt::Write;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use hardware::z80::memo::Opcode;
-use memo::{InboxImpler, Memo, PausableImpler};
+use memo::{InboxImpler, Memo, HoldableImpler};
+
+use super::emulator::TimeStatus;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Query {
@@ -37,13 +39,11 @@ pub enum CommandResult {
 pub trait Debugger {
     fn command(&mut self, command: Command) -> CommandResult;
     fn query(&mut self, query: Query) -> QueryResult;
-    fn hold_duration(&self) -> Duration;
 }
 
 pub trait DebuggerImpler<S: ?Sized> {
     fn command(&mut S, command: Command) -> CommandResult;
     fn query(&mut S, query: Query) -> QueryResult;
-    fn hold_duration(&S) -> Duration;
 }
 
 pub trait DebuggerImpl {
@@ -63,52 +63,54 @@ where
     fn query(&mut self, query: Query) -> QueryResult {
         <S::Impler as DebuggerImpler<Self>>::query(self, query)
     }
-
-    #[inline]
-    fn hold_duration(&self) -> Duration {
-        <S::Impler as DebuggerImpler<Self>>::hold_duration(self)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct HoldingDebugger {
-    hold_duration: Duration,
-    hold: Option<Instant>,
-}
+pub struct HoldingDebugger;
 
 impl HoldingDebugger {
-    pub fn new(hold_duration: Duration, hold: Option<Instant>) -> HoldingDebugger {
-        HoldingDebugger { hold_duration, hold }
+    pub fn new() -> HoldingDebugger {
+        HoldingDebugger
     }
 }
 
-impl<S> PausableImpler<S> for HoldingDebugger
+impl<S> HoldableImpler<S> for HoldingDebugger
 where
-    S: ?Sized + AsMut<HoldingDebugger> + AsRef<HoldingDebugger>,
+    S: ?Sized + AsRef<TimeStatus>,
 {
     #[inline]
-    fn wants_pause(s: &S) -> bool {
+    fn holding(s: &S) -> bool {
         s.as_ref().hold.is_some()
     }
+}
 
-    #[inline]
-    fn clear_pause(_s: &mut S) {}
+impl<S> InboxImpler<S> for HoldingDebugger
+where
+    S: ?Sized,
+{
+    fn receive(_s: &mut S, _memo: Memo) {}
 }
 
 impl<S> DebuggerImpler<S> for HoldingDebugger
 where
-    S: ?Sized + AsRef<HoldingDebugger> + AsMut<HoldingDebugger>,
+    S: ?Sized
+        + AsRef<HoldingDebugger>
+        + AsMut<HoldingDebugger>
+        + AsRef<TimeStatus>
+        + AsMut<TimeStatus>,
 {
     #[inline]
     fn command(s: &mut S, command: Command) -> CommandResult {
         use self::Command::*;
-        match (command, s.as_ref().hold) {
-            (Hold, None) => s.as_mut().hold = Some(Instant::now()),
+        let time_status = AsMut::<TimeStatus>::as_mut(s);
+        match (command, time_status.hold) {
+            (Hold, None) => time_status.hold = Some(Instant::now()),
             (Resume, Some(instant)) => {
-                s.as_mut().hold = None;
+                time_status.hold = None;
                 let elapsed = Instant::now().duration_since(instant);
-                s.as_mut().hold_duration += elapsed;
+                time_status.hold_duration += elapsed;
             }
+            (Hold, _) => {}
             _ => return CommandResult::Unsupported,
         }
         return CommandResult::Ok;
@@ -117,11 +119,6 @@ where
     #[inline]
     fn query(_s: &mut S, _query: Query) -> QueryResult {
         QueryResult::Unsupported
-    }
-
-    #[inline]
-    fn hold_duration(s: &S) -> Duration {
-        s.as_ref().hold_duration
     }
 }
 
@@ -143,8 +140,6 @@ const MAX_MESSAGES: usize = 50;
 pub struct DebuggingInbox {
     last_pc: u16,
     opcodes: [Option<Opcode>; 0x10000],
-    hold_duration: Duration,
-    hold: Option<Instant>,
     status: DebugStatus,
     pc_breakpoints: Vec<u16>,
     // memo_patterns: Vec<MemoPattern>,
@@ -152,12 +147,10 @@ pub struct DebuggingInbox {
 }
 
 impl DebuggingInbox {
-    fn new(hold_duration: Duration, hold: Option<Instant>) -> Self {
+    fn new() -> Self {
         DebuggingInbox {
             last_pc: 0,
             opcodes: [None; 0x10000],
-            hold_duration,
-            hold,
             status: DebugStatus::None,
             pc_breakpoints: Vec::new(),
             recent_memos: VecDeque::new(),
@@ -228,7 +221,7 @@ impl DebuggingInbox {
 
 impl Default for DebuggingInbox {
     fn default() -> Self {
-        DebuggingInbox::new(Duration::from_millis(0), None)
+        DebuggingInbox::new()
     }
 }
 
@@ -237,9 +230,9 @@ where
     S: ?Sized + AsMut<DebuggingInbox> + AsRef<DebuggingInbox>,
 {
     fn receive(s: &mut S, memo: Memo) {
-        use std::mem::transmute;
         use hardware::z80::memo::manifests::INSTRUCTION;
         use memo::Payload;
+        use std::mem::transmute;
 
         if s.as_ref().recent_memos.len() >= MAX_MESSAGES {
             s.as_mut().recent_memos.pop_front();
@@ -263,34 +256,35 @@ where
     }
 }
 
-impl<S> PausableImpler<S> for DebuggingInbox
+impl<S> HoldableImpler<S> for DebuggingInbox
 where
-    S: ?Sized + AsMut<DebuggingInbox> + AsRef<DebuggingInbox>,
+    S: ?Sized + AsRef<TimeStatus>,
 {
     #[inline]
-    fn wants_pause(s: &S) -> bool {
+    fn holding(s: &S) -> bool {
         s.as_ref().hold.is_some()
     }
-
-    #[inline]
-    fn clear_pause(_s: &mut S) {}
 }
 
 impl<S> DebuggerImpler<S> for DebuggingInbox
 where
-    S: ?Sized + AsRef<DebuggingInbox> + AsMut<DebuggingInbox>,
+    S: ?Sized
+        + AsRef<DebuggingInbox>
+        + AsMut<DebuggingInbox>
+        + AsRef<TimeStatus>
+        + AsMut<TimeStatus>,
 {
     fn query(s: &mut S, query: Query) -> QueryResult {
         use self::Query::*;
         let result = match query {
             RecentMemos => {
                 let mut result = String::new();
-                for memo in s.as_ref().recent_memos.iter() {
+                for memo in AsRef::<DebuggingInbox>::as_ref(s).recent_memos.iter() {
                     writeln!(result, "{}", memo).unwrap();
                 }
                 result
             }
-            Disassemble(pc) => s.as_ref().disassembly_around(pc),
+            Disassemble(pc) => AsRef::<DebuggingInbox>::as_ref(s).disassembly_around(pc),
         };
         QueryResult::Ok(result)
     }
@@ -298,26 +292,23 @@ where
     fn command(s: &mut S, command: Command) -> CommandResult {
         use self::Command::*;
 
-        match (command, s.as_ref().hold) {
-            (Hold, None) => s.as_mut().hold = Some(Instant::now()),
+        match (command, AsRef::<TimeStatus>::as_ref(s).hold) {
+            (Hold, None) => AsMut::<TimeStatus>::as_mut(s).hold = Some(Instant::now()),
             (Resume, Some(instant)) => {
-                s.as_mut().hold = None;
+                AsMut::<TimeStatus>::as_mut(s).hold = None;
                 let elapsed = Instant::now().duration_since(instant);
-                s.as_mut().hold_duration += elapsed;
+                AsMut::<TimeStatus>::as_mut(s).hold_duration += elapsed;
             }
-            (BreakAtPc(pc), _) => s.as_mut().pc_breakpoints.push(pc),
-            (RemovePcBreakpoints, _) => s.as_mut().pc_breakpoints = Vec::new(),
-            (Step, _) => s.as_mut().status = DebugStatus::Step,
+            (BreakAtPc(pc), _) => AsMut::<DebuggingInbox>::as_mut(s).pc_breakpoints.push(pc),
+            (RemovePcBreakpoints, _) => {
+                AsMut::<DebuggingInbox>::as_mut(s).pc_breakpoints = Vec::new()
+            }
+            (Step, _) => AsMut::<DebuggingInbox>::as_mut(s).status = DebugStatus::Step,
             // BreakAtMemo(pattern) => self.memo_patterns.push(pattern),
             // RemoveBreakMemos => self.memo_patterns = Vec::new(),
             _ => {}
         }
 
         CommandResult::Ok
-    }
-
-    #[inline]
-    fn hold_duration(s: &S) -> Duration {
-        s.as_ref().hold_duration
     }
 }

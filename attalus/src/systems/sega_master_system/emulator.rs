@@ -1,379 +1,512 @@
+use std;
+use std::any::Any;
 use std::convert::{AsMut, AsRef};
 use std::time::{Duration, Instant};
-use std;
 
 use failure::{err_msg, Error, ResultExt};
 
-use memo;
-use hardware::io_16_8::{Io16_8, Io16_8Impl, sms2::Sms2Io};
+use hardware::io_16_8::{sms2::Sms2Io, Io16_8, Io16_8Impl};
 use hardware::irq::Irq;
-use hardware::memory_16_8::{Memory16, Memory16Impl};
 use hardware::memory_16_8::codemasters::CodemastersMemoryMap;
 use hardware::memory_16_8::sega::{MasterSystemMemory, SegaMemoryMap};
-use hardware::sms_vdp::{self, SimpleSmsVdp, SimpleSmsVdpInternal, SmsVdp, SmsVdpImpl,
-                        SmsVdpInternal, SmsVdpInternalImpl, SmsVdpState};
+use hardware::memory_16_8::{Memory16, Memory16Impl};
+use hardware::sms_vdp::{SimpleSmsVdp, SimpleSmsVdpInternal, SmsVdp, SmsVdpImpl, SmsVdpInternal,
+                        SmsVdpInternalImpl, SmsVdpState};
 use hardware::sn76489::{SimpleSn76489, Sn76489, Sn76489Impl, Sn76489InternalImpl};
-use hardware::z80::{self, SimpleZ80Internal, Z80, Z80Impl, Z80Internal, Z80InternalImpl,
-                    Z80Interpreter, Z80Irq, Z80State};
+use hardware::z80::{self, Z80, Z80Impl, Z80Internal, Z80InternalImpl, Z80Interpreter, Z80Irq,
+                    Z80State};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
-use utilities::{self, FrameInfo, TimeInfo};
+use memo::{HoldableImpl, Inbox, InboxImpl, NothingInbox};
+use utilities::{self, TimeInfo};
+
+use super::inbox::{Debugger, DebuggerImpl, DebuggingInbox, HoldingDebugger};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-macro_rules! as_t {
-    ($fn_name: ident, $type_name: ident) => {
-        fn $fn_name(&self) -> &$type_name {
-            self
-        }
-    }
-}
-
-macro_rules! as_mut {
-    ($fn_name: ident, $type_name: ident) => {
-        fn $fn_name(&mut self) -> &mut $type_name {
-            self
-        }
-    }
-}
-
-pub trait MasterSystem
-    : Z80 + SmsVdp + Memory16 + Io16_8 + Sn76489 + SimpleAudio + Sized {
-    fn init(&mut self, frequency: Frequency) -> Result<()>;
-
-    fn run_frame(
-        &mut self,
-        player_status: &PlayerStatus,
-        time_status: &TimeStatus,
-        frame_info: &mut FrameInfo,
-    ) -> Result<EmulationResult>;
-
-    as_t!(as_z80, Z80);
-    as_mut!(as_mut_z80, Z80);
-    as_t!(as_sms_vdp, SmsVdp);
-    as_mut!(as_mut_sms_vdp, SmsVdp);
-    as_t!(as_sn76489, Sn76489);
-    as_mut!(as_mut_sn76489, Sn76489);
-    as_t!(as_memory16, Memory16);
-    as_mut!(as_mut_memory16, Memory16);
-    as_t!(as_io16, Io16_8);
-    as_mut!(as_mut_io16, Io16_8);
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Hardware<M> {
-    pub z80: Z80State,
-    pub memory: M,
-    pub io: Sms2Io,
-    pub vdp: SmsVdpState,
-    pub sn76489: SimpleSn76489,
-    pub interpreter: Z80Interpreter<z80::Safe>,
-}
-
-pub struct System<I, M> {
-    pub inbox: I,
-    pub hardware: Hardware<M>,
-    pub audio: Box<SimpleAudio>,
-    pub graphics: Box<SimpleGraphics>,
-    pub z80_frequency: Option<u64>,
-}
-
-impl<I, M> MasterSystem for System<I, M>
-where
-    Self: Z80 + SmsVdp + Memory16 + AsMut<Sms2Io> + Sn76489,
+pub trait MasterSystem<R>:
+    Z80
+    + SmsVdp
+    + Memory16
+    + Io16_8
+    + Sn76489
+    + Debugger
+    + Inbox
+    + AsMut<Sms2Io>
+    + AsRef<TimeStatus>
+    + AsMut<TimeStatus>
 {
-    fn init(&mut self, frequency: Frequency) -> Result<()> {
-        const AUDIO_BUFFER_SIZE: u16 = 0x800;
-
-        self.z80_frequency = match frequency {
-            Frequency::Ntsc => Some(NTSC_MASTER_FREQUENCY / 3),
-            Frequency::Pal => Some(PAL_MASTER_FREQUENCY / 3),
-            Frequency::MasterFrequency(x) => Some(x / 3),
-            Frequency::Z80Frequency(x) => Some(x),
-            Frequency::Unlimited => None,
-        };
-
-        if let Some(frequency) = self.z80_frequency {
-            self.configure(frequency as u32 / 16, AUDIO_BUFFER_SIZE)
-                .map_err(|s| {
-                    format_err!("Master System emulation: error configuring audio: {}", s)
-                })?;
-        }
-        Ok(())
-    }
-
-    fn run_frame(
-        &mut self,
-        player_status: &PlayerStatus,
-        time_status: &TimeStatus,
-        frame_info: &mut FrameInfo,
-    ) -> Result<EmulationResult> {
-        // audio already configured, start time, etc
-
+    fn run_frame(&mut self, player_status: PlayerStatus) -> Result<EmulationResult> {
         <Self as AsMut<Sms2Io>>::as_mut(self).set_joypad_a(player_status.joypad_a);
         <Self as AsMut<Sms2Io>>::as_mut(self).set_joypad_b(player_status.joypad_b);
         <Self as AsMut<Sms2Io>>::as_mut(self).set_pause(player_status.pause);
 
+        let z80_frequency = self.frequency();
+
         loop {
-            // if self.wants_pause() {
-            //     return Ok(EmulationResult::FrameInterrupted);
-            // }
+            if self.holding() {
+                return Ok(EmulationResult::FrameInterrupted);
+            }
 
             self.draw_line()
-                .with_context(|e| err_msg(format!("Master System emulation: VDP error {}", e)))?;
+                .with_context(|e| err_msg(format!("SimpleSystem emulation: VDP error {}", e)))?;
 
             let vdp_cycles = <Self as SmsVdpInternal>::cycles(self);
             let z80_target_cycles = 2 * vdp_cycles / 3;
 
             while Z80Internal::cycles(self) < z80_target_cycles {
                 self.run(z80_target_cycles);
-                // if self.wants_pause() {
-                //     return Ok(EmulationResult::FrameInterrupted);
-                // }
+                if self.holding() {
+                    return Ok(EmulationResult::FrameInterrupted);
+                }
             }
 
             if self.v() == 0 {
-                if let Some(_) = self.z80_frequency {
+                if let Some(_) = z80_frequency {
                     let sound_target_cycles = Z80Internal::cycles(self) / 16;
                     Sn76489::queue(self, sound_target_cycles).with_context(|e| {
-                        format_err!("Master System emulation: error queueing audio {}", e)
+                        format_err!("SimpleSystem emulation: error queueing audio {}", e)
                     })?;
                 }
+
+                let time_status = *AsRef::<TimeStatus>::as_ref(self);
 
                 let time_info = TimeInfo {
                     total_cycles: Z80Internal::cycles(self),
                     cycles_start: time_status.cycles_start,
-                    frequency: self.z80_frequency,
+                    frequency: z80_frequency,
                     start_time: time_status.start_time,
                     hold_duration: time_status.hold_duration,
                 };
 
-                *frame_info = utilities::time_govern(time_info, frame_info.clone());
+                utilities::time_govern(time_info);
 
                 return Ok(EmulationResult::FrameCompleted);
             }
         }
     }
+
+    fn init(&mut self) -> Result<()>;
+
+    fn state(&self) -> MasterSystemState;
+
+    fn borrow_resource(&self) -> &R;
+
+    fn borrow_resource_mut(&mut self) -> &mut R;
+
+    fn reclaim_resource(self: Box<Self>) -> R;
+
+    fn frequency(&self) -> Option<u64>;
 }
 
-impl<I, M> System<I, M> {
-    pub fn new(
-        inbox: I,
-        hardware: Hardware<M>,
-        graphics: Box<SimpleGraphics>,
-        audio: Box<SimpleAudio>,
-    ) -> Self {
-        System {
-            z80_frequency: None,
-            inbox,
-            hardware,
-            graphics,
-            audio,
+#[derive(Clone, Serialize, Deserialize)]
+pub enum MasterSystemMemoryType {
+    Sega(SegaMemoryMap),
+    Codemasters(CodemastersMemoryMap),
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct MasterSystemState {
+    pub z80: Z80State,
+    pub memory: MasterSystemMemoryType,
+    pub io: Sms2Io,
+    pub sms_vdp: SmsVdpState,
+    pub sn76489: SimpleSn76489,
+}
+
+impl MasterSystemState {
+    pub fn new_with_sega_memory_map(rom: &[u8]) -> Result<MasterSystemState> {
+        let mem = <SegaMemoryMap as MasterSystemMemory>::new(rom)?;
+        Ok(MasterSystemState {
+            z80: Default::default(),
+            memory: MasterSystemMemoryType::Sega(mem),
+            io: Default::default(),
+            sms_vdp: Default::default(),
+            sn76489: Default::default(),
+        })
+    }
+
+    pub fn new_with_codemasters_memory_map(rom: &[u8]) -> Result<MasterSystemState> {
+        let mem = <CodemastersMemoryMap as MasterSystemMemory>::new(rom)?;
+        Ok(MasterSystemState {
+            z80: Default::default(),
+            memory: MasterSystemMemoryType::Codemasters(mem),
+            io: Default::default(),
+            sms_vdp: Default::default(),
+            sn76489: Default::default(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SimpleMultimediaResource<A, G> {
+    pub audio: A,
+    pub graphics: G,
+    pub debug: bool,
+    pub frequency: Frequency,
+}
+
+struct SimpleSystem<I, M, A, G> {
+    time_status: TimeStatus,
+    inbox: I,
+    resource: SimpleMultimediaResource<A, G>,
+    z80: Z80State,
+    memory: M,
+    io: Sms2Io,
+    sms_vdp: SmsVdpState,
+    sn76489: SimpleSn76489,
+    interpreter: Z80Interpreter<z80::Safe>,
+}
+
+pub trait MasterSystemResource<'a>
+where
+    Self: 'a,
+{
+    fn create(
+        self,
+        state: MasterSystemState,
+        time_status: TimeStatus,
+    ) -> Box<MasterSystem<Self> + 'a>;
+}
+
+impl<'a, A, G> MasterSystemResource<'a> for SimpleMultimediaResource<A, G>
+where
+    A: SimpleAudio + 'a,
+    G: SimpleGraphics + 'a,
+{
+    fn create(
+        self,
+        state: MasterSystemState,
+        time_status: TimeStatus,
+    ) -> Box<MasterSystem<Self> + 'a> {
+        macro_rules! new_system {
+            ($debug_type:ident, $memory:ident) => {
+                Box::new(SimpleSystem {
+                    time_status,
+                    inbox: $debug_type::default(),
+                    resource: self,
+                    z80: state.z80,
+                    memory: $memory,
+                    io: state.io,
+                    sms_vdp: state.sms_vdp,
+                    sn76489: state.sn76489,
+                    interpreter: Default::default(),
+                })
+            };
+        }
+
+        match state.memory {
+            MasterSystemMemoryType::Sega(memory) => if self.debug {
+                new_system!(DebuggingInbox, memory)
+            } else {
+                new_system!(HoldingDebugger, memory)
+            },
+            MasterSystemMemoryType::Codemasters(memory) => if self.debug {
+                new_system!(DebuggingInbox, memory)
+            } else {
+                new_system!(HoldingDebugger, memory)
+            },
         }
     }
 }
 
-impl<I, M> SimpleGraphics for System<I, M> {
+impl<I, M, A, G> MasterSystem<SimpleMultimediaResource<A, G>> for SimpleSystem<I, M, A, G>
+where
+    Self: Z80
+        + SmsVdp
+        + Memory16
+        + Io16_8
+        + Sn76489
+        + Debugger
+        + Inbox
+        + SimpleAudio
+        + SimpleGraphics,
+    M: Any + 'static,
+{
+    fn init(&mut self) -> Result<()> {
+        const AUDIO_BUFFER_SIZE: u16 = 0x800;
+
+        if let Some(frequency) = self.frequency() {
+            self.configure(frequency as u32 / 16, AUDIO_BUFFER_SIZE)
+                .map_err(|s| {
+                    format_err!("SimpleSystem emulation: error configuring audio: {}", s)
+                })?;
+        };
+
+        self.time_status.cycles_start = Z80Internal::cycles(self);
+        self.time_status.start_time = Instant::now();
+        self.play()?;
+
+        Ok(())
+    }
+
+    fn state(&self) -> MasterSystemState {
+        let any: &Any = &self.memory;
+        match (
+            any.downcast_ref::<SegaMemoryMap>(),
+            any.downcast_ref::<CodemastersMemoryMap>(),
+        ) {
+            (Some(mm), _) => MasterSystemState {
+                z80: self.z80.clone(),
+                memory: MasterSystemMemoryType::Sega(mm.clone()),
+                io: self.io.clone(),
+                sms_vdp: self.sms_vdp.clone(),
+                sn76489: self.sn76489.clone(),
+            },
+            (_, Some(mm)) => MasterSystemState {
+                z80: self.z80.clone(),
+                memory: MasterSystemMemoryType::Codemasters(mm.clone()),
+                io: self.io.clone(),
+                sms_vdp: self.sms_vdp.clone(),
+                sn76489: self.sn76489.clone(),
+            },
+            _ => unreachable!("Unknown memory map?"),
+        }
+    }
+
+    fn borrow_resource(&self) -> &SimpleMultimediaResource<A, G> {
+        &self.resource
+    }
+
+    fn borrow_resource_mut(&mut self) -> &mut SimpleMultimediaResource<A, G> {
+        &mut self.resource
+    }
+
+    fn reclaim_resource(self: Box<Self>) -> SimpleMultimediaResource<A, G> {
+        self.resource
+    }
+
+    fn frequency(&self) -> Option<u64> {
+        self.resource.frequency.to_z80_frequency()
+    }
+}
+
+impl<I, M, A, G> SimpleGraphics for SimpleSystem<I, M, A, G>
+where
+    G: SimpleGraphics,
+{
     #[inline]
     fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
-        self.graphics.set_resolution(width, height)
+        self.resource.graphics.set_resolution(width, height)
     }
 
     #[inline]
     fn resolution(&self) -> (u32, u32) {
-        self.graphics.resolution()
+        self.resource.graphics.resolution()
     }
 
     #[inline]
     fn paint(&mut self, x: u32, y: u32, color: SimpleColor) {
-        self.graphics.paint(x, y, color)
+        self.resource.graphics.paint(x, y, color)
     }
 
     #[inline]
     fn get(&self, x: u32, y: u32) -> SimpleColor {
-        self.graphics.get(x, y)
+        self.resource.graphics.get(x, y)
     }
 
     #[inline]
     fn render(&mut self) -> Result<()> {
-        self.graphics.render()
+        self.resource.graphics.render()
     }
 }
 
-impl<I, M> SimpleAudio for System<I, M> {
+impl<I, M, A, G> SimpleAudio for SimpleSystem<I, M, A, G>
+where
+    A: SimpleAudio,
+{
     #[inline]
     fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()> {
-        self.audio.configure(frequency, buffer_size)
+        self.resource.audio.configure(frequency, buffer_size)
     }
 
     #[inline]
     fn play(&mut self) -> Result<()> {
-        self.audio.play()
+        self.resource.audio.play()
     }
 
     #[inline]
     fn pause(&mut self) -> Result<()> {
-        self.audio.pause()
+        self.resource.audio.pause()
     }
 
     #[inline]
     fn buffer(&mut self) -> &mut [i16] {
-        self.audio.buffer()
+        self.resource.audio.buffer()
     }
 
     #[inline]
     fn queue_buffer(&mut self) -> Result<()> {
-        self.audio.queue_buffer()
+        self.resource.audio.queue_buffer()
     }
 
     #[inline]
     fn clear(&mut self) -> Result<()> {
-        self.audio.clear()
+        self.resource.audio.clear()
     }
 }
 
 macro_rules! impl_as_ref {
-    ($typename: ty, $component_name: ident) => {
-        impl<I, M> AsRef<$typename> for System<I, M> {
+    ($typename:ty, $component_name:ident) => {
+        impl<I, M, A, G> AsRef<$typename> for SimpleSystem<I, M, A, G> {
             #[inline]
             fn as_ref(&self) -> &$typename {
-                &self.hardware.$component_name
+                &self.$component_name
             }
         }
 
-        impl<I, M> AsMut<$typename> for System<I, M> {
+        impl<I, M, A, G> AsMut<$typename> for SimpleSystem<I, M, A, G> {
             #[inline]
             fn as_mut(&mut self) -> &mut $typename {
-                &mut self.hardware.$component_name
+                &mut self.$component_name
             }
         }
-    }
+    };
 }
 
 impl_as_ref!{Sms2Io, io}
 impl_as_ref!{SimpleSn76489, sn76489}
-impl_as_ref!{SmsVdpState, vdp}
+impl_as_ref!{SmsVdpState, sms_vdp}
 impl_as_ref!{Z80Interpreter<z80::Safe>, interpreter}
 impl_as_ref!{Z80State, z80}
+impl_as_ref!{TimeStatus, time_status}
 
 macro_rules! impl_as_ref_memory_map {
-    ($typename: ty) => {
-        impl<I> AsRef<$typename> for System<I, $typename> {
+    ($typename:ty) => {
+        impl<I, A, G> AsRef<$typename> for SimpleSystem<I, $typename, A, G> {
             #[inline]
             fn as_ref(&self) -> &$typename {
-                &self.hardware.memory
+                &self.memory
             }
-
         }
 
-        impl<I> AsMut<$typename> for System<I, $typename> {
+        impl<I, A, G> AsMut<$typename> for SimpleSystem<I, $typename, A, G> {
             #[inline]
             fn as_mut(&mut self) -> &mut $typename {
-                &mut self.hardware.memory
+                &mut self.memory
             }
         }
-    }
+    };
 }
 
 impl_as_ref_memory_map!{SegaMemoryMap}
 impl_as_ref_memory_map!{CodemastersMemoryMap}
 
-impl<I, M> memo::PausableImpl for System<I, M> {
-    type Impler = memo::NothingInbox;
+macro_rules! impl_as_ref_inbox {
+    ($typename:ty) => {
+        impl<M, A, G> AsRef<$typename> for SimpleSystem<$typename, M, A, G> {
+            #[inline]
+            fn as_ref(&self) -> &$typename {
+                &self.inbox
+            }
+        }
+
+        impl<M, A, G> AsMut<$typename> for SimpleSystem<$typename, M, A, G> {
+            #[inline]
+            fn as_mut(&mut self) -> &mut $typename {
+                &mut self.inbox
+            }
+        }
+    };
 }
 
-// impl<I, M> memo::InboxImpl for System<I, M> {
-//     type Impler = memo::NothingInbox;
-// }
+impl_as_ref_inbox!{HoldingDebugger}
+impl_as_ref_inbox!{DebuggingInbox}
 
-impl<I, M> memo::InboxImpl for System<I, M> {
-    type Impler = memo::PrintingInbox;
+impl<M, A, G> HoldableImpl for SimpleSystem<HoldingDebugger, M, A, G> {
+    type Impler = HoldingDebugger;
 }
 
-impl<I> Memory16Impl for System<I, SegaMemoryMap> {
+impl<M, A, G> InboxImpl for SimpleSystem<HoldingDebugger, M, A, G> {
+    type Impler = HoldingDebugger;
+}
+
+impl<M, A, G> HoldableImpl for SimpleSystem<DebuggingInbox, M, A, G> {
+    type Impler = DebuggingInbox;
+}
+
+impl<M, A, G> InboxImpl for SimpleSystem<DebuggingInbox, M, A, G> {
+    type Impler = DebuggingInbox;
+}
+
+impl<M, A, G> InboxImpl for SimpleSystem<NothingInbox, M, A, G> {
+    type Impler = NothingInbox;
+}
+
+impl<M, A, G> DebuggerImpl for SimpleSystem<HoldingDebugger, M, A, G> {
+    type Impler = HoldingDebugger;
+}
+
+impl<M, A, G> DebuggerImpl for SimpleSystem<DebuggingInbox, M, A, G> {
+    type Impler = DebuggingInbox;
+}
+
+impl<I, A, G> Memory16Impl for SimpleSystem<I, SegaMemoryMap, A, G>
+where
+    Self: Inbox,
+{
     type Impler = SegaMemoryMap;
 }
 
-impl<I> Memory16Impl for System<I, CodemastersMemoryMap> {
+impl<I, A, G> Memory16Impl for SimpleSystem<I, CodemastersMemoryMap, A, G> {
     type Impler = CodemastersMemoryMap;
 }
 
-impl<I, M> Io16_8Impl for System<I, M> {
+impl<I, M, A, G> Io16_8Impl for SimpleSystem<I, M, A, G> {
     type Impler = Sms2Io;
 }
 
-impl<I, M> SmsVdpInternalImpl for System<I, M> {
+impl<I, M, A, G> SmsVdpInternalImpl for SimpleSystem<I, M, A, G> {
     type Impler = SimpleSmsVdpInternal;
 }
 
-impl<I, M> SmsVdpImpl for System<I, M> {
+impl<I, M, A, G> SmsVdpImpl for SimpleSystem<I, M, A, G>
+where
+    G: SimpleGraphics,
+{
     type Impler = SimpleSmsVdp;
 }
 
-// impl<I, M> Pausable for System<I, M>
-// where
-//     I: Pausable,
-// {
-//     #[inline]
-//     fn wants_pause(&self) -> bool {
-//         self.inbox.wants_pause()
-//     }
-
-//     #[inline]
-//     fn clear_pause(&mut self) {
-//         self.inbox.clear_pause()
-//     }
-// }
-
-// impl<I, M> Inbox for System<I, M>
-// where
-//     I: Inbox,
-// {
-//     #[inline]
-//     fn receive(&mut self, memo: Memo) {
-//         self.inbox.receive(memo)
-//     }
-// }
-
-impl<I, M> Z80InternalImpl for System<I, M> {
-    type Impler = SimpleZ80Internal;
+impl<I, M, A, G> Z80InternalImpl for SimpleSystem<I, M, A, G> {
+    type Impler = Z80State;
 }
 
-impl<I, M> Z80Irq for System<I, M>
+impl<I, M, A, G> Z80Irq for SimpleSystem<I, M, A, G>
 where
     Self: Memory16 + Io16_8,
 {
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {
-        <Self as SmsVdpInternal>::requesting_mi(&self).or_else(|| self.hardware.io.requesting_mi())
+        <Self as SmsVdpInternal>::requesting_mi(&self).or_else(|| self.io.requesting_mi())
     }
 
     #[inline]
     fn requesting_nmi(&self) -> bool {
-        self.hardware.io.requesting_nmi()
+        self.io.requesting_nmi()
     }
 
     #[inline]
     fn clear_nmi(&mut self) {
-        self.hardware.io.clear_nmi();
+        self.io.clear_nmi();
     }
 }
 
-impl<I, M> Z80Impl for System<I, M>
+impl<I, M, A, G> Z80Impl for SimpleSystem<I, M, A, G>
 where
-    Self: Z80Internal + Memory16 + Z80Irq,
+    Self: Inbox + Z80Internal + Memory16 + Z80Irq,
 {
     type Impler = Z80Interpreter<z80::Safe>;
 }
 
-impl<I, M> Sn76489InternalImpl for System<I, M> {
+impl<I, M, A, G> Sn76489InternalImpl for SimpleSystem<I, M, A, G> {
     type Impler = SimpleSn76489;
 }
 
-impl<I, M> Sn76489Impl for System<I, M> {
+impl<I, M, A, G> Sn76489Impl for SimpleSystem<I, M, A, G>
+where
+    A: SimpleAudio,
+{
     type Impler = SimpleSn76489;
 }
-
-//// Builders and other useful types
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Frequency {
@@ -382,6 +515,19 @@ pub enum Frequency {
     MasterFrequency(u64),
     Z80Frequency(u64),
     Unlimited,
+}
+
+impl Frequency {
+    #[inline]
+    pub fn to_z80_frequency(self) -> Option<u64> {
+        match self {
+            Frequency::Ntsc => Some(NTSC_MASTER_FREQUENCY / 3),
+            Frequency::Pal => Some(PAL_MASTER_FREQUENCY / 3),
+            Frequency::MasterFrequency(x) => Some(x / 3),
+            Frequency::Z80Frequency(x) => Some(x),
+            Frequency::Unlimited => None,
+        }
+    }
 }
 
 impl Default for Frequency {
@@ -393,79 +539,6 @@ impl Default for Frequency {
 pub const NTSC_MASTER_FREQUENCY: u64 = 10738580;
 
 pub const PAL_MASTER_FREQUENCY: u64 = 10640685;
-#[derive(Copy, Clone, Debug, Default)]
-pub struct HardwareBuilder {
-    vdp_kind: sms_vdp::Kind,
-    vdp_tv_system: sms_vdp::TvSystem,
-}
-
-impl HardwareBuilder {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn vdp_sms(&mut self) -> &mut Self {
-        self.vdp_kind(sms_vdp::Kind::Sms);
-        self
-    }
-
-    pub fn vdp_sms2(&mut self) -> &mut Self {
-        self.vdp_kind(sms_vdp::Kind::Sms2);
-        self
-    }
-
-    pub fn vdp_gg(&mut self) -> &mut Self {
-        self.vdp_kind(sms_vdp::Kind::Gg);
-        self
-    }
-
-    pub fn vdp_kind(&mut self, vdp_kind: sms_vdp::Kind) -> &mut Self {
-        self.vdp_kind = vdp_kind;
-        self
-    }
-
-    pub fn vdp_tv_pal(&mut self) -> &mut Self {
-        self.vdp_tv_system(sms_vdp::TvSystem::Pal);
-        self
-    }
-
-    pub fn vdp_tv_ntsc(&mut self) -> &mut Self {
-        self.vdp_tv_system(sms_vdp::TvSystem::Ntsc);
-        self
-    }
-
-    pub fn vdp_tv_system(&mut self, vdp_tv_system: sms_vdp::TvSystem) -> &mut Self {
-        self.vdp_tv_system = vdp_tv_system;
-        self
-    }
-
-    pub fn build<M>(&self, memory: M) -> Hardware<M> {
-        Hardware {
-            z80: Default::default(),
-            io: Default::default(),
-            vdp: Default::default(),
-            sn76489: Default::default(),
-            interpreter: Default::default(),
-            memory,
-        }
-    }
-
-    pub fn build_from_rom<M>(&self, rom: &[u8]) -> Result<Hardware<M>>
-    where
-        M: MasterSystemMemory,
-    {
-        let memory = M::new(rom)?;
-        Ok(self.build(memory))
-    }
-
-    pub fn build_from_file<M>(&self, filename: &str) -> Result<Hardware<M>>
-    where
-        M: MasterSystemMemory,
-    {
-        let memory = M::new_from_file(filename)?;
-        Ok(self.build(memory))
-    }
-}
 
 //// Types needed for emulation
 
@@ -477,6 +550,7 @@ pub struct PlayerStatus {
 }
 
 impl Default for PlayerStatus {
+    #[inline]
     fn default() -> Self {
         PlayerStatus {
             joypad_a: 0xFF,
@@ -491,6 +565,7 @@ pub struct TimeStatus {
     pub cycles_start: u64,
     pub start_time: Instant,
     pub hold_duration: Duration,
+    pub hold: Option<Instant>,
 }
 
 impl Default for TimeStatus {
@@ -505,6 +580,7 @@ impl TimeStatus {
             cycles_start,
             start_time: Instant::now(),
             hold_duration: Duration::from_millis(0),
+            hold: None,
         }
     }
 }

@@ -182,7 +182,7 @@ where
 
     macro_rules! check_return {
         () => {
-            if z.cycles() >= cycles { // XXX || z.wants_pause() {
+            if z.cycles() >= cycles { // XXX || z.holding() {
                 return;
             }
         }
@@ -594,7 +594,7 @@ where
                     // receive(z, Memo::ReadingPcToExecute(pc));
                 }
                 // XXX
-                // if z.wants_pause() {
+                // if z.holding() {
                 //     return;
                 // }
                 opcode = read_pc(z);

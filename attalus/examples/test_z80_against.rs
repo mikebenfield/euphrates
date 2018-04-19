@@ -1,10 +1,3 @@
-// Copyright 2017 Michael Benfield <mike.benfield@gmail.com>
-// This file is part of Attalus. You may distribute and/or modify Attalus under
-// the terms of the GNU General Public License as published by the Free Sofware
-// Foundation, either version 3 of the license or (at your option) any later
-// version. You should have received a copy of the GNU General Public License
-// along with Attalus. If not, see <http://www.gnu.org/licenses/>.
-
 //! test_z80_against: Test the z80 interpreter in `attalus` against the emulator
 //! `z80sim`. Requires that `z80sim` be in your $PATH. Will test many instruction
 //! sequences with several different starting Z80 states. `z80sim` doesn't
@@ -45,39 +38,40 @@
 //! 3. A big one: test against actual hardware.
 
 extern crate failure;
-extern crate tempdir;
 extern crate rand;
+extern crate tempdir;
 
 #[macro_use]
 extern crate attalus;
 
 use std::convert::{AsMut, AsRef};
-use std::fmt;
-use std::path::Path;
-use std::os::raw::{c_int, c_long};
-use std::mem;
 use std::env::args;
-use std::str::FromStr;
+use std::fmt;
+use std::mem;
+use std::os::raw::{c_int, c_long};
+use std::path::Path;
 use std::process::exit;
+use std::str::FromStr;
 
 use failure::Error;
 
 use rand::{Rng, SeedableRng};
 
-use attalus::memo::{Inbox, Pausable};
-use attalus::hardware::z80::{self, Reg8, Reg16, Changeable, Interpreter, Emulator};
-use attalus::hardware::z80::Reg8::*;
+use attalus::hardware::io_16_8::Io16_8;
+use attalus::hardware::memory_16_8::Memory16Impl;
 use attalus::hardware::z80::Reg16::*;
-use attalus::hardware::irq::Irq;
-use attalus::hardware::memory_16_8;
-use attalus::hardware::io_16_8;
+use attalus::hardware::z80::Reg8::*;
+use attalus::hardware::z80::{self, Changeable, Safe, Z80, Z80Impl, Z80Internal,
+                             Z80InternalImpl, Z80Interpreter, Z80Irq, Z80State};
+use attalus::memo::{Holdable, Inbox, Memo};
 
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone)]
 struct Z80System {
     memory: [u8; 0x10000],
-    z80: z80::Component,
+    z80: Z80State,
+    interpreter: Z80Interpreter<Safe>,
 }
 
 impl Default for Z80System {
@@ -85,8 +79,16 @@ impl Default for Z80System {
         Z80System {
             memory: [0u8; 0x10000],
             z80: Default::default(),
+            interpreter: Default::default(),
         }
     }
+}
+
+impl Io16_8 for Z80System {
+    fn input(&mut self, _address: u16) -> u8 {
+        0
+    }
+    fn output(&mut self, _address: u16, _value: u8) {}
 }
 
 impl fmt::Display for Z80System {
@@ -95,16 +97,20 @@ impl fmt::Display for Z80System {
     }
 }
 
-impl AsRef<z80::Component> for Z80System {
-    fn as_ref(&self) -> &z80::Component {
+impl AsRef<Z80State> for Z80System {
+    fn as_ref(&self) -> &z80::Z80State {
         &self.z80
     }
 }
 
-impl AsMut<z80::Component> for Z80System {
-    fn as_mut(&mut self) -> &mut z80::Component {
+impl AsMut<Z80State> for Z80System {
+    fn as_mut(&mut self) -> &mut z80::Z80State {
         &mut self.z80
     }
+}
+
+impl Z80InternalImpl for Z80System {
+    type Impler = Z80State;
 }
 
 impl AsRef<[u8; 0x10000]> for Z80System {
@@ -121,40 +127,42 @@ impl AsMut<[u8; 0x10000]> for Z80System {
     }
 }
 
-impl Pausable for Z80System {}
-
-impl<T> Inbox<T> for Z80System {
-    fn receive(&mut self, _id: u32, _memo: T) {}
+impl Memory16Impl for Z80System {
+    type Impler = [u8; 0x10000];
 }
 
-impl memory_16_8::MachineImpl for Z80System {
-    type C = [u8; 0x10000];
+impl Holdable for Z80System {}
+
+impl Inbox for Z80System {
+    fn receive(&mut self, _memo: Memo) {}
 }
 
-impl io_16_8::MachineImpl for Z80System {
-    type C = io_16_8::SimpleIo;
+impl Z80Irq for Z80System {
+    fn requesting_mi(&self) -> Option<u8> {
+        None
+    }
+
+    fn requesting_nmi(&self) -> bool {
+        false
+    }
+
+    fn clear_nmi(&mut self) {}
 }
 
-impl z80::MachineImpl for Z80System {}
-
-impl Irq for Z80System {}
-
-impl Z80System {
-    fn get_reg8(&self, reg: Reg8) -> u8 {
-        self.z80.get_reg8(reg)
+impl AsRef<Z80Interpreter<Safe>> for Z80System {
+    fn as_ref(&self) -> &Z80Interpreter<Safe> {
+        &self.interpreter
     }
+}
 
-    fn set_reg8(&mut self, reg: Reg8, x: u8) {
-        self.z80.set_reg8(reg, x)
+impl AsMut<Z80Interpreter<Safe>> for Z80System {
+    fn as_mut(&mut self) -> &mut Z80Interpreter<Safe> {
+        &mut self.interpreter
     }
+}
 
-    fn get_reg16(&self, reg: Reg16) -> u16 {
-        self.z80.get_reg16(reg)
-    }
-
-    fn set_reg16(&mut self, reg: Reg16, x: u16) {
-        self.z80.set_reg16(reg, x)
-    }
+impl Z80Impl for Z80System {
+    type Impler = Z80Interpreter<Safe>;
 }
 
 fn random_system<R>(mem_start: &[u8], rng: &mut R) -> Z80System
@@ -167,34 +175,21 @@ where
         mem[i] = rng.gen();
     }
     mem[0..mem_start.len()].copy_from_slice(mem_start);
-    let mut z = z80::Component::new();
+
+    let mut z80 = Z80System {
+        z80: Default::default(),
+        memory: mem,
+        interpreter: Default::default(),
+    };
+
     for reg in [
-        B,
-        C,
-        D,
-        E,
-        A,
-        H,
-        L,
-        B0,
-        C0,
-        D0,
-        E0,
-        A0,
-        L0,
-        H0,
-        IXH,
-        IXL,
-        IYH,
-        IYL,
+        B, C, D, E, A, H, L, B0, C0, D0, E0, A0, L0, H0, IXH, IXL, IYH, IYL,
     ].iter()
     {
-        z.set_reg8(*reg, rng.gen());
+        z80.set_reg8(*reg, rng.gen());
     }
-    Z80System {
-        z80: z,
-        memory: mem,
-    }
+
+    z80
 }
 
 fn write_core<P: AsRef<Path>>(path: P, z80: &Z80System) -> Result<()> {
@@ -215,40 +210,36 @@ fn write_core<P: AsRef<Path>>(path: P, z80: &Z80System) -> Result<()> {
         }
     }
 
-    write_from(z80.get_reg8(A), &mut buf);
-    write_from(z80.get_reg8(F) as c_int, &mut buf);
-    write_from(z80.get_reg8(B), &mut buf);
-    write_from(z80.get_reg8(C), &mut buf);
-    write_from(z80.get_reg8(D), &mut buf);
-    write_from(z80.get_reg8(E), &mut buf);
-    write_from(z80.get_reg8(H), &mut buf);
-    write_from(z80.get_reg8(L), &mut buf);
+    write_from(z80.reg8(A), &mut buf);
+    write_from(z80.reg8(F) as c_int, &mut buf);
+    write_from(z80.reg8(B), &mut buf);
+    write_from(z80.reg8(C), &mut buf);
+    write_from(z80.reg8(D), &mut buf);
+    write_from(z80.reg8(E), &mut buf);
+    write_from(z80.reg8(H), &mut buf);
+    write_from(z80.reg8(L), &mut buf);
 
-    write_from(z80.get_reg8(A0), &mut buf);
-    write_from(z80.get_reg8(F0) as c_int, &mut buf);
-    write_from(z80.get_reg8(B0), &mut buf);
-    write_from(z80.get_reg8(C0), &mut buf);
-    write_from(z80.get_reg8(D0), &mut buf);
-    write_from(z80.get_reg8(E0), &mut buf);
-    write_from(z80.get_reg8(H0), &mut buf);
-    write_from(z80.get_reg8(L0), &mut buf);
+    write_from(z80.reg8(A0), &mut buf);
+    write_from(z80.reg8(F0) as c_int, &mut buf);
+    write_from(z80.reg8(B0), &mut buf);
+    write_from(z80.reg8(C0), &mut buf);
+    write_from(z80.reg8(D0), &mut buf);
+    write_from(z80.reg8(E0), &mut buf);
+    write_from(z80.reg8(H0), &mut buf);
+    write_from(z80.reg8(L0), &mut buf);
 
-    write_from(z80.get_reg8(I), &mut buf);
+    write_from(z80.reg8(I), &mut buf);
 
-    let iff1: u8 = if z80.z80.iff1 == 0xFFFFFFFFFFFFFFFF {
-        0
-    } else {
-        1
-    };
-    let iff2: u8 = if z80.z80.iff2 { 2 } else { 0 };
+    let iff1: u8 = if z80.iff1() { 1 } else { 0 };
+    let iff2: u8 = if z80.iff2() { 2 } else { 0 };
     write_from(iff1 | iff2, &mut buf);
 
-    write_from(z80.get_reg8(R) as c_long, &mut buf);
+    write_from(z80.reg8(R) as c_long, &mut buf);
 
-    write_from(z80.get_reg16(PC), &mut buf);
-    write_from(z80.get_reg16(SP), &mut buf);
-    write_from(z80.get_reg16(IX), &mut buf);
-    write_from(z80.get_reg16(IY), &mut buf);
+    write_from(z80.reg16(PC), &mut buf);
+    write_from(z80.reg16(SP), &mut buf);
+    write_from(z80.reg16(IX), &mut buf);
+    write_from(z80.reg16(IY), &mut buf);
 
     let mut f = File::create(path)?;
 
@@ -270,8 +261,8 @@ where
     // it seems the multi-byte registers are in the native byte order
     // (this should be a global const, but can't be due to call of
     // size_of)
-    let correct_core_size: usize = 0x10000 + 16 + 2 * 4 + 2 * mem::size_of::<c_int>() +
-        mem::size_of::<c_long>();
+    let correct_core_size: usize =
+        0x10000 + 16 + 2 * 4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
 
     let mut z80: Z80System = Default::default();
 
@@ -304,7 +295,7 @@ where
 
     fn read_register<R, T>(z: &mut Z80System, reg: R, i: &mut usize, buf: &mut [u8])
     where
-        R: Changeable<T>,
+        R: Changeable<T, Z80System>,
         T: Default,
     {
         let mut t: T = Default::default();
@@ -338,11 +329,7 @@ where
 
     let mut iff: u8 = 0;
     read_into(&mut iff, &mut i, &mut buf);
-    z80.z80.iff1 = if (iff & 1) == 0 {
-        0xFFFFFFFFFFFFFFFF
-    } else {
-        0
-    };
+    z80.z80.iff1 =  (iff & 1) != 0;
     z80.z80.iff2 = (iff & 2) != 0;
 
     let mut rr: c_long = 0;
@@ -367,46 +354,25 @@ where
 /// or F0.
 fn z80_same_state(lhs: &Z80System, rhs: &Z80System) -> bool {
     for reg in [
-        B,
-        C,
-        D,
-        E,
-        A,
-        H,
-        L,
-        B0,
-        C0,
-        D0,
-        E0,
-        A0,
-        L0,
-        H0,
-        IXH,
-        IXL,
-        IYH,
-        IYL,
-        SPH,
-        SPL,
-        PCH,
-        PCL,
+        B, C, D, E, A, H, L, B0, C0, D0, E0, A0, L0, H0, IXH, IXL, IYH, IYL, SPH, SPL, PCH, PCL,
     ].iter()
     {
-        if lhs.z80.get_reg8(*reg) != rhs.z80.get_reg8(*reg) {
+        if lhs.reg8(*reg) != rhs.reg8(*reg) {
             println!("diff register {:?}", reg);
             return false;
         }
     }
 
-    let f_lhs = lhs.z80.get_reg8(F);
-    let f_rhs = rhs.z80.get_reg8(F);
+    let f_lhs = lhs.reg8(F);
+    let f_rhs = rhs.reg8(F);
     // for the flag registers, don't check the undefined bits
     if f_lhs & 0b11010111 != f_rhs & 0b11010111 {
         println!("diff flags {:b} {:b}", f_lhs, f_rhs);
         return false;
     }
 
-    let f0_lhs = lhs.z80.get_reg8(F0);
-    let f0_rhs = rhs.z80.get_reg8(F0);
+    let f0_lhs = lhs.reg8(F0);
+    let f0_rhs = rhs.reg8(F0);
     // for the flag registers, don't check the undefined bits
     if f0_lhs & 0b11010111 != f0_rhs & 0b11010111 {
         println!("diff flags' {:b} {:b}", f0_lhs, f0_rhs);
@@ -421,9 +387,7 @@ fn z80_same_state(lhs: &Z80System, rhs: &Z80System) -> bool {
             if lhs_slice[i] != rhs_slice[i] {
                 println!(
                     "diff memory at {:x}, {:x}, {:x}",
-                    i,
-                    lhs_slice[i],
-                    rhs_slice[i]
+                    i, lhs_slice[i], rhs_slice[i]
                 );
             }
         }
@@ -473,109 +437,72 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
     }
 
     macro_rules! process_instruction {
-
         // strangely, z80sim doesn't implement these two...
-        (
-            [0xED, 0x6B, n, n] ;
-            $mnemonic: ident ;
-            $args: tt ;
-            $t_states: expr ;
-            $is_undoc: expr
-        ) => {};
-        (
-            [0xED, 0x63, n, n] ;
-            $mnemonic: ident ;
-            $args: tt ;
-            $t_states: expr ;
-            $is_undoc: expr
-        ) => {};
+        ([0xED,0x6B,n,n]; $mnemonic:ident; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ([0xED,0x63,n,n]; $mnemonic:ident; $args:tt; $t_states:expr; $is_undoc:expr) => {};
 
         // avoid these two so we don't write over our own code
-        ($codes: tt; lddr ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ldir ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
+        ($codes:tt; lddr; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ldir; $args:tt; $t_states:expr; $is_undoc:expr) => {};
 
         // z80pack doesn't seem to increment r correctly
-        ($codes: tt; ld_ir ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
+        ($codes:tt; ld_ir; $args:tt; $t_states:expr; $is_undoc:expr) => {};
 
-        ($codes: tt; im ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ld ; [A, R] ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ld ; [R, A] ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ld ; [A, I] ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ld ; [I, A] ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ei ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; di ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; halt ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; pop ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; push ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; callcc ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; call ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; jr ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; jrcc ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; jp ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; jpcc ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; djnz ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ret ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; retn ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; reti ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; retcc ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; rst ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; in_c ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; in_n ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; in_f ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ind ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; ini ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; indr ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; inir ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; out_c ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; out_n ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; outd ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; outi ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; otir ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
-        ($codes: tt; otdr ; $args: tt ; $t_states: expr ; $is_undoc: expr) => {};
+        ($codes:tt; im; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ld; [A,R]; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ld; [R,A]; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ld; [A,I]; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ld; [I,A]; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ei; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; di; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; halt; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; pop; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; push; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; callcc; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; call; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; jr; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; jrcc; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; jp; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; jpcc; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; djnz; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ret; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; retn; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; reti; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; retcc; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; rst; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; in_c; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; in_n; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; in_f; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ind; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; ini; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; indr; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; inir; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; out_c; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; out_n; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; outd; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; outi; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; otir; $args:tt; $t_states:expr; $is_undoc:expr) => {};
+        ($codes:tt; otdr; $args:tt; $t_states:expr; $is_undoc:expr) => {};
 
-        (
-            [0xDD, $code: expr] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xDD, $code:expr]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             let opcodes = vec![0xDD, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        (
-            [0xDD, $code: expr, d] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xDD, $code:expr,d]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xDD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xDD, $code: expr, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xDD, $code:expr,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xDD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xDD, $code: expr, n, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xDD, $code:expr,n,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 // avoid low addresses so we don't write over our own instruction
                 let n11: u8 = r.gen();
@@ -585,13 +512,7 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xDD, $code: expr, d, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xDD, $code:expr,d,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -600,49 +521,25 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xFD, $code: expr] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xFD, $code:expr]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             let opcodes = vec![0xFD, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        (
-            [0xFD, $code: expr, d] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xFD, $code:expr,d]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xFD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xFD, $code: expr, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xFD, $code:expr,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xFD, $code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xFD, $code: expr, n, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xFD, $code:expr,n,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -651,13 +548,7 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xFD, $code: expr, d, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xFD, $code:expr,d,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -669,47 +560,23 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
 
         // need a patched version of z80sim for these instructions. z80sim has
         // buffer overflows in these instructions
-        (
-            [0xDD, 0xCB, d, $code: expr] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xDD,0xCB,d, $code:expr]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             let n: u8 = r.gen();
             let opcodes = vec![0xDD, 0xCB, n, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        (
-            [0xFD, 0xCB, d, $code: expr] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xFD,0xCB,d, $code:expr]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![0xFD, 0xCB, n, $code];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xCB, $code: expr] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xCB, $code:expr]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             let opcodes = vec![0xCB, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        (
-            [0xED, $code: expr, n, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xED, $code:expr,n,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -718,49 +585,25 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [0xED, $code: expr] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([0xED, $code:expr]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             let opcodes = vec![0xED, $code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        (
-            [$code: expr, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([$code:expr,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![$code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [$code: expr, e] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([$code:expr,e]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n: u8 = r.gen();
                 let opcodes = vec![$code, n];
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [$code: expr, n, n] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([$code:expr,n,n]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             for _ in 0..count {
                 let n11: u8 = r.gen();
                 let n1: u8 = n11 | 0xF;
@@ -769,18 +612,11 @@ fn generate_instructions<R: Rng>(count: usize, r: &mut R) -> Vec<InstructionSequ
                 add_instruction!(opcodes, $mnemonic, $arguments);
             }
         };
-        (
-            [$code: expr] ;
-            $mnemonic: ident ;
-            $arguments: tt ;
-            $t_states: expr ;
-            false
-        ) => {
+        ([$code:expr]; $mnemonic:ident; $arguments:tt; $t_states:expr; false) => {
             let opcodes = vec![$code];
             add_instruction!(opcodes, $mnemonic, $arguments);
         };
-        ($($nothing: tt)*) => {
-        }
+        ($($nothing:tt)*) => {};
     }
 
     process_instructions!(process_instruction, d, e, n, nn);
@@ -800,7 +636,6 @@ fn generate_instructions_sequence<R>(
 where
     R: Rng,
 {
-
     use rand::distributions::range::Range;
     use rand::distributions::IndependentSample;
 
@@ -842,10 +677,7 @@ impl std::fmt::Debug for TestFailure {
                 sim_z80: \n{}\n,\n\
                 attalus_z80: \n{}\n
             }}",
-            self.mnemonics,
-            self.original_z80,
-            self.sim_z80,
-            self.attalus_z80,
+            self.mnemonics, self.original_z80, self.sim_z80, self.attalus_z80,
         )
     }
 }
@@ -875,7 +707,7 @@ where
     R: Rng,
 {
     use std::io::{Read, Write};
-    use std::process::{Command, Stdio, ChildStdout, Child};
+    use std::process::{Child, ChildStdout, Command, Stdio};
 
     use tempdir::TempDir;
 
@@ -943,10 +775,10 @@ where
         wait_for_exit(&mut child)?;
         let sim_z80 = read_core(&file_path)?;
         let mut attalus_z80 = z80.clone();
-        Interpreter.run(&mut attalus_z80, 1000);
+        attalus_z80.run(1000);
 
         // z80sim bumps up PC even after a halt
-        let pc = attalus_z80.get_reg16(PC);
+        let pc = attalus_z80.reg16(PC);
         attalus_z80.set_reg16(PC, pc + 1);
 
         if !z80_same_state(&attalus_z80, &sim_z80) {
@@ -986,11 +818,11 @@ where
 fn print_usage_and_exit() -> ! {
     println!(
         "Usage: test_z80_against \
-        [-n Number-of-tested-sequences] \
-        [-i Instructions-per-sequence] \
-        [-t Trials-per-sequence] \
-        [-s random-number-Seed] \
-        "
+         [-n Number-of-tested-sequences] \
+         [-i Instructions-per-sequence] \
+         [-t Trials-per-sequence] \
+         [-s random-number-Seed] \
+         "
     );
     exit(1)
 }
@@ -1000,12 +832,10 @@ where
     F: FromStr,
 {
     match s {
-        Some(t) => {
-            match t.parse() {
-                Ok(f) => f,
-                _ => print_usage_and_exit(),
-            }
-        }
+        Some(t) => match t.parse() {
+            Ok(f) => f,
+            _ => print_usage_and_exit(),
+        },
         _ => print_usage_and_exit(),
     }
 }

@@ -4,7 +4,7 @@ use super::*;
 /// the Master System. This is what is written when gameplay is saved to a file.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Recording<H> {
-    pub hardware: H,
+    pub state: H,
     pub player_statuses: Vec<PlayerStatus>,
 }
 
@@ -27,12 +27,10 @@ impl<S> RecordingStatus<S> {
         }
     }
 
-    pub fn begin_recording(&mut self, hardware: &S)
-    where
-        S: Clone,
+    pub fn begin_recording(&mut self, state: S)
     {
         self.0 = Some(Box::new(Recording {
-            hardware: Clone::clone(hardware),
+            state,
             player_statuses: Vec::with_capacity(256),
         }))
     }

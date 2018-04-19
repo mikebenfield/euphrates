@@ -1,5 +1,7 @@
 # Attalus CLI: A Command Line Interface for the Attalus Emulator
 
+Make sure SDL is installed.
+
 To play a Sega Master System ROM:
 ```
 cargo run --release -- rom --rom PATH_TO_ROM

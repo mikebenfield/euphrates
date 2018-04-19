@@ -10,9 +10,8 @@ doc = false
 
 [dependencies]
 attalus = { path = "../attalus" }
+attalus_sdl2 = { path = "../attalus_sdl2" }
+attalus_x64 = { path = "../attalus_x64", optional = true }
 sdl2 = "0.31"
 clap = "2.27"
 failure = "0.1"
-
-[target.'cfg(use_attalus_x64)'.dependencies]
-attalus_x64 = { path = "../attalus_x64", optional = true }

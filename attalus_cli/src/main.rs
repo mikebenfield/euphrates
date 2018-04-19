@@ -1,25 +1,47 @@
-#[macro_use]
 extern crate attalus;
+extern crate attalus_sdl2;
 #[cfg(attalus_x64)]
 extern crate attalus_x64;
 extern crate clap;
-#[macro_use]
 extern crate failure;
 extern crate sdl2;
 
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
 use failure::Error;
+use sdl2::Sdl;
 
-use attalus::host_multimedia::{SimpleAudio, SimpleGraphics};
-use attalus::hardware::{memory_16_8, z80};
-use attalus::memo::NothingInbox;
+use attalus::hardware::z80::Z80Internal;
 use attalus::save;
-use attalus::sdl_wrap;
-use attalus::systems::sega_master_system::{self, Hardware, HardwareBuilder, Recording, System};
+use attalus::systems::sega_master_system::{self, MasterSystem, MasterSystemResource,
+                                           MasterSystemState, Recording, SimpleMultimediaResource};
+use attalus_sdl2::master_system_user_interface;
+use attalus_sdl2::{simple_audio::Audio, simple_graphics::Window};
 
 type Result<T> = std::result::Result<T, Error>;
+
+fn new_master_system(
+    state: MasterSystemState,
+    sdl: &Sdl,
+    frequency: sega_master_system::Frequency,
+) -> Result<Box<MasterSystem<SimpleMultimediaResource<Audio, Window>>>> {
+    let audio = attalus_sdl2::simple_audio::Audio::new(&sdl)?;
+
+    let mut graphics = attalus_sdl2::simple_graphics::Window::new(&sdl)?;
+    graphics.set_size(768, 576);
+    graphics.set_texture_size(256, 192);
+    graphics.set_title("Attalus");
+
+    Ok(SimpleMultimediaResource {
+        graphics,
+        audio,
+        debug: false,
+        frequency,
+    }.create(state, Default::default()))
+}
 
 fn run_rom(matches: &ArgMatches) -> Result<()> {
     let filename = matches.value_of("rom").unwrap();
@@ -29,78 +51,58 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         Some(s) => Some(PathBuf::from(s)),
     };
 
+    let rom = {
+        let mut contents = Vec::new();
+        File::open(&filename)?.read_to_end(&mut contents)?;
+        contents
+    };
+
     let sdl = sdl2::init().unwrap();
 
-    type_select! {
-        match memory_map {
-            "sega" => memory_16_8::sega::T,
-            // "codemasters" => memory_16_8::codemasters::T,
-        } for M {
-            let mut user_interface =
-                sdl_wrap::master_system_user_interface::UserInterface::new(
-                    &sdl,
-                    save_directory,
-                    &[]
-                )?;
-            let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
+    let state = if memory_map == "sega" {
+        MasterSystemState::new_with_sega_memory_map(&rom)?
+    } else {
+        MasterSystemState::new_with_codemasters_memory_map(&rom)?
+    };
 
-            let graphics: Box<SimpleGraphics> = {
-                let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-                win.set_size(768, 576);
-                win.set_texture_size(256, 192);
-                win.set_title("Attalus");
-                Box::new(win)
-            };
+    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc)?;
 
-            let master_system_hardware = HardwareBuilder::new()
-                .build_from_file::<M>(filename)?;
-            let mut master_system = System::new(
-                NothingInbox,
-                master_system_hardware,
-                graphics,
-                audio
-            );
-            user_interface.run(
-                &mut master_system,
-                sega_master_system::Frequency::Ntsc
-            )?;
-        } else {
-            Err(format_err!(
-                "Can't happen: Unknown memory map {}",
-                memory_map
-            ))?;
-        }
-    }
+    let mut user_interface =
+        master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
+    user_interface.run()?;
 
     Ok(())
 }
 
 fn run_playback(matches: &ArgMatches) -> Result<()> {
+    use std::time::Instant;
+
     let load_filename = matches.value_of("loadfile").unwrap();
 
     let sdl = sdl2::init().unwrap();
 
-    let recording: Recording<Hardware<memory_16_8::sega::T>> =
-        save::deserialize_at(&load_filename)?;
-    let mut user_interface =
-        sdl_wrap::master_system_user_interface::PlaybackInterface::new(&recording.player_statuses);
+    let recording: Recording<MasterSystemState> = save::deserialize_at(&load_filename)?;
 
-    let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
-    let graphics: Box<SimpleGraphics> = {
-        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-        win.set_size(768, 576);
-        win.set_texture_size(256, 192);
-        win.set_title("Attalus");
-        Box::new(win)
-    };
+    let master_system = new_master_system(
+        recording.state,
+        &sdl,
+        sega_master_system::Frequency::Unlimited,
+    )?;
 
-    let mut master_system = System::new(NothingInbox, recording.hardware, graphics, audio);
+    let mut user_interface = attalus_sdl2::master_system_user_interface::playback_ui(
+        master_system,
+        &recording.player_statuses,
+    )?;
 
-    let start_cycles = <z80::internal::T>::cycles(&master_system);
+    let start_cycles = Z80Internal::cycles(user_interface.master_system());
+    let start_time = Instant::now();
 
-    let time = user_interface.run(&mut master_system, sega_master_system::Frequency::Unlimited)?;
+    user_interface.run()?;
 
-    let end_cycles = <z80::internal::T>::cycles(&master_system);
+    let end_cycles = Z80Internal::cycles(user_interface.master_system());
+    let end_time = Instant::now();
+
+    let time = end_time.duration_since(start_time);
 
     let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
     println!("Total cycles: {}", end_cycles - start_cycles);
@@ -122,29 +124,20 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
 
     let sdl = sdl2::init().unwrap();
 
-    let hardware = save::deserialize_at(&load_filename)?;
+    let state: MasterSystemState = save::deserialize_at(&load_filename)?;
+
+    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc)?;
 
     let mut user_interface =
-        sdl_wrap::master_system_user_interface::UserInterface::new(&sdl, save_directory, &[])?;
+        master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
 
-    let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
-    let graphics: Box<SimpleGraphics> = {
-        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-        win.set_size(768, 576);
-        win.set_texture_size(256, 192);
-        win.set_title("Attalus");
-        Box::new(win)
-    };
-
-    let mut master_system = System::new(NothingInbox, hardware, graphics, audio);
-    user_interface.run(&mut master_system, sega_master_system::Frequency::Ntsc)?;
+    user_interface.run()?;
 
     Ok(())
 }
 
 fn run_record(matches: &ArgMatches) -> Result<()> {
     let load_filename = matches.value_of("loadfile").unwrap();
-    // let memory_map = matches.value_of("memorymap").unwrap();
     let save_directory = match matches.value_of("savedirectory") {
         None => None,
         Some(s) => Some(PathBuf::from(s)),
@@ -152,26 +145,14 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
 
     let sdl = sdl2::init().unwrap();
 
-    let recording: Recording<Hardware<memory_16_8::sega::T>> =
-        save::deserialize_at(&load_filename)?;
-    let mut user_interface = sdl_wrap::master_system_user_interface::UserInterface::new(
-        &sdl,
-        save_directory,
-        &recording.player_statuses,
-    )?;
+    let recording: Recording<MasterSystemState> = save::deserialize_at(&load_filename)?;
+    let master_system =
+        new_master_system(recording.state, &sdl, sega_master_system::Frequency::Ntsc)?;
 
-    let audio: Box<SimpleAudio> = Box::new(sdl_wrap::simple_audio::Audio::new(&sdl)?);
-    let graphics: Box<SimpleGraphics> = {
-        let mut win = sdl_wrap::simple_graphics::Window::new(&sdl)?;
-        win.set_size(768, 576);
-        win.set_texture_size(256, 192);
-        win.set_title("Attalus");
-        Box::new(win)
-    };
+    let mut user_interface =
+        master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
 
-    let mut master_system = System::new(NothingInbox, recording.hardware, graphics, audio);
-
-    user_interface.run(&mut master_system, sega_master_system::Frequency::Ntsc)?;
+    user_interface.run()?;
 
     Ok(())
 }
@@ -179,8 +160,7 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
 fn run() -> Result<()> {
     let memory_map_arg = Arg::with_name("memorymap")
         .long("memorymap")
-        // .value_name("(sega|codemasters)")
-        .value_name("(sega)")
+        .value_name("(sega|codemasters)")
         .help("Specify the sega or codemasters memory map")
         .takes_value(true)
         .required(true)

@@ -6,7 +6,6 @@ mod interpreter;
 mod internal;
 mod irq;
 mod machine;
-mod simple;
 mod state;
 
 pub use self::memo::Opcode;
@@ -14,7 +13,6 @@ pub use self::irq::*;
 pub use self::internal::*;
 pub use self::interpreter::*;
 pub use self::machine::*;
-pub use self::simple::*;
 pub use self::state::*;
 
 use std::fmt;

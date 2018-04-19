@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::fmt;
 use std::marker::PhantomData;
 use std::thread;
@@ -386,12 +385,6 @@ macro_rules! serde_struct_arrays {
 
 //// Things that are immediately helpful for an emulator
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct FrameInfo {
-    pub last_frames: VecDeque<Instant>,
-    pub fps: f64,
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct TimeInfo {
     pub total_cycles: u64,
@@ -401,26 +394,10 @@ pub struct TimeInfo {
     pub hold_duration: Duration,
 }
 
-const KEEP_FRAMES: usize = 50;
-
-pub fn time_govern(time_info: TimeInfo, mut frame_info: FrameInfo) -> FrameInfo {
+pub fn time_govern(time_info: TimeInfo) {
     debug_assert!(time_info.cycles_start <= time_info.total_cycles);
 
     let now = Instant::now();
-
-    let new_fps = if frame_info.last_frames.len() < KEEP_FRAMES {
-        0.0
-    } else {
-        let first_instant = frame_info.last_frames[0];
-        let duration = now.duration_since(first_instant);
-        let duration_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-        KEEP_FRAMES as f64 / duration_secs
-    };
-
-    frame_info.last_frames.push_back(now);
-    if frame_info.last_frames.len() > KEEP_FRAMES {
-        frame_info.last_frames.pop_front();
-    }
 
     if let Some(frequency) = time_info.frequency {
         let guest_cycles = time_info.total_cycles - time_info.cycles_start;
@@ -437,10 +414,5 @@ pub fn time_govern(time_info: TimeInfo, mut frame_info: FrameInfo) -> FrameInfo 
         if let Some(diff_duration) = guest_duration.checked_sub(host_active_duration) {
             thread::sleep(diff_duration);
         }
-    }
-
-    FrameInfo {
-        last_frames: frame_info.last_frames,
-        fps: new_fps,
     }
 }

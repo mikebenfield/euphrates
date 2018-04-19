@@ -1,20 +1,14 @@
 [package]
-name = "attalus"
+name = "attalus_sdl2"
 version = "0.1.0"
 authors = ["Michael Benfield <mike.benfield@gmail.com>"]
 
 [lib]
-name = "attalus"
+name = "attalus_sdl2"
 path = "src/lib.rs"
 
 [dependencies]
+attalus = { path = "../attalus" }
 sdl2 = "0.31"
-serde = "^1.0.38"
-serde_derive = "^1.0"
-bincode = "^1.0"
 failure = "0.1"
-chrono = "0.4"
-
-[dev-dependencies]
-rand = "0.3"
-tempdir = "0.3"
+bitflags = "1.0"

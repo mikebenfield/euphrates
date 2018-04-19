@@ -3,8 +3,8 @@ use std;
 use failure::ResultExt;
 use sdl2;
 
-use errors::{CommonKind, Error, SimpleKind};
-use host_multimedia::{Result, SimpleColor, SimpleGraphics};
+use attalus::errors::{CommonKind, Error, SimpleKind};
+use attalus::host_multimedia::{Result, SimpleColor, SimpleGraphics};
 
 const DEFAULT_SIZE: usize = 256;
 

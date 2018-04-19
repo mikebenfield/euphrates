@@ -5,8 +5,8 @@ use failure;
 use sdl2::{self, AudioSubsystem};
 use sdl2::audio::AudioQueue;
 
-use errors::{SimpleKind, Error};
-use host_multimedia::SimpleAudio;
+use attalus::errors::{SimpleKind, Error};
+use attalus::host_multimedia::SimpleAudio;
 
 pub const DEFAULT_BUFFER_SIZE: u16 = 0x800;
 
