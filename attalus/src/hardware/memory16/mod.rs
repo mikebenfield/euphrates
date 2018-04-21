@@ -1,4 +1,4 @@
-//! Sega Master System Memory Mappers
+//! 16 bit memory maps.
 //!
 //! The SMS has two memory mappers in common use, the Sega memory mapper and the
 //! CodeMasters mapper. Both swap out pages of cartridge ROM according to memory
