@@ -75,7 +75,7 @@ impl Hash for Manifest {
 }
 
 /// A message sent from a device to the user.
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Memo {
     payload: u64,
     manifest: &'static Manifest,
@@ -146,11 +146,11 @@ impl fmt::Display for Memo {
             items: &[T],
             descriptions: &'static [&'static str],
         ) -> String {
-            let mut s = if descriptions.len() != 0 {
-                format!(" -- {}: {}", descriptions[0], display(items[0]))
-            } else {
-                String::new()
-            };
+            if items.len() == 0 || descriptions.len() == 0 {
+                return "".to_owned();
+            }
+
+            let mut s = format!(" -- {}: {}", descriptions[0], display(items[0]));
 
             for (item, description) in items[1..].iter().zip(descriptions[1..].iter()) {
                 write!(s, ", {}: {}", description, display(*item)).unwrap();

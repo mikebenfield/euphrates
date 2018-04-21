@@ -88,6 +88,7 @@ impl<S> InboxImpler<S> for HoldingDebugger
 where
     S: ?Sized,
 {
+    #[inline]
     fn receive(_s: &mut S, _memo: Memo) {}
 }
 

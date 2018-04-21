@@ -4,9 +4,8 @@ use std::path::PathBuf;
 use failure::Error;
 use sdl2;
 
-use attalus::systems::sega_master_system::{Command, CommandResult, Debugger, MasterSystem,
-                                           PlaybackStatus, PlayerStatus, Ui, UiHelper, UiStatus,
-                                           UserMessage};
+use attalus::systems::sega_master_system::{Command, CommandResult, MasterSystem, PlaybackStatus,
+                                           PlayerStatus, Ui, UiHelper, UiStatus, UserMessage};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

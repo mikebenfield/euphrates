@@ -11,7 +11,6 @@ pub mod memo;
 #[macro_use]
 mod macros;
 pub mod errors;
-mod runtime_pattern;
 #[macro_use]
 mod utilities;
 #[macro_use]
