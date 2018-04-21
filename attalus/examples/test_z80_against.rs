@@ -57,8 +57,8 @@ use failure::Error;
 
 use rand::{Rng, SeedableRng};
 
-use attalus::hardware::io_16_8::Io16_8;
-use attalus::hardware::memory_16_8::Memory16Impl;
+use attalus::hardware::io16::Io16;
+use attalus::hardware::memory16::Memory16Impl;
 use attalus::hardware::z80::Reg16::*;
 use attalus::hardware::z80::Reg8::*;
 use attalus::hardware::z80::{self, Changeable, Safe, Z80, Z80Impl, Z80Internal,
@@ -84,7 +84,7 @@ impl Default for Z80System {
     }
 }
 
-impl Io16_8 for Z80System {
+impl Io16 for Z80System {
     fn input(&mut self, _address: u16) -> u8 {
         0
     }

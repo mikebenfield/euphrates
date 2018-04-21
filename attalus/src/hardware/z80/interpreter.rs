@@ -1,8 +1,8 @@
 use std::mem::transmute;
 
 use memo::{Inbox, Payload};
-use hardware::io_16_8::Io16_8;
-use hardware::memory_16_8::Memory16;
+use hardware::io16::Io16;
+use hardware::memory16::Memory16;
 use utilities;
 
 use super::*;
@@ -124,7 +124,7 @@ where
     Z: Z80Internal
         + Z80Irq
         + Inbox
-        + Io16_8
+        + Io16
         + Memory16
         + AsRef<Z80Interpreter<SafetyLevel>>
         + AsMut<Z80Interpreter<SafetyLevel>>
@@ -746,7 +746,7 @@ impl<S, SafetyLevel> Z80Impler<S> for Z80Interpreter<SafetyLevel>
 where
     S: Z80Internal
         + Z80Irq
-        + Io16_8
+        + Io16
         + Memory16
         + Inbox
         + AsRef<Z80Interpreter<SafetyLevel>>

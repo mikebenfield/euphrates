@@ -1,12 +1,12 @@
 pub mod sms2;
 
 /// A machine that has an IO system with 16 bit addresses and 8 bit data.
-pub trait Io16_8 {
+pub trait Io16 {
     fn input(&mut self, address: u16) -> u8;
     fn output(&mut self, address: u16, value: u8);
 }
 
-pub trait Io16_8Impler<S>
+pub trait Io16Impler<S>
 where
     S: ?Sized,
 {
@@ -14,13 +14,13 @@ where
     fn output(s: &mut S, address: u16, value: u8);
 }
 
-pub trait Io16_8Impl {
-    type Impler: Io16_8Impler<Self>;
+pub trait Io16Impl {
+    type Impler: Io16Impler<Self>;
 }
 
-impl<S> Io16_8 for S
+impl<S> Io16 for S
 where
-    S: Io16_8Impl + ?Sized,
+    S: Io16Impl + ?Sized,
 {
     #[inline]
     fn input(&mut self, address: u16) -> u8 {
@@ -43,7 +43,7 @@ impl SimpleIo {
     }
 }
 
-impl<S> Io16_8Impler<S> for SimpleIo
+impl<S> Io16Impler<S> for SimpleIo
 where
     S: ?Sized,
 {

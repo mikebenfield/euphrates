@@ -19,9 +19,9 @@
 //! [`Io`]: io/trait.Io.html
 //! [`MemoryMapper`]: memory_mapper/trait.MemoryMapper.html
 
-pub mod io_16_8;
+pub mod io16;
 pub mod sn76489;
 pub mod irq;
-pub mod memory_16_8;
+pub mod memory16;
 pub mod sms_vdp;
 pub mod z80;

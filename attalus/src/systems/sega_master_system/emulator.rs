@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 
 use failure::{err_msg, Error, ResultExt};
 
-use hardware::io_16_8::{sms2::Sms2Io, Io16_8, Io16_8Impl};
+use hardware::io16::{sms2::Sms2Io, Io16, Io16Impl};
 use hardware::irq::Irq;
-use hardware::memory_16_8::codemasters::CodemastersMemoryMap;
-use hardware::memory_16_8::sega::{MasterSystemMemory, SegaMemoryMap};
-use hardware::memory_16_8::{Memory16, Memory16Impl};
+use hardware::memory16::codemasters::CodemastersMemoryMap;
+use hardware::memory16::sega::{MasterSystemMemory, SegaMemoryMap};
+use hardware::memory16::{Memory16, Memory16Impl};
 use hardware::sms_vdp::{SimpleSmsVdp, SimpleSmsVdpInternal, SmsVdp, SmsVdpImpl, SmsVdpInternal,
                         SmsVdpInternalImpl, SmsVdpState};
 use hardware::sn76489::{SimpleSn76489, Sn76489, Sn76489Impl, Sn76489InternalImpl};
@@ -27,7 +27,7 @@ pub trait MasterSystem<R>:
     Z80
     + SmsVdp
     + Memory16
-    + Io16_8
+    + Io16
     + Sn76489
     + Debugger
     + Inbox
@@ -214,7 +214,7 @@ where
     Self: Z80
         + SmsVdp
         + Memory16
-        + Io16_8
+        + Io16
         + Sn76489
         + Debugger
         + Inbox
@@ -451,7 +451,7 @@ impl<I, A, G> Memory16Impl for SimpleSystem<I, CodemastersMemoryMap, A, G> {
     type Impler = CodemastersMemoryMap;
 }
 
-impl<I, M, A, G> Io16_8Impl for SimpleSystem<I, M, A, G> {
+impl<I, M, A, G> Io16Impl for SimpleSystem<I, M, A, G> {
     type Impler = Sms2Io;
 }
 
@@ -472,7 +472,7 @@ impl<I, M, A, G> Z80InternalImpl for SimpleSystem<I, M, A, G> {
 
 impl<I, M, A, G> Z80Irq for SimpleSystem<I, M, A, G>
 where
-    Self: Memory16 + Io16_8,
+    Self: Memory16 + Io16,
 {
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {

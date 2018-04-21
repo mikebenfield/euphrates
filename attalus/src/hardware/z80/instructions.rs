@@ -1,6 +1,6 @@
 use memo::{Inbox, Payload};
-use hardware::io_16_8::Io16_8;
-use hardware::memory_16_8::Memory16;
+use hardware::io16::Io16;
+use hardware::memory16::Memory16;
 
 use super::*;
 use super::InterruptMode::*;
@@ -1142,7 +1142,7 @@ where
 
 pub fn in_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16 + ?Sized,
     T1: Changeable<u8, Z>,
     T2: Viewable<u8, Z>,
 {
@@ -1155,7 +1155,7 @@ where
 
 fn in_impl<Z, T1>(z: &mut Z, arg: T1) -> u8
 where
-    Z: Z80Internal + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16 + ?Sized,
     T1: Viewable<u8, Z>,
 {
     let address_lo = arg.view(z);
@@ -1173,7 +1173,7 @@ where
 
 pub fn in_f<Z, T1>(z: &mut Z, arg: T1)
 where
-    Z: Z80Internal + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16 + ?Sized,
     T1: Viewable<u8, Z>,
 {
     in_impl(z, arg);
@@ -1181,7 +1181,7 @@ where
 
 pub fn in_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16 + ?Sized,
     T1: Changeable<u8, Z>,
     T2: Viewable<u8, Z>,
 {
@@ -1193,7 +1193,7 @@ where
 /// reads from the input ports and sets flags but doesn't change any register.
 pub fn in0<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16 + ?Sized,
 {
     let addr = BC.view(z);
     let x = z.input(addr);
@@ -1206,7 +1206,7 @@ where
 
 fn inid_impl<Z>(z: &mut Z, inc: u16) -> u8
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     let b = B.view(z);
     let hl = HL.view(z);
@@ -1220,7 +1220,7 @@ where
 
 pub fn ini<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     let new_b = inid_impl(z, 1);
 
@@ -1230,7 +1230,7 @@ where
 
 pub fn inir<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     while {
         z.inc_cycles(21);
@@ -1247,7 +1247,7 @@ where
 
 pub fn ind<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     let new_b = inid_impl(z, 0xFFFF);
 
@@ -1257,7 +1257,7 @@ where
 
 pub fn indr<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     while {
         z.inc_cycles(21);
@@ -1274,7 +1274,7 @@ where
 
 pub fn out_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16 + ?Sized,
     T1: Viewable<u8, Z>,
     T2: Viewable<u8, Z>,
 {
@@ -1287,7 +1287,7 @@ where
 
 pub fn out_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
 where
-    Z: Z80Internal + Io16_8 + ?Sized,
+    Z: Z80Internal + Io16 + ?Sized,
     T1: Viewable<u8, Z>,
     T2: Viewable<u8, Z>,
 {
@@ -1300,7 +1300,7 @@ where
 
 fn outid_impl<Z>(z: &mut Z, inc: u16)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     let b = B.view(z);
     let new_b = b.wrapping_sub(1);
@@ -1314,7 +1314,7 @@ where
 
 pub fn outi<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     outid_impl(z, 1);
     let new_b = B.view(z);
@@ -1325,7 +1325,7 @@ where
 
 pub fn otir<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     while {
         z.inc_cycles(21);
@@ -1343,7 +1343,7 @@ where
 
 pub fn outd<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     outid_impl(z, 0xFFFF);
     let new_b = B.view(z);
@@ -1354,7 +1354,7 @@ where
 
 pub fn otdr<Z>(z: &mut Z)
 where
-    Z: Z80Internal + Memory16 + Io16_8 + ?Sized,
+    Z: Z80Internal + Memory16 + Io16 + ?Sized,
 {
     while {
         z.inc_cycles(21);

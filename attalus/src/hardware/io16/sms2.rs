@@ -1,10 +1,10 @@
 use std::convert::{AsMut, AsRef};
 
 use hardware::irq::Irq;
-use hardware::sn76489;
 use hardware::sms_vdp::SmsVdpInternal;
+use hardware::sn76489;
 // use memo::{Inbox, Memo, Payload};
-use super::Io16_8Impler;
+use super::Io16Impler;
 
 // pub mod manifests {
 //     use memo::{Item, Manifest, PayloadType};
@@ -119,7 +119,7 @@ impl Irq for Sms2Io {
     }
 }
 
-impl<S> Io16_8Impler<S> for Sms2Io
+impl<S> Io16Impler<S> for Sms2Io
 where
     S: AsMut<Sms2Io> + AsRef<Sms2Io> + SmsVdpInternal + sn76489::Sn76489Internal + ?Sized,
 {

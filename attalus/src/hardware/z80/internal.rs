@@ -1,6 +1,6 @@
 use std::fmt;
 
-use hardware::memory_16_8::Memory16;
+use hardware::memory16::Memory16;
 use utilities;
 
 use super::*;
