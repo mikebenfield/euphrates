@@ -1,17 +1,17 @@
-use std::convert::{AsMut, AsRef};
 use std;
+use std::convert::{AsMut, AsRef};
 
 use failure::ResultExt;
 
-use memo::{Inbox, Payload};
 use errors::{Error, SimpleKind};
+use memo::{Inbox, Payload};
 
 use super::*;
 
 pub mod manifests {
-    use memo::{Descriptions, Manifest, PayloadType};
     use self::Descriptions::*;
     use self::PayloadType::*;
+    use memo::{Descriptions, Manifest, PayloadType};
 
     pub const DEVICE: &'static str = &"SegaMemoryMap";
 
@@ -190,44 +190,24 @@ fn write_check_register<S>(s: &mut S, logical_address: u16, value: u8)
 where
     S: AsMut<SegaMemoryMap> + AsRef<SegaMemoryMap> + Inbox,
 {
-    // macro_rules! receive {
-    //     ($x: expr) => {
-    //         {
-    //             // XXX - need to fix this when I bring back memos
-    //             // let id = s.as_ref().id();
-    //             // let __y = $x;
-    //             // s.receive(id, __y);
-    //         }
-    //     }
-    // }
-
     macro_rules! ensure_one_page_allocated {
         () => {
             if s.as_ref().ram_pages_allocated == Zero {
-                manifests::ALLOCATE_FIRST_PAGE.send(
-                    s,
-                    Payload::U8([0,0,0,0,0,0,0,0])
-                );
+                manifests::ALLOCATE_FIRST_PAGE.send(s, Payload::U8([0, 0, 0, 0, 0, 0, 0, 0]));
                 let smm = s.as_mut();
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
                 smm.ram_pages_allocated = One;
                 smm.memory.shrink_to_fit();
             }
-        }
+        };
     }
 
     macro_rules! ensure_two_pages_allocated {
         () => {
             if s.as_ref().ram_pages_allocated == Zero {
-                manifests::ALLOCATE_FIRST_PAGE.send(
-                    s,
-                    Payload::U8([0,0,0,0,0,0,0,0])
-                );
-                manifests::ALLOCATE_SECOND_PAGE.send(
-                    s,
-                    Payload::U8([0,0,0,0,0,0,0,0])
-                );
+                manifests::ALLOCATE_FIRST_PAGE.send(s, Payload::U8([0, 0, 0, 0, 0, 0, 0, 0]));
+                manifests::ALLOCATE_SECOND_PAGE.send(s, Payload::U8([0, 0, 0, 0, 0, 0, 0, 0]));
                 let smm = s.as_mut();
                 smm.memory.push([0; 0x2000]);
                 smm.memory.push([0; 0x2000]);
@@ -235,10 +215,7 @@ where
                 smm.memory.push([0; 0x2000]);
                 smm.memory.shrink_to_fit();
             } else if s.as_ref().ram_pages_allocated == One {
-                manifests::ALLOCATE_SECOND_PAGE.send(
-                    s,
-                    Payload::U8([0,0,0,0,0,0,0,0])
-                );
+                manifests::ALLOCATE_SECOND_PAGE.send(s, Payload::U8([0, 0, 0, 0, 0, 0, 0, 0]));
                 let smm = s.as_mut();
                 assert!(smm.memory.len() >= 3);
                 // the first sega-page of cartridge RAM needs to come last, so
@@ -249,7 +226,7 @@ where
                 smm.memory.shrink_to_fit();
             }
             s.as_mut().ram_pages_allocated = Two;
-        }
+        };
     }
 
     let rom_impl_page_count = match s.as_ref().ram_pages_allocated {
@@ -260,24 +237,13 @@ where
         Two => s.as_ref().memory.len() - 5,
     };
 
-    // debug_assert!(rom_impl_page_count % 2 == 0);
-
     // there are at most 0x100 sega-pages of ROM, so there should be at most
     // 0x200 implementation-pages
     debug_assert!(rom_impl_page_count < 0x200);
 
     let rom_sega_page_count = (rom_impl_page_count / 2) as u8;
 
-    if rom_sega_page_count.count_ones() != 1 {
-        // XXX Since I'm not really sure what is the right thing to do in this
-        // case, I'll log it as a fault
-        // log_fault!(
-        //     "T: ROM size not a power of two: {:0>2X} sega-pages",
-        //     rom_sega_page_count
-        // );
-    }
-
-    // XXX is this the right thing to do?
+    // Is this the right thing to do?
     // It's correct when `rom_sega_page_count` is a power of two, but who knows
     // what happens in actual hardware when it's not?
     let sega_page = if rom_sega_page_count == 0 {
@@ -290,9 +256,9 @@ where
 
     match logical_address {
         0xFFFC => {
-            // RAM mapping and misc register
-            // XXX - there is an unimplemented feature in which, if bit 4 is
-            // set, the fist sega-page of Cartridge RAM is mapped into sega-slot
+            // RAM mapping and misc register.
+            // There is an unimplemented feature in which, if bit 4 is
+            // set, the first sega-page of Cartridge RAM is mapped into sega-slot
             // 3. But "no known software" uses this feature.
             manifests::REGISTER_WRITE.send(s, Payload::U16([0xFFFC, value as u16, 0, 0]));
             let impl_page = match value & 0b1100 {
@@ -513,7 +479,7 @@ where
             let impl_page = s.as_ref().pages[impl_slot as usize];
             s.as_ref().memory[impl_page as usize][physical_address as usize]
         };
-        // XXX - need to fix this when I bring back memos
+
         let location = s.as_ref()
             .logical_address_to_memory_location(logical_address);
 
