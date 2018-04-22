@@ -15,89 +15,113 @@ pub mod manifests {
 
     pub const DEVICE: &'static str = &"SegaMemoryMap";
 
-    pub const ALLOCATE_FIRST_PAGE: &'static Manifest = &Manifest {
+    static ALLOCATE_FIRST_PAGE_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "First RAM page allocated",
         descriptions: Strings(&[]),
         payload_type: U8,
     };
 
-    pub const ALLOCATE_SECOND_PAGE: &'static Manifest = &Manifest {
+    pub static ALLOCATE_FIRST_PAGE: &'static Manifest = &ALLOCATE_FIRST_PAGE_MANIFEST;
+
+    static ALLOCATE_SECOND_PAGE_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Second RAM page allocated",
         descriptions: Strings(&[]),
         payload_type: U8,
     };
 
-    pub const SYSTEM_RAM_WRITE: &'static Manifest = &Manifest {
+    pub static ALLOCATE_SECOND_PAGE: &'static Manifest = &ALLOCATE_SECOND_PAGE_MANIFEST;
+
+    static SYSTEM_RAM_WRITE_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Write to system RAM",
         descriptions: Strings(&["logical address", "RAM address", "value"]),
         payload_type: U16,
     };
 
-    pub const CARTRIDGE_RAM_WRITE: &'static Manifest = &Manifest {
+    pub static SYSTEM_RAM_WRITE: &'static Manifest = &SYSTEM_RAM_WRITE_MANIFEST;
+
+    static CARTRIDGE_RAM_WRITE_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Write to cartridge RAM",
         descriptions: Strings(&["logical address", "RAM address", "value"]),
         payload_type: U16,
     };
 
-    pub const SYSTEM_RAM_READ: &'static Manifest = &Manifest {
+    pub static CARTRIDGE_RAM_WRITE: &'static Manifest = &CARTRIDGE_RAM_WRITE_MANIFEST;
+
+    static SYSTEM_RAM_READ_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Read from system RAM",
         descriptions: Strings(&["logical address", "RAM address", "value"]),
         payload_type: U16,
     };
 
-    pub const CARTRIDGE_RAM_READ: &'static Manifest = &Manifest {
+    pub static SYSTEM_RAM_READ: &'static Manifest = &SYSTEM_RAM_READ_MANIFEST;
+
+    static CARTRIDGE_RAM_READ_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Read from cartridge RAM",
         descriptions: Strings(&["logical address", "RAM address", "value"]),
         payload_type: U16,
     };
 
-    pub const ROM_READ_LOGICAL_ADDRESS: &'static Manifest = &Manifest {
+    pub static CARTRIDGE_RAM_READ: &'static Manifest = &CARTRIDGE_RAM_READ_MANIFEST;
+
+    static ROM_READ_LOGICAL_ADDRESS_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Read from ROM",
         descriptions: Strings(&["logical address", "value"]),
         payload_type: U16,
     };
 
-    pub const ROM_READ: &'static Manifest = &Manifest {
+    pub static ROM_READ_LOGICAL_ADDRESS: &'static Manifest = &ROM_READ_LOGICAL_ADDRESS_MANIFEST;
+
+    static ROM_READ_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Read from ROM (giving ROM address)",
         descriptions: Strings(&["ROM address"]),
         payload_type: U32,
     };
 
-    pub const INVALID_WRITE: &'static Manifest = &Manifest {
+    pub static ROM_READ: &'static Manifest = &ROM_READ_MANIFEST;
+
+    static INVALID_WRITE_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Invalid write",
         descriptions: Strings(&["logical address", "value"]),
         payload_type: PayloadType::U16,
     };
 
-    pub const REGISTER_WRITE: &'static Manifest = &Manifest {
+    pub static INVALID_WRITE: &'static Manifest = &INVALID_WRITE_MANIFEST;
+
+    static REGISTER_WRITE_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Register write",
         descriptions: Strings(&["register", "value"]),
         payload_type: PayloadType::U16,
     };
 
-    pub const MAP_ROM: &'static Manifest = &Manifest {
+    pub static REGISTER_WRITE: &'static Manifest = &REGISTER_WRITE_MANIFEST;
+
+    static MAP_ROM_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Map ROM",
         descriptions: Strings(&["page", "slot"]),
         payload_type: PayloadType::U16,
     };
 
-    pub const MAP_CARTRIDGE_RAM: &'static Manifest = &Manifest {
+    pub static MAP_ROM: &'static Manifest = &MAP_ROM_MANIFEST;
+
+    static MAP_CARTRIDGE_RAM_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Map Cartridge RAM",
         descriptions: Strings(&["page", "slot"]),
         payload_type: PayloadType::U16,
     };
+
+    pub static MAP_CARTRIDGE_RAM: &'static Manifest = &MAP_CARTRIDGE_RAM_MANIFEST;
 }
 
 pub type Result<T> = std::result::Result<T, Error<SimpleKind>>;

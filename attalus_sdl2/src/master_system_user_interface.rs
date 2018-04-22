@@ -5,7 +5,8 @@ use failure::Error;
 use sdl2;
 
 use attalus::systems::sega_master_system::{Command, CommandResult, MasterSystem, PlaybackStatus,
-                                           PlayerStatus, Ui, UiHelper, UiStatus, UserMessage};
+                                           PlayerStatus, Query, QueryResult, Ui, UiHelper,
+                                           UiStatus, UserMessage};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -83,7 +84,14 @@ impl<R> UiHelper<R> for SdlUiHelper {
 
         fn do_command<R>(status: &mut UiStatus<R>, command: Command) {
             if CommandResult::Unsupported == status.master_system_mut().command(command) {
-                println!("Unsupported command {:?}", command);
+                eprintln!("Unsupported command {:?}", command);
+            }
+        }
+
+        fn do_query<R>(status: &UiStatus<R>, query: Query) {
+            match status.master_system().query(query) {
+                QueryResult::Ok(s) => println!("{}", s),
+                QueryResult::Unsupported => eprintln!("Unsupported query {:?}", query),
             }
         }
 
@@ -103,6 +111,12 @@ impl<R> UiHelper<R> for SdlUiHelper {
                     (R, false) => status.begin_recording(),
                     (R, true) => status.save_recording(None),
                     (Z, _) => status.save_state(None),
+                    (M, false) => do_query(status, Query::RecentMemos),
+                    (M, true) => {
+                        use attalus::hardware::z80::Reg16::PC;
+                        let pc = status.master_system().reg16(PC);
+                        do_query(status, Query::Disassemble(pc));
+                    }
                     (H, false) => do_command(status, Command::Hold),
                     (H, true) => do_command(status, Command::Resume),
                     _ => {}

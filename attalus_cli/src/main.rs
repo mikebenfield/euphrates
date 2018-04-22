@@ -27,6 +27,7 @@ fn new_master_system(
     state: MasterSystemState,
     sdl: &Sdl,
     frequency: sega_master_system::Frequency,
+    debug: bool,
 ) -> Result<Box<MasterSystem<SimpleMultimediaResource<Audio, Window>>>> {
     let audio = attalus_sdl2::simple_audio::Audio::new(&sdl)?;
 
@@ -38,7 +39,7 @@ fn new_master_system(
     Ok(SimpleMultimediaResource {
         graphics,
         audio,
-        debug: false,
+        debug,
         frequency,
     }.create(state, Default::default()))
 }
@@ -50,6 +51,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         None => None,
         Some(s) => Some(PathBuf::from(s)),
     };
+    let debug = matches.value_of("debug").unwrap() == "true";
 
     let rom = {
         let mut contents = Vec::new();
@@ -65,7 +67,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         MasterSystemState::new_with_codemasters_memory_map(&rom)?
     };
 
-    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc)?;
+    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc, debug)?;
 
     let mut user_interface =
         master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
@@ -87,6 +89,7 @@ fn run_playback(matches: &ArgMatches) -> Result<()> {
         recording.state,
         &sdl,
         sega_master_system::Frequency::Unlimited,
+        false,
     )?;
 
     let mut user_interface = attalus_sdl2::master_system_user_interface::playback_ui(
@@ -121,12 +124,13 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
         None => None,
         Some(s) => Some(PathBuf::from(s)),
     };
+    let debug = matches.value_of("debug").unwrap() == "true";
 
     let sdl = sdl2::init().unwrap();
 
     let state: MasterSystemState = save::deserialize_at(&load_filename)?;
 
-    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc)?;
+    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc, debug)?;
 
     let mut user_interface =
         master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
@@ -142,12 +146,17 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
         None => None,
         Some(s) => Some(PathBuf::from(s)),
     };
+    let debug = matches.value_of("debug").unwrap() == "true";
 
     let sdl = sdl2::init().unwrap();
 
     let recording: Recording<MasterSystemState> = save::deserialize_at(&load_filename)?;
-    let master_system =
-        new_master_system(recording.state, &sdl, sega_master_system::Frequency::Ntsc)?;
+    let master_system = new_master_system(
+        recording.state,
+        &sdl,
+        sega_master_system::Frequency::Ntsc,
+        debug,
+    )?;
 
     let mut user_interface =
         master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
@@ -171,6 +180,14 @@ fn run() -> Result<()> {
         .help("Specify the directory in which to save states")
         .takes_value(true);
 
+    let debug_arg = Arg::with_name("debug")
+        .long("debug")
+        .value_name("BOOL")
+        .help("Enable or disable debugging")
+        .takes_value(true)
+        .possible_values(&["true", "false"])
+        .default_value("false");
+
     let app = App::new("Attalus")
         .version("0.1.0")
         .author("Michael Benfield")
@@ -186,12 +203,14 @@ fn run() -> Result<()> {
                         .takes_value(true)
                         .required(true),
                 )
+                .arg(debug_arg.clone())
                 .arg(memory_map_arg.clone())
                 .arg(save_directory_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("load")
                 .about("Load a saved state")
+                .arg(debug_arg.clone())
                 .arg(save_directory_arg.clone())
                 .arg(
                     Arg::with_name("loadfile")
@@ -206,6 +225,7 @@ fn run() -> Result<()> {
             SubCommand::with_name("loadrecord")
                 .about("Load recorded gameplay")
                 .arg(save_directory_arg.clone())
+                .arg(debug_arg.clone())
                 .arg(
                     Arg::with_name("loadfile")
                         .long("loadfile")

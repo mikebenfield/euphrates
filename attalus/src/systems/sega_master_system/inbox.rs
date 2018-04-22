@@ -38,12 +38,12 @@ pub enum CommandResult {
 
 pub trait Debugger {
     fn command(&mut self, command: Command) -> CommandResult;
-    fn query(&mut self, query: Query) -> QueryResult;
+    fn query(&self, query: Query) -> QueryResult;
 }
 
 pub trait DebuggerImpler<S: ?Sized> {
     fn command(&mut S, command: Command) -> CommandResult;
-    fn query(&mut S, query: Query) -> QueryResult;
+    fn query(&S, query: Query) -> QueryResult;
 }
 
 pub trait DebuggerImpl {
@@ -60,7 +60,7 @@ where
     }
 
     #[inline]
-    fn query(&mut self, query: Query) -> QueryResult {
+    fn query(&self, query: Query) -> QueryResult {
         <S::Impler as DebuggerImpler<Self>>::query(self, query)
     }
 }
@@ -118,7 +118,7 @@ where
     }
 
     #[inline]
-    fn query(_s: &mut S, _query: Query) -> QueryResult {
+    fn query(_s: &S, _query: Query) -> QueryResult {
         QueryResult::Unsupported
     }
 }
@@ -135,7 +135,7 @@ impl Default for DebugStatus {
     }
 }
 
-const MAX_MESSAGES: usize = 50;
+const MAX_MEMOS: usize = 400;
 
 #[derive(Clone)]
 pub struct DebuggingInbox {
@@ -188,9 +188,9 @@ impl DebuggingInbox {
     }
 
     fn disassembly_around(&self, pc: u16) -> String {
-        let mut pc_current = self.back_n(5, pc);
+        let mut pc_current = self.back_n(8, pc);
         let mut result = "".to_owned();
-        for _ in 0..10 {
+        for _ in 0..20 {
             let opcode = match self.opcodes[pc_current as usize] {
                 None => return result,
                 Some(x) => x,
@@ -235,7 +235,7 @@ where
         use memo::Payload;
         use std::mem::transmute;
 
-        if s.as_ref().recent_memos.len() >= MAX_MESSAGES {
+        if s.as_ref().recent_memos.len() >= MAX_MEMOS {
             s.as_mut().recent_memos.pop_front();
         }
 
@@ -275,7 +275,7 @@ where
         + AsRef<TimeStatus>
         + AsMut<TimeStatus>,
 {
-    fn query(s: &mut S, query: Query) -> QueryResult {
+    fn query(s: &S, query: Query) -> QueryResult {
         use self::Query::*;
         let result = match query {
             RecentMemos => {

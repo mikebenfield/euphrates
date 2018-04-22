@@ -5,9 +5,9 @@ use utilities;
 
 use super::*;
 
+use self::ConditionCode::*;
 use self::Reg16::*;
 use self::Reg8::*;
-use self::ConditionCode::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Opcode {
@@ -167,98 +167,282 @@ impl fmt::Display for FullMnemonic {
 }
 
 macro_rules! function_to_mnemonic {
-    (ld) => { Mnemonic::Ld };
-    (ld_ir) => { Mnemonic::Ld };
-    (ld16) => { Mnemonic::Ld };
-    (push) => { Mnemonic::Push };
-    (pop) => { Mnemonic::Pop };
-    (ex) => { Mnemonic::Ex };
-    (exx) => { Mnemonic::Exx };
-    (ldi) => { Mnemonic::Ldi };
-    (ldir) => { Mnemonic::Ldir };
-    (ldd) => { Mnemonic::Ldd };
-    (lddr) => { Mnemonic::Lddr };
-    (cpi) => { Mnemonic::Cpi };
-    (cpir) => { Mnemonic::Cpir };
-    (cpd) => { Mnemonic::Cpd };
-    (cpdr) => { Mnemonic::Cpdr };
-    (add) => { Mnemonic::Add };
-    (add16) => { Mnemonic::Add };
-    (adc) => { Mnemonic::Adc };
-    (adc16) => { Mnemonic::Adc };
-    (sub) => { Mnemonic::Sub };
-    (sbc) => { Mnemonic::Sbc };
-    (sbc16) => { Mnemonic::Sbc };
-    (and) => { Mnemonic::And };
-    (or) => { Mnemonic::Or };
-    (xor) => { Mnemonic::Xor };
-    (cp) => { Mnemonic::Cp };
-    (inc) => { Mnemonic::Inc };
-    (inc16) => { Mnemonic::Inc };
-    (dec) => { Mnemonic::Dec };
-    (dec16) => { Mnemonic::Dec };
-    (daa) => { Mnemonic::Daa };
-    (cpl) => { Mnemonic::Cpl };
-    (neg) => { Mnemonic::Neg };
-    (ccf) => { Mnemonic::Ccf };
-    (scf) => { Mnemonic::Scf };
-    (nop) => { Mnemonic::Nop };
-    (halt) => { Mnemonic::Halt };
-    (di) => { Mnemonic::Di };
-    (ei) => { Mnemonic::Ei };
-    (im) => { Mnemonic::Im };
-    (rlca) => { Mnemonic::Rlca };
-    (rla) => { Mnemonic::Rla };
-    (rrca) => { Mnemonic::Rrca };
-    (rra) => { Mnemonic::Rra };
-    (rlc) => { Mnemonic::Rlc };
-    (rlc_store) => { Mnemonic::Rlc };
-    (rl) => { Mnemonic::Rl };
-    (rl_store) => { Mnemonic::Rl };
-    (rrc) => { Mnemonic::Rrc };
-    (rrc_store) => { Mnemonic::Rrc };
-    (rr) => { Mnemonic::Rr };
-    (rr_store) => { Mnemonic::Rr };
-    (sla) => { Mnemonic::Sla };
-    (sla_store) => { Mnemonic::Sla };
-    (sra) => { Mnemonic::Sra };
-    (sra_store) => { Mnemonic::Sra };
-    (sll) => { Mnemonic::Sll };
-    (sll_store) => { Mnemonic::Sll };
-    (srl) => { Mnemonic::Srl };
-    (srl_store) => { Mnemonic::Srl };
-    (rld) => { Mnemonic::Rld };
-    (rrd) => { Mnemonic::Rrd };
-    (bit) => { Mnemonic::Bit };
-    (set) => { Mnemonic::Set };
-    (set_store) => { Mnemonic::Set };
-    (res) => { Mnemonic::Res };
-    (res_store) => { Mnemonic::Res };
-    (jp) => { Mnemonic::Jp };
-    (jpcc) => { Mnemonic::Jp };
-    (jr) => { Mnemonic::Jr };
-    (jrcc) => { Mnemonic::Jr };
-    (djnz) => { Mnemonic::Djnz };
-    (call) => { Mnemonic::Call };
-    (callcc) => { Mnemonic::Call };
-    (ret) => { Mnemonic::Ret };
-    (retcc) => { Mnemonic::Ret };
-    (reti) => { Mnemonic::Reti };
-    (retn) => { Mnemonic::Retn };
-    (rst) => { Mnemonic::Rst };
-    (in_c) => { Mnemonic::In };
-    (in_f) => { Mnemonic::In };
-    (in_n) => { Mnemonic::In };
-    (ini) => { Mnemonic::Ini };
-    (inir) => { Mnemonic::Inir };
-    (ind) => { Mnemonic::Ind };
-    (indr) => { Mnemonic::Indr };
-    (out_c) => { Mnemonic::Out };
-    (out_n) => { Mnemonic::Out };
-    (outi) => { Mnemonic::Outi };
-    (otir) => { Mnemonic::Otir };
-    (outd) => { Mnemonic::Outd };
-    (otdr) => { Mnemonic::Otdr };
+    (ld) => {
+        Mnemonic::Ld
+    };
+    (ld_ir) => {
+        Mnemonic::Ld
+    };
+    (ld16) => {
+        Mnemonic::Ld
+    };
+    (push) => {
+        Mnemonic::Push
+    };
+    (pop) => {
+        Mnemonic::Pop
+    };
+    (ex) => {
+        Mnemonic::Ex
+    };
+    (exx) => {
+        Mnemonic::Exx
+    };
+    (ldi) => {
+        Mnemonic::Ldi
+    };
+    (ldir) => {
+        Mnemonic::Ldir
+    };
+    (ldd) => {
+        Mnemonic::Ldd
+    };
+    (lddr) => {
+        Mnemonic::Lddr
+    };
+    (cpi) => {
+        Mnemonic::Cpi
+    };
+    (cpir) => {
+        Mnemonic::Cpir
+    };
+    (cpd) => {
+        Mnemonic::Cpd
+    };
+    (cpdr) => {
+        Mnemonic::Cpdr
+    };
+    (add) => {
+        Mnemonic::Add
+    };
+    (add16) => {
+        Mnemonic::Add
+    };
+    (adc) => {
+        Mnemonic::Adc
+    };
+    (adc16) => {
+        Mnemonic::Adc
+    };
+    (sub) => {
+        Mnemonic::Sub
+    };
+    (sbc) => {
+        Mnemonic::Sbc
+    };
+    (sbc16) => {
+        Mnemonic::Sbc
+    };
+    (and) => {
+        Mnemonic::And
+    };
+    (or) => {
+        Mnemonic::Or
+    };
+    (xor) => {
+        Mnemonic::Xor
+    };
+    (cp) => {
+        Mnemonic::Cp
+    };
+    (inc) => {
+        Mnemonic::Inc
+    };
+    (inc16) => {
+        Mnemonic::Inc
+    };
+    (dec) => {
+        Mnemonic::Dec
+    };
+    (dec16) => {
+        Mnemonic::Dec
+    };
+    (daa) => {
+        Mnemonic::Daa
+    };
+    (cpl) => {
+        Mnemonic::Cpl
+    };
+    (neg) => {
+        Mnemonic::Neg
+    };
+    (ccf) => {
+        Mnemonic::Ccf
+    };
+    (scf) => {
+        Mnemonic::Scf
+    };
+    (nop) => {
+        Mnemonic::Nop
+    };
+    (halt) => {
+        Mnemonic::Halt
+    };
+    (di) => {
+        Mnemonic::Di
+    };
+    (ei) => {
+        Mnemonic::Ei
+    };
+    (im) => {
+        Mnemonic::Im
+    };
+    (rlca) => {
+        Mnemonic::Rlca
+    };
+    (rla) => {
+        Mnemonic::Rla
+    };
+    (rrca) => {
+        Mnemonic::Rrca
+    };
+    (rra) => {
+        Mnemonic::Rra
+    };
+    (rlc) => {
+        Mnemonic::Rlc
+    };
+    (rlc_store) => {
+        Mnemonic::Rlc
+    };
+    (rl) => {
+        Mnemonic::Rl
+    };
+    (rl_store) => {
+        Mnemonic::Rl
+    };
+    (rrc) => {
+        Mnemonic::Rrc
+    };
+    (rrc_store) => {
+        Mnemonic::Rrc
+    };
+    (rr) => {
+        Mnemonic::Rr
+    };
+    (rr_store) => {
+        Mnemonic::Rr
+    };
+    (sla) => {
+        Mnemonic::Sla
+    };
+    (sla_store) => {
+        Mnemonic::Sla
+    };
+    (sra) => {
+        Mnemonic::Sra
+    };
+    (sra_store) => {
+        Mnemonic::Sra
+    };
+    (sll) => {
+        Mnemonic::Sll
+    };
+    (sll_store) => {
+        Mnemonic::Sll
+    };
+    (srl) => {
+        Mnemonic::Srl
+    };
+    (srl_store) => {
+        Mnemonic::Srl
+    };
+    (rld) => {
+        Mnemonic::Rld
+    };
+    (rrd) => {
+        Mnemonic::Rrd
+    };
+    (bit) => {
+        Mnemonic::Bit
+    };
+    (set) => {
+        Mnemonic::Set
+    };
+    (set_store) => {
+        Mnemonic::Set
+    };
+    (res) => {
+        Mnemonic::Res
+    };
+    (res_store) => {
+        Mnemonic::Res
+    };
+    (jp) => {
+        Mnemonic::Jp
+    };
+    (jpcc) => {
+        Mnemonic::Jp
+    };
+    (jr) => {
+        Mnemonic::Jr
+    };
+    (jrcc) => {
+        Mnemonic::Jr
+    };
+    (djnz) => {
+        Mnemonic::Djnz
+    };
+    (call) => {
+        Mnemonic::Call
+    };
+    (callcc) => {
+        Mnemonic::Call
+    };
+    (ret) => {
+        Mnemonic::Ret
+    };
+    (retcc) => {
+        Mnemonic::Ret
+    };
+    (reti) => {
+        Mnemonic::Reti
+    };
+    (retn) => {
+        Mnemonic::Retn
+    };
+    (rst) => {
+        Mnemonic::Rst
+    };
+    (in_c) => {
+        Mnemonic::In
+    };
+    (in_f) => {
+        Mnemonic::In
+    };
+    (in_n) => {
+        Mnemonic::In
+    };
+    (ini) => {
+        Mnemonic::Ini
+    };
+    (inir) => {
+        Mnemonic::Inir
+    };
+    (ind) => {
+        Mnemonic::Ind
+    };
+    (indr) => {
+        Mnemonic::Indr
+    };
+    (out_c) => {
+        Mnemonic::Out
+    };
+    (out_n) => {
+        Mnemonic::Out
+    };
+    (outi) => {
+        Mnemonic::Outi
+    };
+    (otir) => {
+        Mnemonic::Otir
+    };
+    (outd) => {
+        Mnemonic::Outd
+    };
+    (otdr) => {
+        Mnemonic::Otdr
+    };
 }
 
 impl Opcode {
@@ -282,91 +466,221 @@ impl Opcode {
         let nn: u16;
 
         macro_rules! translate_parameter {
-            (A) => { Parameter::Reg8(A) };
-            (F) => { Parameter::Reg8(F) };
-            (B) => { Parameter::Reg8(B) };
-            (C) => { Parameter::Reg8(C) };
-            (D) => { Parameter::Reg8(D) };
-            (E) => { Parameter::Reg8(E) };
-            (H) => { Parameter::Reg8(H) };
-            (L) => { Parameter::Reg8(L) };
-            (A0) => { Parameter::Reg8(A0) };
-            (F0) => { Parameter::Reg8(F0) };
-            (B0) => { Parameter::Reg8(B0) };
-            (C0) => { Parameter::Reg8(C0) };
-            (D0) => { Parameter::Reg8(D0) };
-            (E0) => { Parameter::Reg8(E0) };
-            (H0) => { Parameter::Reg8(H0) };
-            (L0) => { Parameter::Reg8(L0) };
-            (IXL) => { Parameter::Reg8(IXL) };
-            (IXH) => { Parameter::Reg8(IXH) };
-            (IYL) => { Parameter::Reg8(IYL) };
-            (IYH) => { Parameter::Reg8(IYH) };
-            (SPL) => { Parameter::Reg8(SPL) };
-            (SPH) => { Parameter::Reg8(SPH) };
-            (PCL) => { Parameter::Reg8(PCL) };
-            (PCH) => { Parameter::Reg8(PCH) };
-            (I) => { Parameter::Reg8(I) };
-            (R) => { Parameter::Reg8(R) };
-            (BC) => { Parameter::Reg16(BC) };
-            (DE) => { Parameter::Reg16(DE) };
-            (AF) => { Parameter::Reg16(AF) };
-            (HL) => { Parameter::Reg16(HL) };
-            (BC0) => { Parameter::Reg16(BC0) };
-            (DE0) => { Parameter::Reg16(DE0) };
-            (AF0) => { Parameter::Reg16(AF0) };
-            (HL0) => { Parameter::Reg16(HL0) };
-            (IX) => { Parameter::Reg16(IX) };
-            (IY) => { Parameter::Reg16(IY) };
-            (SP) => { Parameter::Reg16(SP) };
-            (PC) => { Parameter::Reg16(PC) };
-            ((IX+d)) => { Parameter::Shift(Shift(IX, d)) };
-            ((IY+d)) => { Parameter::Shift(Shift(IY, d)) };
-            ((BC)) => { Parameter::AddressReg16(Address(BC)) };
-            ((DE)) => { Parameter::AddressReg16(Address(DE)) };
-            ((HL)) => { Parameter::AddressReg16(Address(HL)) };
-            ((SP)) => { Parameter::AddressReg16(Address(SP)) };
-            ((nn)) => { Parameter::AddressU16(Address(nn)) };
-            (n) => { Parameter::U8(n) };
-            (d) => { Parameter::I8(d) };
-            (e) => { Parameter::I8(e) };
-            (nn) => { Parameter::U16(nn) };
-            (0) => { Parameter::U8(0) };
-            (1) => { Parameter::U8(1) };
-            (2) => { Parameter::U8(2) };
-            (3) => { Parameter::U8(3) };
-            (4) => { Parameter::U8(4) };
-            (5) => { Parameter::U8(5) };
-            (6) => { Parameter::U8(6) };
-            (7) => { Parameter::U8(7) };
-            (NZcc) => { Parameter::Cc(NZcc) };
-            (Zcc) => { Parameter::Cc(Zcc) };
-            (NCcc) => { Parameter::Cc(NCcc) };
-            (Ccc) => { Parameter::Cc(Ccc) };
-            (POcc) => { Parameter::Cc(POcc) };
-            (PEcc) => { Parameter::Cc(PEcc) };
-            (Pcc) => { Parameter::Cc(Pcc) };
-            (Mcc) => { Parameter::Cc(Mcc) };
+            (A) => {
+                Parameter::Reg8(A)
+            };
+            (F) => {
+                Parameter::Reg8(F)
+            };
+            (B) => {
+                Parameter::Reg8(B)
+            };
+            (C) => {
+                Parameter::Reg8(C)
+            };
+            (D) => {
+                Parameter::Reg8(D)
+            };
+            (E) => {
+                Parameter::Reg8(E)
+            };
+            (H) => {
+                Parameter::Reg8(H)
+            };
+            (L) => {
+                Parameter::Reg8(L)
+            };
+            (A0) => {
+                Parameter::Reg8(A0)
+            };
+            (F0) => {
+                Parameter::Reg8(F0)
+            };
+            (B0) => {
+                Parameter::Reg8(B0)
+            };
+            (C0) => {
+                Parameter::Reg8(C0)
+            };
+            (D0) => {
+                Parameter::Reg8(D0)
+            };
+            (E0) => {
+                Parameter::Reg8(E0)
+            };
+            (H0) => {
+                Parameter::Reg8(H0)
+            };
+            (L0) => {
+                Parameter::Reg8(L0)
+            };
+            (IXL) => {
+                Parameter::Reg8(IXL)
+            };
+            (IXH) => {
+                Parameter::Reg8(IXH)
+            };
+            (IYL) => {
+                Parameter::Reg8(IYL)
+            };
+            (IYH) => {
+                Parameter::Reg8(IYH)
+            };
+            (SPL) => {
+                Parameter::Reg8(SPL)
+            };
+            (SPH) => {
+                Parameter::Reg8(SPH)
+            };
+            (PCL) => {
+                Parameter::Reg8(PCL)
+            };
+            (PCH) => {
+                Parameter::Reg8(PCH)
+            };
+            (I) => {
+                Parameter::Reg8(I)
+            };
+            (R) => {
+                Parameter::Reg8(R)
+            };
+            (BC) => {
+                Parameter::Reg16(BC)
+            };
+            (DE) => {
+                Parameter::Reg16(DE)
+            };
+            (AF) => {
+                Parameter::Reg16(AF)
+            };
+            (HL) => {
+                Parameter::Reg16(HL)
+            };
+            (BC0) => {
+                Parameter::Reg16(BC0)
+            };
+            (DE0) => {
+                Parameter::Reg16(DE0)
+            };
+            (AF0) => {
+                Parameter::Reg16(AF0)
+            };
+            (HL0) => {
+                Parameter::Reg16(HL0)
+            };
+            (IX) => {
+                Parameter::Reg16(IX)
+            };
+            (IY) => {
+                Parameter::Reg16(IY)
+            };
+            (SP) => {
+                Parameter::Reg16(SP)
+            };
+            (PC) => {
+                Parameter::Reg16(PC)
+            };
+            ((IX + d)) => {
+                Parameter::Shift(Shift(IX, d))
+            };
+            ((IY + d)) => {
+                Parameter::Shift(Shift(IY, d))
+            };
+            ((BC)) => {
+                Parameter::AddressReg16(Address(BC))
+            };
+            ((DE)) => {
+                Parameter::AddressReg16(Address(DE))
+            };
+            ((HL)) => {
+                Parameter::AddressReg16(Address(HL))
+            };
+            ((SP)) => {
+                Parameter::AddressReg16(Address(SP))
+            };
+            ((nn)) => {
+                Parameter::AddressU16(Address(nn))
+            };
+            (n) => {
+                Parameter::U8(n)
+            };
+            (d) => {
+                Parameter::I8(d)
+            };
+            (e) => {
+                Parameter::I8(e)
+            };
+            (nn) => {
+                Parameter::U16(nn)
+            };
+            (0) => {
+                Parameter::U8(0)
+            };
+            (1) => {
+                Parameter::U8(1)
+            };
+            (2) => {
+                Parameter::U8(2)
+            };
+            (3) => {
+                Parameter::U8(3)
+            };
+            (4) => {
+                Parameter::U8(4)
+            };
+            (5) => {
+                Parameter::U8(5)
+            };
+            (6) => {
+                Parameter::U8(6)
+            };
+            (7) => {
+                Parameter::U8(7)
+            };
+            (NZcc) => {
+                Parameter::Cc(NZcc)
+            };
+            (Zcc) => {
+                Parameter::Cc(Zcc)
+            };
+            (NCcc) => {
+                Parameter::Cc(NCcc)
+            };
+            (Ccc) => {
+                Parameter::Cc(Ccc)
+            };
+            (POcc) => {
+                Parameter::Cc(POcc)
+            };
+            (PEcc) => {
+                Parameter::Cc(PEcc)
+            };
+            (Pcc) => {
+                Parameter::Cc(Pcc)
+            };
+            (Mcc) => {
+                Parameter::Cc(Mcc)
+            };
         }
 
         macro_rules! make_full_mnemonic {
-            ($function_name: ident, []) => {
+            ($function_name:ident,[]) => {
                 FullMnemonic::ZeroParameters(function_to_mnemonic!($function_name))
             };
-            ($function_name: ident, [$a: tt]) => {
+            ($function_name:ident,[$a:tt]) => {
                 FullMnemonic::OneParameter(
                     function_to_mnemonic!($function_name),
                     translate_parameter!($a),
                 )
             };
-            ($function_name: ident, [$a: tt, $b: tt]) => {
+            ($function_name:ident,[$a:tt, $b:tt]) => {
                 FullMnemonic::TwoParameters(
                     function_to_mnemonic!($function_name),
                     translate_parameter!($a),
                     translate_parameter!($b),
                 )
             };
-            ($function_name: ident, [$a: tt, $b: tt, $c: tt]) => {
+            ($function_name:ident,[$a:tt, $b:tt, $c:tt]) => {
                 FullMnemonic::ThreeParameters(
                     function_to_mnemonic!($function_name),
                     translate_parameter!($a),
@@ -379,29 +693,17 @@ impl Opcode {
         macro_rules! find_code {
             // rst needs to be handled separately, as it's the only one with a u16 literal and
             // this is an easy way to distinguish it from a u8 literal
-            (
-                [$code: expr] ;
-                rst ;
-                [ $arg: expr ] ;
-                $t_states: expr;
-                $is_undoc: expr
-            ) => {
+            ([$code:expr]; rst; [$arg:expr]; $t_states:expr; $is_undoc:expr) => {
                 if let &Opcode::OneByte(x) = self {
                     if $code == x[0] {
                         return Some(FullMnemonic::OneParameter(
                             Mnemonic::Rst,
-                            Parameter::U16($arg)
+                            Parameter::U16($arg),
                         ));
                     }
                 }
             };
-            (
-                [$code: expr, n, n] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
-            ) => {
+            ([$code:expr,n,n]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
                 if let &Opcode::ThreeBytes(x) = self {
                     if $code == x[0] {
                         nn = utilities::to16(x[1], x[2]);
@@ -409,13 +711,7 @@ impl Opcode {
                     }
                 }
             };
-            (
-                [$code: expr, e] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
-            ) => {
+            ([$code:expr,e]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         e = x[1] as i8;
@@ -423,13 +719,7 @@ impl Opcode {
                     }
                 }
             };
-            (
-                [$code: expr, d] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
-            ) => {
+            ([$code:expr,d]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         d = x[1] as i8;
@@ -437,13 +727,7 @@ impl Opcode {
                     }
                 }
             };
-            (
-                [$code: expr, n] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
-            ) => {
+            ([$code:expr,n]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         n = x[1];
@@ -452,11 +736,11 @@ impl Opcode {
                 }
             };
             (
-                [$code1: expr, $code2: expr, n] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
+                [$code1:expr, $code2:expr,n];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $t_states:expr;
+                $is_undoc:expr
             ) => {
                 if let &Opcode::ThreeBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
@@ -466,11 +750,11 @@ impl Opcode {
                 }
             };
             (
-                [$code1: expr, $code2: expr, d] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
+                [$code1:expr, $code2:expr,d];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $t_states:expr;
+                $is_undoc:expr
             ) => {
                 if let &Opcode::ThreeBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
@@ -480,11 +764,11 @@ impl Opcode {
                 }
             };
             (
-                [$code1: expr, $code2: expr, d, n] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
+                [$code1:expr, $code2:expr,d,n];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $t_states:expr;
+                $is_undoc:expr
             ) => {
                 if let &Opcode::FourBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
@@ -495,11 +779,11 @@ impl Opcode {
                 }
             };
             (
-                [$code1: expr, $code2: expr, n, n] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
+                [$code1:expr, $code2:expr,n,n];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $t_states:expr;
+                $is_undoc:expr
             ) => {
                 if let &Opcode::FourBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
@@ -509,26 +793,20 @@ impl Opcode {
                 }
             };
             (
-                [$code1: expr, $code2: expr, d, $code3: expr] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
+                [$code1:expr, $code2:expr,d, $code3:expr];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $t_states:expr;
+                $is_undoc:expr
             ) => {
                 if let &Opcode::FourBytes(x) = self {
-                    if $code1 == x[0] && $code2 == x[1]  && $code3 == x[3] {
+                    if $code1 == x[0] && $code2 == x[1] && $code3 == x[3] {
                         d = x[3] as i8;
                         return Some(make_full_mnemonic!($mnemonic, $arg_list));
                     }
                 }
             };
-            (
-                [$code: expr] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
-            ) => {
+            ([$code:expr]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
                 if let &Opcode::OneByte(x) = self {
                     if $code == x[0] {
                         return Some(make_full_mnemonic!($mnemonic, $arg_list));
@@ -536,11 +814,11 @@ impl Opcode {
                 }
             };
             (
-                [$code1: expr, $code2: expr] ;
-                $mnemonic: ident ;
-                $arg_list: tt ;
-                $t_states: expr ;
-                $is_undoc: expr
+                [$code1:expr, $code2:expr];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $t_states:expr;
+                $is_undoc:expr
             ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] {
@@ -557,11 +835,11 @@ impl Opcode {
 }
 
 pub mod manifests {
-    use memo::{Descriptions, Manifest, PayloadType};
     use self::Descriptions::*;
     use self::PayloadType::*;
     use super::super::{Reg16, Reg8};
     use super::Opcode;
+    use memo::{Descriptions, Manifest, PayloadType};
 
     pub const DEVICE: &'static str = &"Z80";
 
@@ -576,12 +854,14 @@ pub mod manifests {
         )
     }
 
-    pub const REG8_CHANGED: &'static Manifest = &Manifest {
+    static REG8_CHANGED_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "8 bit register changed",
         payload_type: U8,
         descriptions: Function(reg8_changed_description),
     };
+
+    pub static REG8_CHANGED: &'static Manifest = &REG8_CHANGED_MANIFEST;
 
     fn reg16_changed_description(payload: u64) -> String {
         use std::mem::transmute;
@@ -618,34 +898,42 @@ pub mod manifests {
         format!(" -- {:0>4x} -- {:11} -- {}", pc, opcode, mnemonic_string)
     }
 
-    /// Two bytes: PC, native endianness
-    /// One byte: number of bytes in the instruction
-    /// One to four bytes: the opcode
-    pub const INSTRUCTION: &'static Manifest = &Manifest {
+    static INSTRUCTION_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Instruction",
         payload_type: U8,
         descriptions: Function(instruction_description),
     };
 
-    pub const MASKABLE_INTERRUPT_DENIED: &'static Manifest = &Manifest {
+    /// Two bytes_MANIFEST: PC, native endianness
+    /// One byte: number of bytes in the instruction
+    /// One to four bytes: the opcode
+    pub static INSTRUCTION: &'static Manifest = &INSTRUCTION_MANIFEST;
+
+    static MASKABLE_INTERRUPT_DENIED_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Maskable interrupt denied",
         payload_type: U64,
         descriptions: Strings(&[]),
     };
 
-    pub const MASKABLE_INTERRUPT_ALLOWED: &'static Manifest = &Manifest {
+    pub static MASKABLE_INTERRUPT_DENIED: &'static Manifest = &MASKABLE_INTERRUPT_DENIED_MANIFEST;
+
+    static MASKABLE_INTERRUPT_ALLOWED_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Maskable interrupt allowed",
         payload_type: U64,
         descriptions: Strings(&[]),
     };
 
-    pub const NONMASKABLE_INTERRUPT: &'static Manifest = &Manifest {
+    pub static MASKABLE_INTERRUPT_ALLOWED: &'static Manifest = &MASKABLE_INTERRUPT_ALLOWED_MANIFEST;
+
+    static NONMASKABLE_INTERRUPT_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Nonmaskable interrupt",
         payload_type: U64,
         descriptions: Strings(&[]),
     };
+
+    pub static NONMASKABLE_INTERRUPT: &'static Manifest = &NONMASKABLE_INTERRUPT_MANIFEST;
 }
