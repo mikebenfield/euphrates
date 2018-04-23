@@ -457,7 +457,7 @@ impl<I, M, A, G> SmsVdpInternalImpl for SimpleSystem<I, M, A, G> {
 
 impl<I, M, A, G> SmsVdpImpl for SimpleSystem<I, M, A, G>
 where
-    G: SimpleGraphics,
+    Self: Inbox + SimpleGraphics,
 {
     type Impler = SimpleSmsVdp;
 }

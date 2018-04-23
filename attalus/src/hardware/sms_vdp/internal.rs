@@ -11,6 +11,8 @@
 //! `SmsVdpInternalImpl`, specifying
 //! `type Impler = U`.
 
+use memo::{Inbox, Payload};
+
 use super::*;
 
 /// Methods giving access to the registers and other internal components of the
@@ -278,8 +280,8 @@ pub trait SmsVdpInternal {
     /// selected.
     #[inline]
     fn resolution(&self) -> Resolution {
-        use self::Resolution::*;
         use self::Kind::*;
+        use self::Resolution::*;
 
         match (self.m4(), self.m3(), self.m2(), self.m1(), self.kind()) {
             (true, false, false, false, _) => Low,
@@ -723,6 +725,113 @@ pub trait SmsVdpInternal {
         }
     }
 
+    /// Hardware method: is the VDP requesting an interrupt?
+    fn requesting_mi(&self) -> Option<u8> {
+        let frame_interrupt = self.status_flags() & FRAME_INTERRUPT_FLAG != 0;
+        let line_interrupt = self.line_interrupt_pending();
+        if (frame_interrupt && self.frame_irq_enabled())
+            || (line_interrupt && self.line_irq_enabled())
+        {
+            Some(0xFF)
+        } else {
+            None
+        }
+    }
+}
+
+pub trait SmsVdpHigher: SmsVdpInternal + Inbox {
+    /// Hardware method: write to the data port.
+    ///
+    /// If `code` is 3, this is a CRAM write. For the SMS or SMS2 VDP, that
+    /// means write the byte `x` into the CRAM address determined by the low 5
+    /// bits of `address`. For the GG VDP, that means: if `address` is even,
+    /// record `x` into `cram_latch`. If `address` is odd, we actually do write
+    /// to CRAM. Recall that for the GG VDP the CRAM is an array of 32 `u16`s
+    /// rather than `u8`s. The address is determined by bits 1-5 of `address`,
+    /// the low byte to write is `cram_latch`, and the high byte to write is
+    /// `x`. (Yes, this means the value of `address` when it's even is ignored.)
+    ///
+    /// If `code` is 0, 1, or 2, this is a VRAM write. Write `x` to the VRAM
+    /// address given by `address`.
+    ///
+    /// Either way, we then increment `address` (which of course really means
+    /// increment the low 14 bits of `address_register, wrapping past 0x3FFF)
+    /// and clear `control_flag`.
+    fn write_data(&mut self, x: u8) {
+        manifests::DATA_WRITE.send(self, Payload::U8([x, 0, 0, 0, 0, 0, 0, 0]));
+
+        // FIXME
+        let code = self.code();
+        let addr = self.address();
+
+        match (code, self.kind()) {
+            (3, Kind::Gg) => {
+                if addr & 1 == 0 {
+                    self.set_cram_latch(x);
+                } else {
+                    let latch = self.cram_latch();
+                    let val = latch as u16 & ((x as u16) << 8);
+                    let actual_address = (addr >> 1) % 32;
+                    unsafe {
+                        manifests::CRAM_WRITE.send(self, Payload::U16([actual_address, val, 0, 0]));
+                        self.set_cram_unchecked(actual_address, val);
+                    }
+                }
+            }
+            (3, _) => unsafe {
+                manifests::CRAM_WRITE.send(self, Payload::U16([addr % 32, x as u16, 0, 0]));
+                self.set_cram_unchecked(addr % 32, x as u16);
+            },
+            _ => unsafe {
+                manifests::VRAM_WRITE.send(self, Payload::U16([addr % 32, x as u16, 0, 0]));
+                self.set_vram_unchecked(addr, x);
+            },
+        }
+
+        self.set_address(addr + 1);
+        self.set_control_flag(false);
+    }
+
+    /// Hardware method: write to the control port.
+    ///
+    /// If the control flag is not set, this will set it and also set the
+    /// lower 8 bits of the `code_address` register to `x`.
+    ///
+    /// Otherwise, This will set the upper 8 bits of the `code_address` register
+    /// to `x`. Then, if the upper 2 bits of `x` are 0, will read a byte from
+    /// VRAM at `self.address()`, store the result in the data buffer, and then
+    /// increment the lower 14 bits of `code_address`. If the upper 2 bits of
+    /// `x` are 2, will instead set the register indicated by the low 4 bits of
+    /// `x` to the low 8 bits of the `code_address` register. (Registers past 10
+    /// are ignored.)
+    fn write_control(&mut self, x: u8) {
+        manifests::CONTROL_WRITE.send(self, Payload::U8([x, 0, 0, 0, 0, 0, 0, 0]));
+        if self.control_flag() {
+            self.set_control_flag(false);
+            let low_byte = self.code_address() & 0xFF;
+            let code_addr = low_byte | (x as u16) << 8;
+            self.set_code_address(code_addr);
+            let code = self.code();
+            let addr = self.address();
+            if code == 0 {
+                let val = unsafe { self.vram_unchecked(addr) };
+                self.set_data_buffer(val);
+                self.set_address(addr + 1);
+            } else if code == 2 {
+                let which_reg = x & 0xF;
+                if which_reg < 11 {
+                    unsafe {
+                        self.set_register_unchecked(which_reg as u16, low_byte as u8);
+                    }
+                }
+            }
+        } else {
+            self.set_control_flag(true);
+            let high_byte = self.code_address() & 0xFF00;
+            self.set_code_address(high_byte | x as u16);
+        }
+    }
+
     /// Hardware method: read the VDP's `v` counter.
     ///
     /// Each time a line is drawn, the `v` counter is incremented. When the last
@@ -740,8 +849,8 @@ pub trait SmsVdpInternal {
     /// In this API, it's the responsibility of `run_line` to increment and zero
     /// `v` as needed, using the `v` and `set_v` methods.
     fn read_v(&mut self) -> u8 {
-        use self::TvSystem::*;
         use self::Resolution::*;
+        use self::TvSystem::*;
         let v = self.v();
         let result = match (self.tv_system(), self.resolution(), v) {
             (Ntsc, Low, 0...0xDA) => v,
@@ -759,15 +868,7 @@ pub trait SmsVdpInternal {
             (Pal, High, 0x100...0x10A) => v - 0x100,
             (Pal, High, _) => v - 57,
         };
-        // FIXME
-        // let id = self.as_ref().id();
-        // self.receive(
-        //     id,
-        //     Memo::ReadV {
-        //         actual: v,
-        //         reported: result as u8,
-        //     },
-        // );
+        manifests::V_READ.send(self, Payload::U16([v, result, 0, 0]));
         result as u8
     }
 
@@ -795,17 +896,10 @@ pub trait SmsVdpInternal {
     /// Fortunately, this doesn't seem to matter for anything but lightgun
     /// games.
     fn read_h(&mut self) -> u8 {
-        let result = (self.h() >> 1) as u8;
-        // let id = self.as_ref().id();
-        // let h = self.as_ref().h;
-        // self.receive(
-        //     id,
-        //     Memo::ReadH {
-        //         actual: h,
-        //         reported: result,
-        //     },
-        // );
-        result
+        let h = self.h();
+        let result = (h >> 1) as u8;
+        manifests::H_READ.send(self, Payload::U16([h, result as u16, 0, 0]));
+        result as u8
     }
 
     /// Hardware method: read from the data port.
@@ -823,8 +917,10 @@ pub trait SmsVdpInternal {
         self.set_address(addr + 1);
         self.set_data_buffer(new_value);
         self.set_control_flag(false);
-        // FIXME
-        // self.receive(id, Memo::ReadData(current_buffer));
+        manifests::DATA_READ.send(
+            self,
+            Payload::U8([current_buffer, new_value, 0, 0, 0, 0, 0, 0]),
+        );
         current_buffer
     }
 
@@ -842,109 +938,12 @@ pub trait SmsVdpInternal {
         // self.receive(id, Memo::ReadControl(current_status));
         current_status
     }
+}
 
-    /// Hardware method: is the VDP requesting an interrupt?
-    fn requesting_mi(&self) -> Option<u8> {
-        let frame_interrupt = self.status_flags() & FRAME_INTERRUPT_FLAG != 0;
-        let line_interrupt = self.line_interrupt_pending();
-        if (frame_interrupt && self.frame_irq_enabled())
-            || (line_interrupt && self.line_irq_enabled())
-        {
-            Some(0xFF)
-        } else {
-            None
-        }
-    }
-
-    /// Hardware method: write to the data port.
-    ///
-    /// If `code` is 3, this is a CRAM write. For the SMS or SMS2 VDP, that
-    /// means write the byte `x` into the CRAM address determined by the low 5
-    /// bits of `address`. For the GG VDP, that means: if `address` is even,
-    /// record `x` into `cram_latch`. If `address` is odd, we actually do write
-    /// to CRAM. Recall that for the GG VDP the CRAM is an array of 32 `u16`s
-    /// rather than `u8`s. The address is determined by bits 1-5 of `address`,
-    /// the low byte to write is `cram_latch`, and the high byte to write is
-    /// `x`. (Yes, this means the value of `address` when it's even is ignored.)
-    ///
-    /// If `code` is 0, 1, or 2, this is a VRAM write. Write `x` to the VRAM
-    /// address given by `address`.
-    ///
-    /// Either way, we then increment `address` (which of course really means
-    /// increment the low 14 bits of `address_register, wrapping past 0x3FFF)
-    /// and clear `control_flag`.
-    fn write_data(&mut self, x: u8) {
-        // FIXME
-        // let id = self.as_ref().id();
-        // self.receive(id, Memo::WriteData(x));
-
-        // FIXME
-        let code = self.code();
-        let addr = self.address();
-
-        match (code, self.kind()) {
-            (3, Kind::Gg) => {
-                if addr & 1 == 0 {
-                    self.set_cram_latch(x);
-                } else {
-                    let latch = self.cram_latch();
-                    let val = latch as u16 & ((x as u16) << 8);
-                    let actual_address = (addr >> 1) % 32;
-                    unsafe {
-                        self.set_cram_unchecked(actual_address, val);
-                    }
-                }
-            }
-            (3, _) => unsafe {
-                self.set_cram_unchecked(addr % 32, x as u16);
-            },
-            _ => unsafe {
-                self.set_vram_unchecked(addr, x);
-            },
-        }
-
-        self.set_address(addr + 1);
-        self.set_control_flag(false);
-    }
-
-    /// Hardware method: write to the control port.
-    ///
-    /// If the control flag is not set, this will set it and also set the
-    /// lower 8 bits of the `code_address` register to `x`.
-    ///
-    /// Otherwise, This will set the upper 8 bits of the `code_address` register
-    /// to `x`. Then, if the upper 2 bits of `x` are 0, will read a byte from
-    /// VRAM at `self.address()`, store the result in the data buffer, and then
-    /// increment the lower 14 bits of `code_address`. If the upper 2 bits of
-    /// `x` are 2, will instead set the register indicated by the low 4 bits of
-    /// `x` to the low 8 bits of the `code_address` register. (Registers past 10
-    /// are ignored.)
-    fn write_control(&mut self, x: u8) {
-        if self.control_flag() {
-            self.set_control_flag(false);
-            let low_byte = self.code_address() & 0xFF;
-            let code_addr = low_byte | (x as u16) << 8;
-            self.set_code_address(code_addr);
-            let code = self.code();
-            let addr = self.address();
-            if code == 0 {
-                let val = unsafe { self.vram_unchecked(addr) };
-                self.set_data_buffer(val);
-                self.set_address(addr + 1);
-            } else if code == 2 {
-                let which_reg = x & 0xF;
-                if which_reg < 11 {
-                    unsafe {
-                        self.set_register_unchecked(which_reg as u16, low_byte as u8);
-                    }
-                }
-            }
-        } else {
-            self.set_control_flag(true);
-            let high_byte = self.code_address() & 0xFF00;
-            self.set_code_address(high_byte | x as u16);
-        }
-    }
+impl<T> SmsVdpHigher for T
+where
+    T: SmsVdpInternal + Inbox,
+{
 }
 
 /// A type able to provide an implementation of `SmsVdpInternal` for `S`.

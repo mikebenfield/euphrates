@@ -4,8 +4,9 @@ use std;
 
 use failure::Error;
 
-use utilities;
 use host_multimedia::{SimpleColor, SimpleGraphics};
+use memo::Payload;
+use utilities;
 
 use super::*;
 
@@ -29,7 +30,7 @@ pub trait SmsVdp: SmsVdpInternal {
 ///   from register 10.
 /// * increment the v counter, wrapping at `total_lines()`.
 /// * increase the number of cycles by 342
-pub fn finish_line<S: SmsVdpInternal>(vdp: &mut S) -> Result<()> {
+pub fn finish_line<S: SmsVdpHigher>(vdp: &mut S) -> Result<()> {
     let v = vdp.v();
 
     if v == vdp.active_lines() {
@@ -37,6 +38,7 @@ pub fn finish_line<S: SmsVdpInternal>(vdp: &mut S) -> Result<()> {
         // line on which to trigger a frame interrupt.
         let flags = vdp.status_flags();
         vdp.set_status_flags(flags | FRAME_INTERRUPT_FLAG);
+        manifests::SET_FRAME_INTERRUPT.send(vdp, Payload::U16([v, 0, 0, 0]));
     }
 
     if v <= vdp.active_lines() {
@@ -46,6 +48,8 @@ pub fn finish_line<S: SmsVdpInternal>(vdp: &mut S) -> Result<()> {
             let reg_line_counter = vdp.reg_line_counter();
             vdp.set_line_counter(reg_line_counter);
             vdp.set_line_interrupt_pending(true);
+            manifests::SET_LINE_INTERRUPT
+                .send(vdp, Payload::U16([v, reg_line_counter as u16, 0, 0]));
         }
     } else {
         let reg_line_counter = vdp.reg_line_counter();
@@ -102,9 +106,10 @@ pub fn vdp_color_to_simple_color(color: u8) -> SimpleColor {
     SimpleColor { red, green, blue }
 }
 
-fn real_finish_line<S: SimpleGraphics + SmsVdpInternal>(vdp: &mut S) -> Result<()> {
+fn real_finish_line<S: SimpleGraphics + SmsVdpHigher>(vdp: &mut S) -> Result<()> {
     finish_line(vdp).and_then(|()| {
         if vdp.v() == 0 {
+            manifests::RENDERING.send(vdp, Payload::U64([0]));
             vdp.render()
         } else {
             Ok(())
@@ -114,7 +119,7 @@ fn real_finish_line<S: SimpleGraphics + SmsVdpInternal>(vdp: &mut S) -> Result<(
 
 impl<S> SmsVdpImpler<S> for SimpleSmsVdp
 where
-    S: SimpleGraphics + SmsVdpInternal,
+    S: SimpleGraphics + SmsVdpInternal + SmsVdpHigher,
 {
     fn draw_line(s: &mut S) -> Result<()> {
         use self::Resolution::*;

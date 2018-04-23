@@ -1,7 +1,7 @@
 use std::convert::{AsMut, AsRef};
 
 use hardware::irq::Irq;
-use hardware::sms_vdp::SmsVdpInternal;
+use hardware::sms_vdp::SmsVdpHigher;
 use hardware::sn76489;
 use memo::{Inbox, Payload};
 
@@ -115,7 +115,7 @@ impl Irq for Sms2Io {
 
 impl<S> Io16Impler<S> for Sms2Io
 where
-    S: Inbox + AsMut<Sms2Io> + AsRef<Sms2Io> + SmsVdpInternal + sn76489::Sn76489Internal + ?Sized,
+    S: Inbox + AsMut<Sms2Io> + AsRef<Sms2Io> + SmsVdpHigher + sn76489::Sn76489Internal + ?Sized,
 {
     fn input(s: &mut S, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
