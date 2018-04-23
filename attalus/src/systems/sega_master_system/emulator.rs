@@ -211,15 +211,8 @@ where
 
 impl<I, M, A, G> MasterSystem<SimpleMultimediaResource<A, G>> for SimpleSystem<I, M, A, G>
 where
-    Self: Z80
-        + SmsVdp
-        + Memory16
-        + Io16
-        + Sn76489
-        + Debugger
-        + Inbox
-        + SimpleAudio
-        + SimpleGraphics,
+    Self:
+        Z80 + SmsVdp + Memory16 + Io16 + Sn76489 + Debugger + Inbox + SimpleAudio + SimpleGraphics,
     M: Any + 'static,
 {
     fn init(&mut self) -> Result<()> {
@@ -451,7 +444,10 @@ impl<I, A, G> Memory16Impl for SimpleSystem<I, CodemastersMemoryMap, A, G> {
     type Impler = CodemastersMemoryMap;
 }
 
-impl<I, M, A, G> Io16Impl for SimpleSystem<I, M, A, G> {
+impl<I, M, A, G> Io16Impl for SimpleSystem<I, M, A, G>
+where
+    SimpleSystem<I, M, A, G>: Inbox,
+{
     type Impler = Sms2Io;
 }
 

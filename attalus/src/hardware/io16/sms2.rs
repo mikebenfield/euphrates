@@ -3,46 +3,40 @@ use std::convert::{AsMut, AsRef};
 use hardware::irq::Irq;
 use hardware::sms_vdp::SmsVdpInternal;
 use hardware::sn76489;
-// use memo::{Inbox, Memo, Payload};
+use memo::{Inbox, Payload};
+
 use super::Io16Impler;
 
-// pub mod manifests {
-//     use memo::{Item, Manifest, PayloadType};
+pub mod manifests {
+    use memo::{Descriptions::*, Manifest, PayloadType::*};
 
-//     pub const DEVICE_STRING: &'static str = &"Sms2Io";
+    pub const DEVICE: &'static str = &"Sms2Io";
 
-//     const CONTENTS: &'static [Item] = &[
-//         Item {
-//             hex: true,
-//             description: "address",
-//         },
-//         Item {
-//             hex: true,
-//             description: "value",
-//         },
-//     ];
+    static INPUT_MANIFEST: Manifest = Manifest {
+        device: DEVICE,
+        summary: "Input",
+        payload_type: U16,
+        descriptions: Strings(&["address", "value"]),
+    };
 
-//     pub const INPUT: &'static Manifest = &Manifest {
-//         device: DEVICE_STRING,
-//         summary: &"Input",
-//         payload_type: PayloadType::U16,
-//         contents: CONTENTS,
-//     };
+    pub static INPUT: &'static Manifest = &INPUT_MANIFEST;
 
-//     pub const OUTPUT: &'static Manifest = &Manifest {
-//         device: DEVICE_STRING,
-//         summary: &"Output to address {:0} with value {:1}",
-//         payload_type: PayloadType::U16,
-//         contents: CONTENTS,
-//     };
+    static OUTPUT_MANIFEST: Manifest = Manifest {
+        device: DEVICE,
+        summary: "Output",
+        payload_type: U16,
+        descriptions: Strings(&["address", "value"]),
+    };
 
-//     pub const BOGUS_OUTPUT: &'static Manifest = &Manifest {
-//         device: DEVICE_STRING,
-//         summary: &"Bogus output to address {:0} with value {:1}",
-//         payload_type: PayloadType::U16,
-//         contents: CONTENTS,
-//     };
-// }
+    pub static OUTPUT: &'static Manifest = &OUTPUT_MANIFEST;
+
+    pub const BOGUS_OUTPUT: Manifest = Manifest {
+        device: DEVICE,
+        summary: "Bogus output",
+        payload_type: U16,
+        descriptions: Strings(&["address", "value"]),
+    };
+}
 
 /// The IO system in the Sega Master Sytem 2.
 ///
@@ -121,7 +115,7 @@ impl Irq for Sms2Io {
 
 impl<S> Io16Impler<S> for Sms2Io
 where
-    S: AsMut<Sms2Io> + AsRef<Sms2Io> + SmsVdpInternal + sn76489::Sn76489Internal + ?Sized,
+    S: Inbox + AsMut<Sms2Io> + AsRef<Sms2Io> + SmsVdpInternal + sn76489::Sn76489Internal + ?Sized,
 {
     fn input(s: &mut S, address: u16) -> u8 {
         let masked = (address & 0b11000001) as u8;
@@ -166,10 +160,7 @@ where
             }
         };
 
-        // s.receive(Memo::new(
-        //     Payload::U16([address, value as u16, 0, 0]),
-        //     manifests::INPUT,
-        // ));
+        manifests::INPUT.send(s, Payload::U16([address, value as u16, 0, 0]));
 
         value
     }
