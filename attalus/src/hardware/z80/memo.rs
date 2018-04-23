@@ -56,9 +56,9 @@ impl fmt::Display for Parameter {
             Parameter::Shift(x) => x.fmt(f),
             Parameter::AddressReg16(x) => x.fmt(f),
             Parameter::AddressU16(x) => x.fmt(f),
-            Parameter::U8(x) => x.fmt(f),
-            Parameter::I8(x) => x.fmt(f),
-            Parameter::U16(x) => x.fmt(f),
+            Parameter::U8(x) => f.pad(&format!("{:<#04x}", x)),
+            Parameter::I8(x) => f.pad(&format!("{:<+#05x}", x)),
+            Parameter::U16(x) => f.pad(&format!("{:<#06x}", x)),
             Parameter::Cc(x) => x.fmt(f),
         }
     }
