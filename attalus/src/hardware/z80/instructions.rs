@@ -260,7 +260,9 @@ pub fn ldir<Z>(z: &mut Z)
 where
     Z: Z80Internal + Memory16 + ?Sized,
 {
+    // println!("ldir start");
     loop {
+        // println!("looping {:X}", BC.view(z));
         ldi(z);
         if BC.view(z) == 0 {
             z.inc_cycles(17);

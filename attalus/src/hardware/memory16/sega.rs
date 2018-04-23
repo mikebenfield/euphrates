@@ -618,26 +618,27 @@ impl MasterSystemMemory for SegaMemoryMap {
 
         memory.extend(rom);
 
-        // push the system RAM
-        memory.resize(rom.len() + 0x2000, 0);
-
         // XXX I need to experiment and figure out what to do with
         // strange ROM sizes.
 
-        // let rom_size = rom.len() as u32;
+        let rom_size = rom.len() as u32;
+        println!("initial rom size {:X}", rom_size);
 
-        let correct_rom_size = rom.len();
-        // let correct_rom_size = if rom_size <= 0x4000 {
-        //     0x4000
-        // } else {
-        //     let floor_log = 31 - rom_size.leading_zeros();
-        //     let ceil_log = if rom_size <= 1 << floor_log {
-        //         floor_log
-        //     } else {
-        //         floor_log + 1
-        //     };
-        //     1 << ceil_log
-        // };
+        let correct_rom_size = {
+            let floor_log = 31 - rom_size.leading_zeros();
+            let ceil_log = if rom_size <= 1 << floor_log {
+                floor_log
+            } else {
+                floor_log + 1
+            };
+            1 << ceil_log
+        };
+
+        println!("correct rom size {:X}", correct_rom_size);
+        memory.resize(correct_rom_size, 0);
+
+        // push the system RAM
+        memory.resize(correct_rom_size + 0x2000, 0);
 
         // let memory_len = memory.len();
         // memory.resize(memory_len + rom.len() - correct_rom_size, 0);

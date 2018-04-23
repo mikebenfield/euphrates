@@ -150,4 +150,13 @@ pub mod manifests {
     };
 
     pub static RENDERING: &'static Manifest = &RENDERING_MANIFEST;
+
+    static REGISTER_SET_MANIFEST: Manifest = Manifest {
+        device: DEVICE,
+        summary: "Register set",
+        payload_type: U8,
+        descriptions: Strings(&["register", "value"]),
+    };
+
+    pub static REGISTER_SET: &'static Manifest = &REGISTER_SET_MANIFEST;
 }

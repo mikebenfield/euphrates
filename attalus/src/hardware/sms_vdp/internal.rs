@@ -821,6 +821,10 @@ pub trait SmsVdpHigher: SmsVdpInternal + Inbox {
                 let which_reg = x & 0xF;
                 if which_reg < 11 {
                     unsafe {
+                        manifests::REGISTER_SET.send(
+                            self,
+                            Payload::U8([which_reg, low_byte as u8, 0, 0, 0, 0, 0, 0]),
+                        );
                         self.set_register_unchecked(which_reg as u16, low_byte as u8);
                     }
                 }
