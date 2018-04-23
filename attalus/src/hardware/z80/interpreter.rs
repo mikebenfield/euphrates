@@ -260,7 +260,7 @@ where
             let pc_array: [u8; 2] = unsafe { transmute(pc_op) };
             manifests::INSTRUCTION.send(
                 z,
-                Payload::U8([pc_array[0], pc_array[1], 3, $code0, $code1, $code2, $code3, 0])
+                Payload::U8([pc_array[0], pc_array[1], 4, $code0, $code1, $code2, $code3, 0])
             );
         };
     }
