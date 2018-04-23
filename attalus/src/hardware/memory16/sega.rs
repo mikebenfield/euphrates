@@ -398,7 +398,6 @@ where
         } else if s.as_ref().ram_pages_allocated == One {
             manifests::ALLOCATE_SECOND_PAGE.send(s, Payload::U8([0, 0, 0, 0, 0, 0, 0, 0]));
             let smm = s.as_mut();
-            assert!(smm.memory.len() >= 3);
             let current_len = smm.memory.len();
             smm.memory.resize(current_len + 0x4000, 0);
             smm.memory.shrink_to_fit();
@@ -414,7 +413,6 @@ where
         Two => 0xA000,
     };
 
-    debug_assert!(rom_len % 0x4000 == 0);
     debug_assert!(rom_len > 0);
 
     let rom_sega_page_count = rom_len / 0x4000;
