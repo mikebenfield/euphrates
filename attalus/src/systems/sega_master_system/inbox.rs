@@ -2,14 +2,18 @@ use std::collections::VecDeque;
 use std::fmt::Write;
 use std::time::Instant;
 
-use hardware::z80::memo::Opcode;
-use memo::{InboxImpler, Memo, HoldableImpler};
+use hardware::z80::memo::{Opcode, TargetMnemonic};
+use memo::{HoldableImpler, InboxImpler, Memo};
 
 use super::emulator::TimeStatus;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Query {
-    Disassemble(u16),
+    /// Show disassembly around this PC, with arrows pointing at this instruction
+    DisassemblyAt(u16),
+    /// Whole program disassembly
+    Disassembly,
+    /// Show the last few memos received
     RecentMemos,
 }
 
@@ -135,12 +139,21 @@ impl Default for DebugStatus {
     }
 }
 
+/// Debugging information about the instruction at each memory location.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+struct MemoryLocation {
+    opcode: Option<Opcode>,
+    /// If this PC is the target of some jump, here's a label to use.
+    label: Option<u16>,
+}
+
 const MAX_MEMOS: usize = 400;
 
 #[derive(Clone)]
 pub struct DebuggingInbox {
     last_pc: u16,
-    opcodes: [Option<Opcode>; 0x10000],
+    instructions: [MemoryLocation; 0x10000],
+    next_label: u16,
     status: DebugStatus,
     pc_breakpoints: Vec<u16>,
     // memo_patterns: Vec<MemoPattern>,
@@ -151,7 +164,8 @@ impl DebuggingInbox {
     fn new() -> Self {
         DebuggingInbox {
             last_pc: 0,
-            opcodes: [None; 0x10000],
+            instructions: [Default::default(); 0x10000],
+            next_label: 0,
             status: DebugStatus::None,
             pc_breakpoints: Vec::new(),
             recent_memos: VecDeque::new(),
@@ -164,7 +178,7 @@ impl DebuggingInbox {
             if pc < i {
                 return None;
             }
-            match (self.opcodes[(pc - i) as usize], i) {
+            match (self.instructions[(pc - i) as usize].opcode, i) {
                 (Some(Opcode::OneByte(_)), 1) => return Some(pc - i),
                 (Some(Opcode::TwoBytes(_)), 2) => return Some(pc - i),
                 (Some(Opcode::ThreeBytes(_)), 3) => return Some(pc - i),
@@ -187,36 +201,82 @@ impl DebuggingInbox {
         return pc_current;
     }
 
-    fn disassembly_around(&self, pc: u16) -> String {
-        let mut pc_current = self.back_n(8, pc);
-        let mut result = "".to_owned();
-        for _ in 0..20 {
-            let opcode = match self.opcodes[pc_current as usize] {
-                None => return result,
+    /// `current`: if provided, arrows will be pointing at this instruction
+    ///
+    /// `first`: first memory address to start looking for disassembly
+    ///
+    /// `last`: last memory address to look for disassembly
+    fn disassembly(&self, current: Option<u16>, first: u16, last: u16) -> String {
+        let mut prev_instruction_pc = first;
+        let mut prev_instruction_size = 0u16;
+        let mut result = String::new();
+
+        macro_rules! w {
+            ($($args: expr),*) => {
+                write!(result, $($args),*).unwrap()
+            }
+        }
+
+        let last_str = |pc: u16| -> &'static str {
+            match current {
+                Some(x) if x == pc => "<<<<<",
+                _ => "",
+            }
+        };
+
+        for pc in first..=last {
+            let location = self.instructions[pc as usize];
+            let opcode = match location.opcode {
+                None => continue,
                 Some(x) => x,
             };
-            result.push_str(&format!(
-                "{:0>4X}: {: <width$}",
-                pc_current,
-                opcode,
-                width = 12
-            ));
-            match opcode.mnemonic() {
-                None => result.push_str("Unknown opcode"),
-                Some(x) => result.push_str(&format!("{}", x)),
+            if pc - prev_instruction_pc < prev_instruction_size {
+                result.write_str("<Instruction overlap>\n").unwrap();
+            } else if pc - prev_instruction_pc > prev_instruction_size {
+                result.write_str("<Gap>\n").unwrap();
             }
-            if pc_current == pc {
-                result.push_str(" <<<");
+            prev_instruction_pc = pc;
+            prev_instruction_size = opcode.len() as u16;
+            match location.label {
+                None => w!("        {:0>4X} ", pc),
+                Some(x) => w!("L_{:0>4X}: {:0>4X} ", x, pc),
             }
-            result.push('\n');
-            pc_current = pc_current.wrapping_add(match opcode {
-                Opcode::OneByte(_) => 1,
-                Opcode::TwoBytes(_) => 2,
-                Opcode::ThreeBytes(_) => 3,
-                Opcode::FourBytes(_) => 4,
-            });
+            let mnemonic = match opcode.mnemonic() {
+                None => {
+                    w!(
+                        "{:<30} {}\n",
+                        format!("{} <Unknown instruction>", opcode),
+                        last_str(pc)
+                    );
+                    continue;
+                }
+                Some(x) => x,
+            };
+            let target = match mnemonic.jump_target(pc) {
+                None => {
+                    w!("{:<30} {}\n", mnemonic, last_str(pc));
+                    continue;
+                }
+                Some(x) => x,
+            };
+            match self.instructions[target as usize].label {
+                Some(label) => w!(
+                    "{:<30} {}\n",
+                    TargetMnemonic {
+                        full_mnemonic: mnemonic,
+                        target_label: &format!("L_{:0>4X}", label),
+                    },
+                    last_str(pc)
+                ),
+                _ => w!("{:<30} {}\n", mnemonic, last_str(pc)),
+            }
         }
         result
+    }
+
+    fn disassembly_around(&self, pc: u16) -> String {
+        let start = self.back_n(8, pc);
+        self.disassembly(Some(pc), start, pc + 40)
     }
 }
 
@@ -247,7 +307,22 @@ where
             let pc_array: [u8; 2] = [payload[0], payload[1]];
             let pc: u16 = unsafe { transmute(pc_array) };
             let opcode = Opcode::from_payload(payload);
-            s.as_mut().opcodes[pc as usize] = Some(opcode);
+            let current_info = s.as_ref().instructions[pc as usize];
+            s.as_mut().instructions[pc as usize] = MemoryLocation {
+                opcode: Some(opcode),
+                label: current_info.label,
+            };
+            opcode.mnemonic().map(|mnemonic| {
+                mnemonic.jump_target(pc).map(|target| {
+                    let next_label = s.as_ref().next_label;
+                    let mut target_location = s.as_mut().instructions[target as usize];
+                    if target_location.label.is_none() {
+                        target_location.label = Some(next_label);
+                        s.as_mut().next_label += 1;
+                        s.as_mut().instructions[target as usize] = target_location;
+                    }
+                })
+            });
             s.as_mut().last_pc = pc;
         }
 
@@ -285,7 +360,8 @@ where
                 }
                 result
             }
-            Disassemble(pc) => AsRef::<DebuggingInbox>::as_ref(s).disassembly_around(pc),
+            DisassemblyAt(pc) => AsRef::<DebuggingInbox>::as_ref(s).disassembly_around(pc),
+            Disassembly => AsRef::<DebuggingInbox>::as_ref(s).disassembly(None, 0, 0xFFFF),
         };
         QueryResult::Ok(result)
     }

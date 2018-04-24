@@ -112,11 +112,12 @@ impl<R> UiHelper<R> for SdlUiHelper {
                     (R, true) => status.save_recording(None),
                     (Z, _) => status.save_state(None),
                     (M, false) => do_query(status, Query::RecentMemos),
-                    (M, true) => {
+                    (N, false) => {
                         use attalus::hardware::z80::Reg16::PC;
                         let pc = status.master_system().reg16(PC);
-                        do_query(status, Query::Disassemble(pc));
+                        do_query(status, Query::DisassemblyAt(pc));
                     }
+                    (N, true) => do_query(status, Query::Disassembly),
                     (H, false) => do_command(status, Command::Hold),
                     (H, true) => do_command(status, Command::Resume),
                     _ => {}

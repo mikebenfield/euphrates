@@ -234,7 +234,7 @@ impl fmt::Display for Address<Reg16> {
 
 impl fmt::Display for Address<u16> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = format!("({:<#06x})", self.0);
+        let s = format!("({:0<4X})", self.0);
         f.pad(&s)
     }
 }
@@ -244,7 +244,7 @@ pub struct Shift(pub Reg16, pub i8);
 
 impl fmt::Display for Shift {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = format!("({}{:<+#07x})", self.0, self.1);
+        let s = format!("({}{:<+07X})", self.0, self.1);
         f.pad(&s)
     }
 }

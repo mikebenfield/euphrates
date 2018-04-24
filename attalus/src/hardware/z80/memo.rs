@@ -1,5 +1,5 @@
 use std;
-use std::fmt;
+use std::fmt::{self, Display};
 
 use utilities;
 
@@ -17,7 +17,7 @@ pub enum Opcode {
     FourBytes([u8; 4]),
 }
 
-impl fmt::Display for Opcode {
+impl Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
         use std::fmt::Write;
         let slice: &[u8] = match self {
@@ -48,7 +48,7 @@ pub enum Parameter {
     Cc(ConditionCode),
 }
 
-impl fmt::Display for Parameter {
+impl Display for Parameter {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
         match *self {
             Parameter::Reg8(x) => x.fmt(f),
@@ -56,9 +56,9 @@ impl fmt::Display for Parameter {
             Parameter::Shift(x) => x.fmt(f),
             Parameter::AddressReg16(x) => x.fmt(f),
             Parameter::AddressU16(x) => x.fmt(f),
-            Parameter::U8(x) => f.pad(&format!("{:<#04x}", x)),
-            Parameter::I8(x) => f.pad(&format!("{:<+#05x}", x)),
-            Parameter::U16(x) => f.pad(&format!("{:<#06x}", x)),
+            Parameter::U8(x) => f.pad(&format!("{:<02X}", x)),
+            Parameter::I8(x) => f.pad(&format!("{:<+03X}", x)),
+            Parameter::U16(x) => f.pad(&format!("{:<04X}", x)),
             Parameter::Cc(x) => x.fmt(f),
         }
     }
@@ -136,7 +136,7 @@ pub enum Mnemonic {
     Otdr,
 }
 
-impl fmt::Display for Mnemonic {
+impl Display for Mnemonic {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
         let s = format!("{:?}", self);
         let lower = s.to_lowercase();
@@ -152,7 +152,30 @@ pub enum FullMnemonic {
     ThreeParameters(Mnemonic, Parameter, Parameter, Parameter),
 }
 
-impl fmt::Display for FullMnemonic {
+impl FullMnemonic {
+    /// If this instruction is a jump with a fixed target, what is the target
+    /// (that is, the PC it will jump to).
+    pub fn jump_target(&self, pc: u16) -> Option<u16> {
+        use self::FullMnemonic::*;
+        use self::Mnemonic::*;
+        use self::Parameter::*;
+        match *self {
+            OneParameter(Jp, U16(nn)) => Some(nn),
+            TwoParameters(Jp, _, U16(nn)) => Some(nn),
+            OneParameter(Jr, I8(e)) => Some(pc.wrapping_add(e as i16 as u16)),
+            TwoParameters(Jr, _, I8(e)) => Some(pc.wrapping_add(e as i16 as u16)),
+            OneParameter(Djnz, I8(e)) => Some(pc.wrapping_add(e as i16 as u16)),
+            OneParameter(Call, U16(nn)) => Some(nn),
+            TwoParameters(Call, _, U16(nn)) => Some(nn),
+            OneParameter(Rst, U16(p)) => Some(p),
+            _ => None,
+            // There are also instructions JP (HL), JP (IX), and JP (IY), but we
+            // can't statically compute their targets
+        }
+    }
+}
+
+impl Display for FullMnemonic {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
         let s = match self {
             &FullMnemonic::ZeroParameters(f) => format!("{}", f),
@@ -163,6 +186,37 @@ impl fmt::Display for FullMnemonic {
             }
         };
         f.pad(&s)
+    }
+}
+
+/// An instruction with a labelled target.
+///
+/// This exists only for its `Display` implementation. It will render, for
+/// instance, the instruction djnz -bc like `djnz L_1234[-bc]`, where "L_1234"
+/// is the label you provided.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct TargetMnemonic<'a> {
+    pub full_mnemonic: FullMnemonic,
+    pub target_label: &'a str,
+}
+
+impl<'a> Display for TargetMnemonic<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
+        use self::FullMnemonic::*;
+        use self::Mnemonic::*;
+        use self::Parameter::*;
+        let label = self.target_label;
+        match self.full_mnemonic {
+            OneParameter(Jp, U16(nn)) => format!("jp {} [{:0>4X}]", label, nn).fmt(f),
+            TwoParameters(Jp, x, U16(nn)) => format!("jp {}, {}[{:0>4X}]", x, label, nn).fmt(f),
+            OneParameter(Jr, I8(e)) => format!("jr {} [{:0>+03X}]", label, e).fmt(f),
+            TwoParameters(Jr, x, I8(e)) => format!("jr {}, {} [{:0>+03X}]", x, label, e).fmt(f),
+            OneParameter(Djnz, I8(e)) => format!("djnz {} [{:0>+03X}]", label, e).fmt(f),
+            OneParameter(Call, U16(nn)) => format!("call {} [{:0>4X}]", label, nn).fmt(f),
+            TwoParameters(Call, x, U16(nn)) => format!("call {}, {}[{:0>4X}]", x, label, nn).fmt(f),
+            OneParameter(Rst, U16(p)) => format!("rst {} [{:0>4X}]", label, p).fmt(f),
+            x => x.fmt(f),
+        }
     }
 }
 
@@ -446,6 +500,15 @@ macro_rules! function_to_mnemonic {
 }
 
 impl Opcode {
+    pub fn len(&self) -> usize {
+        match *self {
+            Opcode::OneByte(_) => 1,
+            Opcode::TwoBytes(_) => 2,
+            Opcode::ThreeBytes(_) => 3,
+            Opcode::FourBytes(_) => 4,
+        }
+    }
+
     pub fn from_payload(payload: [u8; 8]) -> Opcode {
         let bytes = payload[2];
         match bytes {
@@ -849,7 +912,7 @@ pub mod manifests {
         let payload2: [u8; 8] = unsafe { transmute(payload) };
         let reg: Reg8 = unsafe { transmute(payload2[0]) };
         format!(
-            "register: {}, new value: {:0>2x}, old value: {:0>2x}",
+            "register: {}, new value: {:0>2X}, old value: {:0>2X}",
             reg, payload2[1], payload2[2]
         )
     }
@@ -869,7 +932,7 @@ pub mod manifests {
         let payload2: [u16; 4] = unsafe { transmute(payload) };
         let reg: Reg16 = unsafe { transmute(payload2[0] as u8) };
         format!(
-            "register: {}, new value: {:0>4x}, old value: {:0>4x}",
+            "register: {}, new value: {:0>4X}, old value: {:0>4X}",
             reg, payload2[1], payload2[2]
         )
     }
@@ -895,7 +958,7 @@ pub mod manifests {
             Some(mnemonic) => format!("{}", mnemonic),
         };
 
-        format!(" -- {:0>4x} -- {:11} -- {}", pc, opcode, mnemonic_string)
+        format!(" -- {:0>4X} -- {:11} -- {}", pc, opcode, mnemonic_string)
     }
 
     static INSTRUCTION_MANIFEST: Manifest = Manifest {
