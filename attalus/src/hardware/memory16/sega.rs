@@ -605,11 +605,29 @@ pub trait MasterSystemMemory: Sized {
 }
 
 impl MasterSystemMemory for SegaMemoryMap {
-    fn new(rom: &[u8]) -> Result<Self> {
+    fn new(mut rom: &[u8]) -> Result<Self> {
         if rom.len() == 0 || rom.len() > 0x400000 {
             Err(SimpleKind(format!(
                 "Invalid Sega Master System ROM size 0x{:0>X} \
                  (should be a nonzero and no larger than 0x400000)",
+                rom.len()
+            )))?
+        }
+
+        // Some ROMs have a 512 byte header that shouldn't be there. This
+        // apparently is due to a piece of dumping hardware called the Super
+        // Magic Drive. So for any ROM of size an odd multiple of 512 bytes,
+        // just strip off that header.
+        if (rom.len() / 512) & 1 != 0 {
+            rom = &rom[512..];
+        }
+
+        // I'm not certain whether the SMS actually has this restriction,
+        // but I don't know what to do with smaller ROMs.
+        if rom.len() < 0x4000 {
+            Err(SimpleKind(format!(
+                "Invalid Sega Master System ROM size 0x{:0>X} \
+                 (should be at least 16 KiB)",
                 rom.len()
             )))?
         }
@@ -621,34 +639,14 @@ impl MasterSystemMemory for SegaMemoryMap {
         // XXX I need to experiment and figure out what to do with
         // strange ROM sizes.
 
-        let rom_size = rom.len() as u32;
-        println!("initial rom size {:X}", rom_size);
-
-        let correct_rom_size = {
-            let floor_log = 31 - rom_size.leading_zeros();
-            let ceil_log = if rom_size <= 1 << floor_log {
-                floor_log
-            } else {
-                floor_log + 1
-            };
-            1 << ceil_log
-        };
-
-        println!("correct rom size {:X}", correct_rom_size);
-        memory.resize(correct_rom_size, 0);
-
-        // push the system RAM
-        memory.resize(correct_rom_size + 0x2000, 0);
-
-        // let memory_len = memory.len();
-        // memory.resize(memory_len + rom.len() - correct_rom_size, 0);
+        memory.resize(rom.len() + 0x2000, 0);
 
         // There are several different versions of this Sega Memory Mapper. For
         // most of them, the initial values of these registers are undefined,
         // but for the 315-5235, there were fixed initial values. I'd like to
         // just always use those values, but they need at least 3 sega-pages of
         // ROM. If we don't have that, just put everything to 0.
-        let (reg_fffc, reg_fffd, reg_fffe, reg_ffff) = if correct_rom_size >= 3 * 0x4000 {
+        let (reg_fffc, reg_fffd, reg_fffe, reg_ffff) = if rom.len() >= 3 * 0x4000 {
             (0, 0, 1, 2)
         } else {
             (0, 0, 0, 0)
@@ -657,7 +655,7 @@ impl MasterSystemMemory for SegaMemoryMap {
         // XXX
         let rom_impl_pages = (rom.len() / 0x400) as u16;
 
-        let pages = if correct_rom_size >= 3 * 0x4000 {
+        let pages = if rom.len() >= 3 * 0x4000 {
             [
                 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
                 [
