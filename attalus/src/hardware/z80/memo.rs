@@ -208,7 +208,7 @@ impl<'a> Display for TargetMnemonic<'a> {
         let label = self.target_label;
         match self.full_mnemonic {
             OneParameter(Jp, U16(nn)) => format!("jp {} [{:0>4X}]", label, nn).fmt(f),
-            TwoParameters(Jp, x, U16(nn)) => format!("jp {}, {}[{:0>4X}]", x, label, nn).fmt(f),
+            TwoParameters(Jp, x, U16(nn)) => format!("jp {}, {} [{:0>4X}]", x, label, nn).fmt(f),
             OneParameter(Jr, I8(e)) => format!("jr {} [{:0>+03X}]", label, e).fmt(f),
             TwoParameters(Jr, x, I8(e)) => format!("jr {}, {} [{:0>+03X}]", x, label, e).fmt(f),
             OneParameter(Djnz, I8(e)) => format!("djnz {} [{:0>+03X}]", label, e).fmt(f),
