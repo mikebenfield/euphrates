@@ -175,15 +175,10 @@ impl DebuggingInbox {
     /// Find the PC pointing at the instruction immediately before pc, if it exists
     fn back_1(&self, pc: u16) -> Option<u16> {
         for i in 1..5 {
-            if pc < i {
-                return None;
-            }
-            match (self.instructions[(pc - i) as usize].opcode, i) {
-                (Some(Opcode::OneByte(_)), 1) => return Some(pc - i),
-                (Some(Opcode::TwoBytes(_)), 2) => return Some(pc - i),
-                (Some(Opcode::ThreeBytes(_)), 3) => return Some(pc - i),
-                (Some(Opcode::FourBytes(_)), 4) => return Some(pc - i),
-                _ => {}
+            if let Some(opcode) = self.instructions[pc.wrapping_sub(i) as usize].opcode {
+                if opcode.len() == i as usize {
+                    return Some(pc.wrapping_sub(i))
+                }
             }
         }
         return None;
