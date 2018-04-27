@@ -30,12 +30,14 @@ pub mod manifests {
 
     pub static OUTPUT: &'static Manifest = &OUTPUT_MANIFEST;
 
-    pub const BOGUS_OUTPUT: Manifest = Manifest {
+    static BOGUS_OUTPUT_MANIFEST: Manifest = Manifest {
         device: DEVICE,
         summary: "Bogus output",
         payload_type: U16,
         descriptions: Strings(&["address", "value"]),
     };
+
+    pub static BOGUS_OUTPUT: &'static Manifest = &BOGUS_OUTPUT_MANIFEST;
 }
 
 /// The IO system in the Sega Master Sytem 2.
@@ -166,10 +168,7 @@ where
     }
 
     fn output(s: &mut S, address: u16, value: u8) {
-        // s.receive(Memo::new(
-        //     Payload::U16([address, value as u16, 0, 0]),
-        //     manifests::OUTPUT,
-        // ));
+        manifests::OUTPUT.send(s, Payload::U16([address, value as u16, 0, 0]));
 
         let masked = (address & 0b11000001) as u8;
 
@@ -189,11 +188,7 @@ where
                 s.write_control(value);
             }
             _ => {
-                // writes to the remaining addresses have no effect
-                // s.receive(Memo::new(
-                //     Payload::U16([address, value as u16, 0, 0]),
-                //     manifests::BOGUS_OUTPUT,
-                // ));
+                manifests::BOGUS_OUTPUT.send(s, Payload::U16([address, value as u16, 0, 0]));
             }
         }
     }
