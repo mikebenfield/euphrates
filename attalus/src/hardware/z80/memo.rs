@@ -162,12 +162,14 @@ impl FullMnemonic {
         match *self {
             OneParameter(Jp, U16(nn)) => Some(nn),
             TwoParameters(Jp, _, U16(nn)) => Some(nn),
-            OneParameter(Jr, I8(e)) => Some(pc.wrapping_add(e as i16 as u16)),
-            TwoParameters(Jr, _, I8(e)) => Some(pc.wrapping_add(e as i16 as u16)),
-            OneParameter(Djnz, I8(e)) => Some(pc.wrapping_add(e as i16 as u16)),
             OneParameter(Call, U16(nn)) => Some(nn),
             TwoParameters(Call, _, U16(nn)) => Some(nn),
             OneParameter(Rst, U16(p)) => Some(p),
+            // For the following instructions, e is added to the PC as it is
+            // after the instruction is executed, so increase by 2
+            OneParameter(Jr, I8(e)) => Some(pc.wrapping_add(2 + e as i16 as u16)),
+            TwoParameters(Jr, _, I8(e)) => Some(pc.wrapping_add(2 + e as i16 as u16)),
+            OneParameter(Djnz, I8(e)) => Some(pc.wrapping_add(2 + e as i16 as u16)),
             _ => None,
             // There are also instructions JP (HL), JP (IX), and JP (IY), but we
             // can't statically compute their targets
