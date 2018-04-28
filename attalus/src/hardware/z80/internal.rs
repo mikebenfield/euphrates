@@ -29,6 +29,38 @@ pub const ZF: u8 = 1 << 6;
 /// Sign flag
 pub const SF: u8 = 1 << 7;
 
+/// A wrapper object implementing `Display`, so you can `format` any type
+/// implementing `Z80Internal`.
+///
+/// ```
+/// use attalus::hardware::z80::{Z80Display, Z80State};
+/// let z: Z80State = Default::default();
+/// format!("{}", Z80Display(&z));
+/// ```
+pub struct Z80Display<'a>(pub &'a Z80Internal);
+
+impl<'a> fmt::Display for Z80Display<'a>
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Reg8::*;
+        use self::Reg16::*;
+        write!(
+            f,
+            "SZYHXPNC  A   BC   DE   HL   IX   IY   SP   PC\n\
+             {:0>8b} {:0>2X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X}\n",
+            self.0.reg8(F),
+            self.0.reg8(A),
+            self.0.reg16(BC),
+            self.0.reg16(DE),
+            self.0.reg16(HL),
+            self.0.reg16(IX),
+            self.0.reg16(IY),
+            self.0.reg16(SP),
+            self.0.reg16(PC),
+        )
+    }
+}
+
 pub trait Z80Internal {
     fn cycles(&self) -> u64;
     fn set_cycles(&mut self, u64);
