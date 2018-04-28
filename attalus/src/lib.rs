@@ -9,7 +9,6 @@ extern crate bincode;
 
 pub mod memo;
 #[macro_use]
-mod macros;
 pub mod errors;
 #[macro_use]
 mod utilities;
