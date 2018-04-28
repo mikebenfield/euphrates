@@ -416,17 +416,7 @@ where
     debug_assert!(rom_len > 0);
 
     let rom_sega_page_count = rom_len / 0x4000;
-    // Is this the right thing to do?
-    // It's correct when `rom_sega_page_count` is a power of two, but who knows
-    // what happens in actual hardware when it's not?
-    let rom_sega_page = if rom_sega_page_count == 0 {
-        0
-    } else {
-        value as usize % rom_sega_page_count
-    };
-
-    // since `rom_sega_page` is smaller than 0x100, multiplying it by 16 still
-    // leaves it smaller than 0x1000, so 16 bits is plenty.
+    let rom_sega_page = value as usize % rom_sega_page_count;
     let rom_impl_page_count = (rom_len / 0x400) as u16;
     let rom_impl_page = (rom_sega_page * 0x10) as u16;
 
@@ -470,7 +460,7 @@ where
                     manifests::MAP_ROM.send(s, Payload::U16([reg, 2, 0, 0]));
                     let smm = s.as_mut();
                     for i in 0..16 {
-                        smm.pages_mut()[32 + i] = start_impl_page + i as u16 % rom_impl_page_count;
+                        smm.pages_mut()[32 + i] = start_impl_page + i as u16;
                     }
                 }
             };
@@ -517,8 +507,8 @@ where
         0xFFFF => {
             // sega-slot 2 control
             manifests::REGISTER_WRITE.send(s, Payload::U16([0xFFFF, value as u16, 0, 0]));
-            if s.as_ref().reg_ffff & 0b1000 == 0 {
-                // bit 3 of reg 0xFFFF is unset, so we do indeed map ROM
+            if s.as_ref().reg_fffc & 0b1000 == 0 {
+                // bit 3 of reg 0xFFFC is unset, so we do indeed map ROM
                 manifests::MAP_ROM.send(s, Payload::U16([rom_sega_page as u16, 2, 0, 0]));
                 let smm = s.as_mut();
                 for i in 0..16 {
@@ -632,12 +622,12 @@ impl MasterSystemMemory for SegaMemoryMap {
             )))?
         }
 
+        let rom_size = rom.len() - (rom.len() % 0x4000);
+        rom = &rom[0 .. rom_size];
+
         let mut memory = Vec::with_capacity(rom.len() + 0x2000);
 
         memory.extend(rom);
-
-        // XXX I need to experiment and figure out what to do with
-        // strange ROM sizes.
 
         memory.resize(rom.len() + 0x2000, 0);
 
