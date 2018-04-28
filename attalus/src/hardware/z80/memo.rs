@@ -27,9 +27,9 @@ impl Display for Opcode {
             &Opcode::FourBytes(ref x) => x,
         };
         let mut s = "".to_owned();
-        write!(s, "{:0<2X}", slice[0])?;
+        write!(s, "{:0>2X}", slice[0])?;
         for x in slice[1..].iter() {
-            write!(s, " {:0<2X}", x)?;
+            write!(s, " {:0>2X}", x)?;
         }
         f.pad(&s)
     }
@@ -56,9 +56,9 @@ impl Display for Parameter {
             Parameter::Shift(x) => x.fmt(f),
             Parameter::AddressReg16(x) => x.fmt(f),
             Parameter::AddressU16(x) => x.fmt(f),
-            Parameter::U8(x) => f.pad(&format!("{:<02X}", x)),
-            Parameter::I8(x) => f.pad(&format!("{:<+03X}", x)),
-            Parameter::U16(x) => f.pad(&format!("{:<04X}", x)),
+            Parameter::U8(x) => f.pad(&format!("{:>02X}", x)),
+            Parameter::I8(x) => f.pad(&format!("{:>+03X}", x)),
+            Parameter::U16(x) => f.pad(&format!("{:>04X}", x)),
             Parameter::Cc(x) => x.fmt(f),
         }
     }
