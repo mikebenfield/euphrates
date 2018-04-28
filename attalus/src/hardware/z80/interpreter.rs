@@ -588,15 +588,6 @@ where
     loop {
         match prefix {
             Prefix::NoPrefix => {
-                {
-                    // XXX
-                    // let pc = z.reg16(PC);
-                    // receive(z, Memo::ReadingPcToExecute(pc));
-                }
-                // XXX
-                // if z.holding() {
-                //     return;
-                // }
                 opcode = read_pc(z);
                 z.inc_r(1);
                 process_instructions!(instruction_noprefix, d, e, n, nn);
@@ -690,9 +681,6 @@ where
                 }
                 z.inc_cycles(4);
                 if z.cycles() >= cycles {
-                    // XXX - why was the line below here? doesn't seem to make
-                    // sense
-                    // z.as_mut().iff1 = z.as_ref().cycles;
                     return;
                 }
                 prefix = Prefix::NoPrefix;
@@ -730,9 +718,6 @@ where
                 }
                 z.inc_cycles(4);
                 if z.cycles() >= cycles {
-                    // XXX - why was the line below here? doesn't seem to make
-                    // sense
-                    // z.as_mut().iff1 = z.as_ref().cycles;
                     return;
                 }
                 prefix = Prefix::NoPrefix;
