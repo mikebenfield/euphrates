@@ -184,6 +184,11 @@ where
     fn set_interrupt_mode(s: &mut S, x: InterruptMode) {
         s.as_mut().set_interrupt_mode(x)
     }
+
+    #[inline]
+    fn z80_state(s: &S) -> Z80State {
+        *s.as_ref()
+    }
 }
 
 pub trait Savable {

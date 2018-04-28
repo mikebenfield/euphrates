@@ -39,11 +39,10 @@ pub const SF: u8 = 1 << 7;
 /// ```
 pub struct Z80Display<'a>(pub &'a Z80Internal);
 
-impl<'a> fmt::Display for Z80Display<'a>
-{
+impl<'a> fmt::Display for Z80Display<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Reg8::*;
         use self::Reg16::*;
+        use self::Reg8::*;
         write!(
             f,
             "SZYHXPNC  A   BC   DE   HL   IX   IY   SP   PC\n\
@@ -153,6 +152,41 @@ pub trait Z80Internal {
             self.clear_flag(PF);
         }
     }
+
+    #[inline]
+    fn z80_state(&self) -> Z80State {
+        let mut state = Z80State::default();
+        transfer_state(&mut state, self);
+        state
+    }
+}
+
+/// Copy all registers and state from `source` to `dest`.
+pub fn transfer_state<Z1, Z2>(dest: &mut Z1, source: &Z2)
+where
+    Z1: Z80Internal + ?Sized,
+    Z2: Z80Internal + ?Sized,
+{
+    use self::Reg8::*;
+    use self::Reg16::*;
+    dest.set_reg16(AF, source.reg16(AF));
+    dest.set_reg16(BC, source.reg16(BC));
+    dest.set_reg16(DE, source.reg16(DE));
+    dest.set_reg16(HL, source.reg16(HL));
+    dest.set_reg16(IX, source.reg16(IX));
+    dest.set_reg16(IY, source.reg16(IY));
+    dest.set_reg16(SP, source.reg16(SP));
+    dest.set_reg16(PC, source.reg16(PC));
+    dest.set_reg16(AF0, source.reg16(AF0));
+    dest.set_reg16(BC0, source.reg16(BC0));
+    dest.set_reg16(DE0, source.reg16(DE0));
+    dest.set_reg16(HL0, source.reg16(HL0));
+    dest.set_reg8(I, source.reg8(I));
+    dest.set_reg8(R, source.reg8(R));
+    dest.set_halted(source.halted());
+    dest.set_iff1(source.iff1());
+    dest.set_iff2(source.iff2());
+    dest.set_interrupt_mode(source.interrupt_mode());
 }
 
 pub trait Z80InternalImpler<S>
@@ -173,6 +207,38 @@ where
     fn set_iff2(&mut S, bool);
     fn interrupt_mode(&S) -> InterruptMode;
     fn set_interrupt_mode(&mut S, InterruptMode);
+
+    /// This exists in `Z80InternalImpler` in case implers have a more efficient
+    /// implementation than the default one in `Z80Internal`.
+    ///
+    /// But it has a default implementation in case they do not.
+    #[inline]
+    fn z80_state(s: &S) -> Z80State {
+        // Unfortunately since we don't have a bound of `Z80Internal` on `S`, we
+        // can't just call `transfer_state`.
+        use self::Reg8::*;
+        use self::Reg16::*;
+        let mut dest = Z80State::default();
+        dest.set_reg16(AF, Self::reg16(s, AF));
+        dest.set_reg16(BC, Self::reg16(s, BC));
+        dest.set_reg16(DE, Self::reg16(s, DE));
+        dest.set_reg16(HL, Self::reg16(s, HL));
+        dest.set_reg16(IX, Self::reg16(s, IX));
+        dest.set_reg16(IY, Self::reg16(s, IY));
+        dest.set_reg16(SP, Self::reg16(s, SP));
+        dest.set_reg16(PC, Self::reg16(s, PC));
+        dest.set_reg16(AF0, Self::reg16(s, AF0));
+        dest.set_reg16(BC0, Self::reg16(s, BC0));
+        dest.set_reg16(DE0, Self::reg16(s, DE0));
+        dest.set_reg16(HL0, Self::reg16(s, HL0));
+        dest.set_reg8(I, Self::reg8(s, I));
+        dest.set_reg8(R, Self::reg8(s, R));
+        dest.set_halted(Self::halted(s));
+        dest.set_iff1(Self::iff1(s));
+        dest.set_iff2(Self::iff2(s));
+        dest.set_interrupt_mode(Self::interrupt_mode(s));
+        dest
+    }
 }
 
 pub trait Z80InternalImpl {
@@ -181,7 +247,7 @@ pub trait Z80InternalImpl {
 
 impl<S> Z80Internal for S
 where
-    S: Z80InternalImpl,
+    S: Z80InternalImpl + ?Sized,
 {
     #[inline]
     fn cycles(&self) -> u64 {
