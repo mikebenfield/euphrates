@@ -13,8 +13,7 @@ use hardware::memory16::{Memory16, Memory16Impl};
 use hardware::sms_vdp::{SimpleSmsVdp, SimpleSmsVdpInternal, SmsVdp, SmsVdpImpl, SmsVdpInternal,
                         SmsVdpInternalImpl, SmsVdpState};
 use hardware::sn76489::{SimpleSn76489, Sn76489, Sn76489Impl, Sn76489InternalImpl};
-use hardware::z80::{self, Z80, Z80Impl, Z80Internal, Z80InternalImpl, Z80Interpreter, Z80Irq,
-                    Z80State};
+use hardware::z80::{Z80, Z80Impl, Z80Internal, Z80InternalImpl, Z80Interpreter, Z80Irq, Z80State};
 use host_multimedia::{SimpleAudio, SimpleColor, SimpleGraphics};
 use memo::{HoldableImpl, Inbox, InboxImpl, NothingInbox};
 use utilities::{self, TimeInfo};
@@ -154,7 +153,7 @@ struct SimpleSystem<I, M, A, G> {
     io: Sms2Io,
     sms_vdp: SmsVdpState,
     sn76489: SimpleSn76489,
-    interpreter: Z80Interpreter<z80::Safe>,
+    interpreter: Z80Interpreter,
 }
 
 pub trait MasterSystemResource<'a>
@@ -359,7 +358,7 @@ macro_rules! impl_as_ref {
 impl_as_ref!{Sms2Io, io}
 impl_as_ref!{SimpleSn76489, sn76489}
 impl_as_ref!{SmsVdpState, sms_vdp}
-impl_as_ref!{Z80Interpreter<z80::Safe>, interpreter}
+impl_as_ref!{Z80Interpreter, interpreter}
 impl_as_ref!{Z80State, z80}
 impl_as_ref!{TimeStatus, time_status}
 
@@ -490,7 +489,7 @@ impl<I, M, A, G> Z80Impl for SimpleSystem<I, M, A, G>
 where
     Self: Inbox + Z80Internal + Memory16 + Z80Irq,
 {
-    type Impler = Z80Interpreter<z80::Safe>;
+    type Impler = Z80Interpreter;
 }
 
 impl<I, M, A, G> Sn76489InternalImpl for SimpleSystem<I, M, A, G> {
