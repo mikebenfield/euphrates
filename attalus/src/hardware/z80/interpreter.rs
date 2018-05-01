@@ -538,7 +538,6 @@ where
             Prefix::Ddcb => {
                 d = read_pc(z) as i8;
                 opcode = read_pc(z);
-                // z.as_mut().inc_r();
                 process_instructions!(instruction_ddcb, d, e, n, nn);
                 panic!(
                     "Z80: can't happen: missing opcode DD CB {:0>2X} {:0>2X}",
@@ -548,67 +547,69 @@ where
             Prefix::Fdcb => {
                 d = read_pc(z) as i8;
                 opcode = read_pc(z);
-                // z.as_mut().inc_r();
                 process_instructions!(instruction_fdcb, d, e, n, nn);
                 panic!(
                     "Z80: can't happen: missing opcode FD CB {:0>2X} {:0>2X}",
                     d as u8, opcode
                 );
             }
-            Prefix::Dd => {
+
+            // Fd or Dd
+            _ => {
+                let starting_pc = z.reg16(PC).wrapping_sub(1);
+
+                // we need to handle the ridiculous possibility of multiple DD /
+                // FD codes in a row. Each of these increments the refresh
+                // register and takes 4 cycles (except the cycles consumed by
+                // the last one are already taken into account by
+                // `instruction_list.rs`.
+
+                // we enter the loop having read 1 DD or FD
+                // loop invariant: if we've read n DDs or FDs, we've done inc_r
+                // n times and inc_cycles n-1 times (the first inc_r comes from
+                // the NoPrefix branch)
+                loop {
+                    let pc = z.reg16(PC);
+                    if z.read(pc) != 0xFD && z.read(pc) != 0xDD {
+                        // great; an actual instruction
+                        break;
+                    }
+                    if z.cycles() >= cycles || pc == starting_pc {
+                        // we've either emulated enough cycles or wrapped around
+                        // with just DD/FD opcodes.
+                        // We can resume emulation at this point, but we've done
+                        // inc_r one too many times
+                        let r = z.reg8(R);
+                        z.set_reg8(R, 0xEF & r.wrapping_sub(1));
+                        return;
+                    }
+                    z.inc_cycles(4);
+                    z.inc_r(1);
+                    z.set_reg16(PC, pc.wrapping_add(1));
+                }
                 opcode = read_pc(z);
-                z.inc_r(1);
-                process_instructions!(instruction_dd, d, e, n, nn);
+                let pc = z.reg16(PC);
+                if z.read(pc.wrapping_sub(2)) == 0xDD {
+                    process_instructions!(instruction_dd, d, e, n, nn);
+                    if opcode == 0xCB {
+                        prefix = Prefix::Ddcb;
+                        continue;
+                    }
+                } else {
+                    process_instructions!(instruction_fd, d, e, n, nn);
+                    if opcode == 0xCB {
+                        prefix = Prefix::Fdcb;
+                        continue;
+                    }
+                }
+
+                // an ED instruction or one without a prefix, so count the
+                // cycles for the last DD/FD read
+                z.inc_cycles(4);
+
                 if opcode == 0xED {
                     prefix = Prefix::Ed;
                     continue;
-                }
-                if opcode == 0xCB {
-                    prefix = Prefix::Ddcb;
-                    continue;
-                }
-                if opcode == 0xDD {
-                    z.inc_cycles(4);
-                    prefix = Prefix::Dd;
-                    continue;
-                }
-                if opcode == 0xFD {
-                    z.inc_cycles(4);
-                    prefix = Prefix::Fd;
-                    continue;
-                }
-                z.inc_cycles(4);
-                if z.cycles() >= cycles {
-                    return;
-                }
-                prefix = Prefix::NoPrefix;
-                continue;
-            }
-            Prefix::Fd => {
-                opcode = read_pc(z);
-                z.inc_r(1);
-                process_instructions!(instruction_fd, d, e, n, nn);
-                if opcode == 0xED {
-                    prefix = Prefix::Ed;
-                    continue;
-                }
-                if opcode == 0xCB {
-                    prefix = Prefix::Fdcb;
-                    continue;
-                }
-                if opcode == 0xDD {
-                    z.inc_cycles(4);
-                    prefix = Prefix::Dd;
-                    continue;
-                }
-                if opcode == 0xFD {
-                    z.inc_cycles(4);
-                    prefix = Prefix::Fd;
-                    continue;
-                }
-                z.inc_cycles(4);
-                if z.cycles() >= cycles {
-                    return;
                 }
                 prefix = Prefix::NoPrefix;
                 continue;
