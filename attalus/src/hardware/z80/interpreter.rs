@@ -34,12 +34,7 @@ where
 
 fn run2<Z>(z: &mut Z, cycles: u64)
 where
-    Z: Z80Internal
-        + Z80Irq
-        + Inbox
-        + Io16
-        + Memory16
-        + ?Sized,
+    Z: Z80Internal + Z80Irq + Inbox + Io16 + Memory16 + ?Sized,
 {
     let mut opcode: u8;
     let mut n: u8;
@@ -114,23 +109,32 @@ where
         // more instruction and then set `iff1` to `true`.
         // We also need to check for multiple eis in a row.
         (ei, $t_states: expr $(,$arguments: tt)*) => {
-            apply_args!(ei, $($arguments),*);
             z.inc_cycles($t_states);
             let mut current_pc = z.reg16(PC);
             let initial_pc = current_pc.wrapping_sub(1);
+
+            // handle the case of multiple sequential ei instructions
             while z.read(current_pc) == 0xFB {
                 current_pc = current_pc.wrapping_add(1);
+
+                // If all of memory is filled with ei instructions, or if
+                // we've emulated enough cycles just reading eis...
+                if current_pc == initial_pc || z.cycles() >= cycles {
+                    return;
+                }
+
                 z.inc_cycles($t_states);
                 z.inc_r(1);
-                if current_pc == initial_pc {
-                    unimplemented!();
-                }
             }
             z.set_reg16(PC, current_pc);
             let current_cycles = z.cycles();
-            // XXX - Check for error return
+            z.set_iff1(false);
             run2(z, current_cycles + 1);
             z.set_iff1(true);
+
+            // we need to check interrupts ASAP; otherwise if a di instruction
+            // comes soon, and this is in a loop, we may never get our
+            // interrupts
             check_interrupts(z);
             check_return!();
             prefix = Prefix::NoPrefix;
@@ -615,12 +619,7 @@ where
 
 impl<S> Z80Impler<S> for Z80Interpreter
 where
-    S: Z80Internal
-        + Z80Irq
-        + Io16
-        + Memory16
-        + Inbox
-        + ?Sized,
+    S: Z80Internal + Z80Irq + Io16 + Memory16 + Inbox + ?Sized,
 {
     #[inline]
     fn run(s: &mut S, cycles: u64) {

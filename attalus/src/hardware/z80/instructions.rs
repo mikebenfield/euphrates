@@ -664,7 +664,7 @@ where
 /// The `ei` instruction leaves `iff1` in an intermediate state. A maskable
 /// interrupt may not happen until after the *following* instruction. This
 /// requires support from the emulator: calling this function is not sufficient
-/// to emulate `ei`.
+/// to accurately emulate `ei`.
 pub fn ei<Z>(z: &mut Z)
 where
     Z: Z80Internal + ?Sized,
