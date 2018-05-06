@@ -1,33 +1,48 @@
-#[macro_use]
-pub mod instruction_list;
-pub mod instructions;
-pub mod memo;
-mod interpreter;
-mod internal;
-mod irq;
-mod machine;
-mod state;
-
-pub use self::memo::Opcode;
-pub use self::irq::*;
-pub use self::internal::*;
-pub use self::interpreter::*;
-pub use self::machine::*;
-pub use self::state::*;
+//! The Z80 CPU.
 
 use std::fmt;
 
-/// The Z80's `iff1` flag determines whether maskable interrupts are accepted.
-///
-/// The instruction immediately after the `ei` (`enable interrupts`) instruction
-/// is still immune from interrupts, so there are 3 states.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum Iff1State {
-    On,
-    Off,
-    Ei,
-}
+#[macro_use]
+mod instruction_list;
+
+#[macro_use]
+mod macro_noprefix;
+#[macro_use]
+mod macro_cb;
+#[macro_use]
+mod macro_ed;
+#[macro_use]
+mod macro_dd;
+#[macro_use]
+mod macro_fd;
+#[macro_use]
+mod macro_ddcb;
+#[macro_use]
+mod macro_fdcb;
+
+mod emulator;
+pub mod instructions;
+mod internal;
+mod interrupt;
+mod io;
+mod irq;
+mod mem;
+mod memo;
+mod no;
+mod run;
+
+pub use self::emulator::*;
+pub use self::internal::*;
+pub use self::interrupt::*;
+pub use self::io::*;
+pub use self::irq::*;
+pub use self::mem::*;
+pub use self::memo::*;
+pub use self::no::*;
+pub use self::run::*;
+
+mod arithmetic_help;
+use self::arithmetic_help::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -109,7 +124,7 @@ pub enum Reg8 {
 
 impl fmt::Display for Reg8 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = match *self {
+        match *self {
             Reg8::B => "b",
             Reg8::C => "c",
             Reg8::D => "d",
@@ -136,8 +151,7 @@ impl fmt::Display for Reg8 {
             Reg8::PCH => "pch",
             Reg8::I => "i",
             Reg8::R => "r",
-        };
-        f.pad(s)
+        }.fmt(f)
     }
 }
 
@@ -160,7 +174,7 @@ pub enum Reg16 {
 
 impl fmt::Display for Reg16 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = match *self {
+        match *self {
             Reg16::BC => "bc",
             Reg16::DE => "de",
             Reg16::AF => "af",
@@ -173,8 +187,7 @@ impl fmt::Display for Reg16 {
             Reg16::IY => "iy",
             Reg16::SP => "sp",
             Reg16::PC => "pc",
-        };
-        f.pad(s)
+        }.fmt(f)
     }
 }
 
@@ -208,7 +221,7 @@ pub enum ConditionCode {
 
 impl fmt::Display for ConditionCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = match *self {
+        match *self {
             ConditionCode::NZcc => "nz",
             ConditionCode::Zcc => "z",
             ConditionCode::NCcc => "nc",
@@ -217,7 +230,51 @@ impl fmt::Display for ConditionCode {
             ConditionCode::PEcc => "pe",
             ConditionCode::Pcc => "p",
             ConditionCode::Mcc => "m",
-        };
+        }.fmt(f)
+    }
+}
+
+impl ConditionCode {
+    /// Is this condition true if the `F` register is given by the argument
+    /// `flags`?
+    #[inline]
+    pub fn check(self, flags: u8) -> bool {
+        match self {
+            ConditionCode::NZcc => flags & ZF == 0,
+            ConditionCode::Zcc => flags & ZF != 0,
+            ConditionCode::NCcc => flags & CF == 0,
+            ConditionCode::Ccc => flags & CF != 0,
+            ConditionCode::POcc => flags & PF == 0,
+            ConditionCode::PEcc => flags & PF != 0,
+            ConditionCode::Pcc => flags & SF == 0,
+            ConditionCode::Mcc => flags & SF != 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Address<T>(pub T);
+
+impl fmt::Display for Address<Reg16> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let s = format!("({})", self.0);
+        f.pad(&s)
+    }
+}
+
+impl fmt::Display for Address<u16> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let s = format!("({:0<4X})", self.0);
+        f.pad(&s)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Shift(pub Reg16, pub i8);
+
+impl fmt::Display for Shift {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let s = format!("({}{:<+07X})", self.0, self.1);
         f.pad(&s)
     }
 }

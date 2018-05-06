@@ -1,33 +1,64 @@
 use std::fmt;
 
-use hardware::memory16::Memory16;
-use utilities;
-
 use super::*;
 
 /// Carry flag
-pub const CF: u8 = 1 << 0;
+pub const CF: u8 = 0x01;
 
 /// Subtraction flag
-pub const NF: u8 = 1 << 1;
+pub const NF: u8 = 0x02;
 
 /// Parity/Overflow flag
-pub const PF: u8 = 1 << 2;
+pub const PF: u8 = 0x04;
 
 /// Undocumented flag
-pub const XF: u8 = 1 << 3;
+pub const XF: u8 = 0x08;
 
 /// Half carry flag
-pub const HF: u8 = 1 << 4;
+pub const HF: u8 = 0x10;
 
 /// Undocumented flag
-pub const YF: u8 = 1 << 5;
+pub const YF: u8 = 0x20;
 
 /// Zero flag
-pub const ZF: u8 = 1 << 6;
+pub const ZF: u8 = 0x40;
 
 /// Sign flag
-pub const SF: u8 = 1 << 7;
+pub const SF: u8 = 0x80;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum Prefix {
+    NoPrefix,
+    Cb,
+    Ed,
+    Dd,
+    Fd,
+    DdCb,
+    FdCb,
+    Halt,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum InterruptStatus {
+    /// If we're in the middle of emulation, no need to check interrupts before
+    /// the next instruction.
+    NoCheck,
+
+    /// Check interrupts before executing another instruction.
+    Check,
+
+    /// The last instruction executed was Ei, and this is how many cycles were
+    /// on the clock when it finished. Don't check interrupts now, but do check
+    /// them after the next instruction.
+    Ei(u64),
+}
+
+impl Default for InterruptStatus {
+    #[inline]
+    fn default() -> Self {
+        InterruptStatus::NoCheck
+    }
+}
 
 /// A wrapper object implementing `Display`, so you can `format` any type
 /// implementing `Z80Internal`.
@@ -43,8 +74,7 @@ impl<'a> fmt::Display for Z80Display<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Reg16::*;
         use self::Reg8::*;
-        write!(
-            f,
+        format_args!(
             "SZYHXPNC  A   BC   DE   HL   IX   IY   SP   PC\n\
              {:0>8b} {:0>2X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X}\n",
             self.0.reg8(F),
@@ -56,7 +86,7 @@ impl<'a> fmt::Display for Z80Display<'a> {
             self.0.reg16(IY),
             self.0.reg16(SP),
             self.0.reg16(PC),
-        )
+        ).fmt(f)
     }
 }
 
@@ -75,6 +105,12 @@ pub trait Z80Internal {
     fn set_iff2(&mut self, bool);
     fn interrupt_mode(&self) -> InterruptMode;
     fn set_interrupt_mode(&mut self, InterruptMode);
+
+    fn prefix(&self) -> Prefix;
+    fn set_prefix(&mut self, prefix: Prefix);
+
+    fn interrupt_status(&self) -> InterruptStatus;
+    fn set_interrupt_status(&mut self, interrupt_status: InterruptStatus);
 
     /// Increment the Z80's `cycles` by `x`.
     #[inline]
@@ -154,21 +190,21 @@ pub trait Z80Internal {
     }
 
     #[inline]
-    fn z80_state(&self) -> Z80State {
+    fn state(&self) -> Z80State {
         let mut state = Z80State::default();
         transfer_state(&mut state, self);
         state
     }
 }
 
-/// Copy all registers and state from `source` to `dest`.
+/// Transfer all registers from `source` into `dest`.
 pub fn transfer_state<Z1, Z2>(dest: &mut Z1, source: &Z2)
 where
     Z1: Z80Internal + ?Sized,
     Z2: Z80Internal + ?Sized,
 {
-    use self::Reg8::*;
     use self::Reg16::*;
+    use self::Reg8::*;
     dest.set_reg16(AF, source.reg16(AF));
     dest.set_reg16(BC, source.reg16(BC));
     dest.set_reg16(DE, source.reg16(DE));
@@ -187,370 +223,309 @@ where
     dest.set_iff1(source.iff1());
     dest.set_iff2(source.iff2());
     dest.set_interrupt_mode(source.interrupt_mode());
-}
-
-pub trait Z80InternalImpler<S>
-where
-    S: ?Sized,
-{
-    fn cycles(&S) -> u64;
-    fn set_cycles(&mut S, u64);
-    fn reg8(&S, reg8: Reg8) -> u8;
-    fn set_reg8(&mut S, reg8: Reg8, x: u8);
-    fn reg16(&S, reg16: Reg16) -> u16;
-    fn set_reg16(&mut S, reg16: Reg16, x: u16);
-    fn halted(&S) -> bool;
-    fn set_halted(&mut S, bool);
-    fn iff1(&S) -> bool;
-    fn set_iff1(&mut S, bool);
-    fn iff2(&S) -> bool;
-    fn set_iff2(&mut S, bool);
-    fn interrupt_mode(&S) -> InterruptMode;
-    fn set_interrupt_mode(&mut S, InterruptMode);
-
-    /// This exists in `Z80InternalImpler` in case implers have a more efficient
-    /// implementation than the default one in `Z80Internal`.
-    ///
-    /// But it has a default implementation in case they do not.
-    #[inline]
-    fn z80_state(s: &S) -> Z80State {
-        // Unfortunately since we don't have a bound of `Z80Internal` on `S`, we
-        // can't just call `transfer_state`.
-        use self::Reg8::*;
-        use self::Reg16::*;
-        let mut dest = Z80State::default();
-        dest.set_reg16(AF, Self::reg16(s, AF));
-        dest.set_reg16(BC, Self::reg16(s, BC));
-        dest.set_reg16(DE, Self::reg16(s, DE));
-        dest.set_reg16(HL, Self::reg16(s, HL));
-        dest.set_reg16(IX, Self::reg16(s, IX));
-        dest.set_reg16(IY, Self::reg16(s, IY));
-        dest.set_reg16(SP, Self::reg16(s, SP));
-        dest.set_reg16(PC, Self::reg16(s, PC));
-        dest.set_reg16(AF0, Self::reg16(s, AF0));
-        dest.set_reg16(BC0, Self::reg16(s, BC0));
-        dest.set_reg16(DE0, Self::reg16(s, DE0));
-        dest.set_reg16(HL0, Self::reg16(s, HL0));
-        dest.set_reg8(I, Self::reg8(s, I));
-        dest.set_reg8(R, Self::reg8(s, R));
-        dest.set_halted(Self::halted(s));
-        dest.set_iff1(Self::iff1(s));
-        dest.set_iff2(Self::iff2(s));
-        dest.set_interrupt_mode(Self::interrupt_mode(s));
-        dest
-    }
+    dest.set_prefix(source.prefix());
+    dest.set_interrupt_status(source.interrupt_status());
 }
 
 pub trait Z80InternalImpl {
-    type Impler: Z80InternalImpler<Self>;
+    type Impler: Z80Internal + ?Sized;
+
+    fn close<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&Self::Impler) -> T;
+
+    fn close_mut<F, T>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&mut Self::Impler) -> T;
 }
 
-impl<S> Z80Internal for S
+impl<T> Z80Internal for T
 where
-    S: Z80InternalImpl + ?Sized,
+    T: Z80InternalImpl + ?Sized,
 {
     #[inline]
     fn cycles(&self) -> u64 {
-        S::Impler::cycles(self)
+        self.close(|z| z.cycles())
     }
 
     #[inline]
     fn set_cycles(&mut self, x: u64) {
-        S::Impler::set_cycles(self, x);
+        self.close_mut(|z| z.set_cycles(x))
     }
 
     #[inline]
     fn reg8(&self, reg8: Reg8) -> u8 {
-        S::Impler::reg8(self, reg8)
+        self.close(|z| z.reg8(reg8))
     }
 
     #[inline]
     fn set_reg8(&mut self, reg8: Reg8, x: u8) {
-        S::Impler::set_reg8(self, reg8, x)
+        self.close_mut(|z| z.set_reg8(reg8, x))
     }
 
     #[inline]
     fn reg16(&self, reg16: Reg16) -> u16 {
-        S::Impler::reg16(self, reg16)
+        self.close(|z| z.reg16(reg16))
     }
 
     #[inline]
     fn set_reg16(&mut self, reg16: Reg16, x: u16) {
-        S::Impler::set_reg16(self, reg16, x)
+        self.close_mut(|z| z.set_reg16(reg16, x))
     }
 
     #[inline]
     fn halted(&self) -> bool {
-        S::Impler::halted(&self)
+        self.close(|z| z.halted())
     }
 
     #[inline]
     fn set_halted(&mut self, x: bool) {
-        S::Impler::set_halted(self, x)
+        self.close_mut(|z| z.set_halted(x))
     }
 
     #[inline]
     fn iff1(&self) -> bool {
-        S::Impler::iff1(self)
+        self.close(|z| z.iff1())
     }
 
     #[inline]
     fn set_iff1(&mut self, x: bool) {
-        S::Impler::set_iff1(self, x)
+        self.close_mut(|z| z.set_iff1(x))
     }
 
     #[inline]
     fn iff2(&self) -> bool {
-        S::Impler::iff2(self)
+        self.close(|z| z.iff2())
     }
 
     #[inline]
     fn set_iff2(&mut self, x: bool) {
-        S::Impler::set_iff2(self, x)
+        self.close_mut(|z| z.set_iff2(x))
     }
 
     #[inline]
     fn interrupt_mode(&self) -> InterruptMode {
-        S::Impler::interrupt_mode(self)
+        self.close(|z| z.interrupt_mode())
     }
 
     #[inline]
     fn set_interrupt_mode(&mut self, x: InterruptMode) {
-        S::Impler::set_interrupt_mode(self, x)
+        self.close_mut(|z| z.set_interrupt_mode(x))
     }
-}
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Address<T>(pub T);
-
-impl fmt::Display for Address<Reg16> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = format!("({})", self.0);
-        f.pad(&s)
-    }
-}
-
-impl fmt::Display for Address<u16> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = format!("({:0<4X})", self.0);
-        f.pad(&s)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Shift(pub Reg16, pub i8);
-
-impl fmt::Display for Shift {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = format!("({}{:<+07X})", self.0, self.1);
-        f.pad(&s)
-    }
-}
-
-/// An aspect of the Z80 that we can view, like a register or a memory address.
-///
-/// This trait (and `Changeable`) exists so that we may implement an instruction
-/// like `ld x, y` with a single generic function, although `x` and `y` may be
-/// memory addresses or registers.
-pub trait Viewable<Output, Z: ?Sized>: Copy {
-    fn view(self, z: &mut Z) -> Output;
-}
-
-/// An aspect of the Z80 that we can change, like a register or a memory address.
-///
-/// This trait (and `Viewable`) exists so that we may implement an instruction
-/// like `ld x, y` with a single generic function, although `x` and `y` may be
-/// memory addresses or registers.
-pub trait Changeable<Output, Z: ?Sized>: Viewable<Output, Z> {
-    fn change(self, z: &mut Z, x: Output);
-}
-
-impl<Z: ?Sized> Viewable<u8, Z> for u8 {
     #[inline]
-    fn view(self, _z: &mut Z) -> u8 {
-        self
+    fn prefix(&self) -> Prefix {
+        self.close(|z| z.prefix())
+    }
+
+    #[inline]
+    fn set_prefix(&mut self, prefix: Prefix) {
+        self.close_mut(|z| z.set_prefix(prefix))
+    }
+
+    #[inline]
+    fn interrupt_status(&self) -> InterruptStatus {
+        self.close(|z| z.interrupt_status())
+    }
+
+    #[inline]
+    fn set_interrupt_status(&mut self, interrupt_status: InterruptStatus) {
+        self.close_mut(|z| z.set_interrupt_status(interrupt_status))
+    }
+
+    #[inline]
+    fn inc_cycles(&mut self, x: u64) {
+        self.close_mut(|z| z.inc_cycles(x))
+    }
+
+    #[inline]
+    fn inc_r(&mut self, x: u8) {
+        self.close_mut(|z| z.inc_r(x))
+    }
+
+    #[inline]
+    fn is_set_flag(&self, x: u8) -> bool {
+        self.close(|z| z.is_set_flag(x))
+    }
+
+    #[inline]
+    fn set_flag(&mut self, x: u8) {
+        self.close_mut(|z| z.set_flag(x))
+    }
+
+    #[inline]
+    fn clear_flag(&mut self, x: u8) {
+        self.close_mut(|z| z.clear_flag(x))
+    }
+
+    #[inline]
+    fn set_flag_by(&mut self, x: u8, y: bool) {
+        self.close_mut(|z| z.set_flag_by(x, y))
+    }
+
+    #[inline]
+    fn set_sign(&mut self, x: u8) {
+        self.close_mut(|z| z.set_sign(x))
+    }
+
+    #[inline]
+    fn set_zero(&mut self, x: u8) {
+        self.close_mut(|z| z.set_zero(x))
+    }
+
+    #[inline]
+    fn set_parity(&mut self, x: u8) {
+        self.close_mut(|z| z.set_parity(x))
+    }
+
+    #[inline]
+    fn state(&self) -> Z80State {
+        self.close(|z| z.state())
     }
 }
 
-impl<Z: ?Sized> Viewable<u16, Z> for u16 {
-    #[inline]
-    fn view(self, _z: &mut Z) -> u16 {
-        self
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Z80State {
+    pub cycles: u64,
+    pub registers: [u16; 13],
+    pub halted: bool,
+    /// iff1 is bit 0; iff2 is bit 1
+    pub iff: u8,
+    pub prefix: Prefix,
+    pub interrupt_status: InterruptStatus,
+    pub interrupt_mode: InterruptMode,
+}
+
+impl Default for Z80State {
+    fn default() -> Self {
+        let mut z80 = Z80State {
+            cycles: 0,
+            registers: Default::default(),
+            halted: false,
+            iff: 0,
+            prefix: Prefix::NoPrefix,
+            interrupt_status: Default::default(),
+            interrupt_mode: Default::default(),
+        };
+        z80.set_reg16(Reg16::IX, 0xFFFF);
+        z80.set_reg16(Reg16::IY, 0xFFFF);
+        z80
     }
 }
 
-impl<Z> Viewable<u8, Z> for Reg8
-where
-    Z: Z80Internal + ?Sized,
-{
-    #[inline]
-    fn view(self, z: &mut Z) -> u8 {
-        z.reg8(self)
+impl fmt::Display for Z80State {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Z80Display(self).fmt(f)
     }
 }
 
-impl<Z> Changeable<u8, Z> for Reg8
-where
-    Z: Z80Internal + ?Sized,
-{
+impl Z80Internal for Z80State {
     #[inline]
-    fn change(self, z: &mut Z, x: u8) {
-        z.set_reg8(self, x);
+    fn cycles(&self) -> u64 {
+        self.cycles
     }
-}
 
-impl<Z> Viewable<u16, Z> for Reg16
-where
-    Z: Z80Internal + ?Sized,
-{
     #[inline]
-    fn view(self, z: &mut Z) -> u16 {
-        z.reg16(self)
+    fn set_cycles(&mut self, x: u64) {
+        self.cycles = x;
     }
-}
 
-impl<Z> Changeable<u16, Z> for Reg16
-where
-    Z: Z80Internal + ?Sized,
-{
     #[inline]
-    fn change(self, z: &mut Z, x: u16) {
-        z.set_reg16(self, x);
+    fn reg8(&self, reg8: Reg8) -> u8 {
+        use std::mem::transmute;
+        let byte_array: &[u8; 26] = unsafe { transmute(&self.registers) };
+        unsafe { *byte_array.get_unchecked(reg8 as usize) }
     }
-}
 
-impl<Z> Viewable<u16, Z> for Address<Reg16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
     #[inline]
-    fn view(self, z: &mut Z) -> u16 {
-        let addr = self.0.view(z);
-        let lo = z.read(addr);
-        let hi = z.read(addr.wrapping_add(1));
-        utilities::to16(lo, hi)
-    }
-}
-
-impl<Z> Changeable<u16, Z> for Address<Reg16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn change(self, z: &mut Z, x: u16) {
-        let addr = self.0.view(z);
-        let (lo, hi) = utilities::to8(x);
-        z.write(addr, lo);
-        z.write(addr.wrapping_add(1), hi);
-    }
-}
-
-impl<Z> Viewable<u8, Z> for Address<Reg16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn view(self, z: &mut Z) -> u8 {
-        let addr = self.0.view(z);
-        z.read(addr)
-    }
-}
-
-impl<Z> Changeable<u8, Z> for Address<Reg16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn change(self, z: &mut Z, x: u8) {
-        let addr = self.0.view(z);
-        z.write(addr, x);
-    }
-}
-
-impl<Z> Viewable<u16, Z> for Address<u16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn view(self, z: &mut Z) -> u16 {
-        let addr = self.0;
-        let lo = z.read(addr);
-        let hi = z.read(addr.wrapping_add(1));
-        utilities::to16(lo, hi)
-    }
-}
-
-impl<Z> Changeable<u16, Z> for Address<u16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn change(self, z: &mut Z, x: u16) {
-        let addr = self.0;
-        let (lo, hi) = utilities::to8(x);
-        z.write(addr, lo);
-        z.write(addr.wrapping_add(1), hi);
-    }
-}
-
-impl<Z> Viewable<u8, Z> for Address<u16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn view(self, z: &mut Z) -> u8 {
-        z.read(self.0)
-    }
-}
-
-impl<Z> Changeable<u8, Z> for Address<u16>
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn change(self, z: &mut Z, x: u8) {
-        z.write(self.0, x);
-    }
-}
-
-impl<Z> Viewable<u8, Z> for Shift
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn view(self, z: &mut Z) -> u8 {
-        let addr = self.0.view(z).wrapping_add(self.1 as i16 as u16);
-        Address(addr).view(z)
-    }
-}
-
-impl<Z> Changeable<u8, Z> for Shift
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    #[inline]
-    fn change(self, z: &mut Z, x: u8) {
-        let addr = self.0.view(z).wrapping_add(self.1 as i16 as u16);
-        Address(addr).change(z, x);
-    }
-}
-
-impl<Z> Viewable<bool, Z> for ConditionCode
-where
-    Z: Z80Internal + ?Sized,
-{
-    #[inline]
-    fn view(self, z: &mut Z) -> bool {
-        let f = z.reg8(Reg8::F);
-        match self {
-            ConditionCode::NZcc => f & ZF == 0,
-            ConditionCode::Zcc => f & ZF != 0,
-            ConditionCode::NCcc => f & CF == 0,
-            ConditionCode::Ccc => f & CF != 0,
-            ConditionCode::POcc => f & PF == 0,
-            ConditionCode::PEcc => f & PF != 0,
-            ConditionCode::Pcc => f & SF == 0,
-            ConditionCode::Mcc => f & SF != 0,
+    fn set_reg8(&mut self, reg8: Reg8, x: u8) {
+        use std::mem::transmute;
+        let byte_array: &mut [u8; 26] = unsafe { transmute(&mut self.registers) };
+        unsafe {
+            *byte_array.get_unchecked_mut(reg8 as usize) = x;
         }
+    }
+
+    #[inline]
+    fn reg16(&self, reg16: Reg16) -> u16 {
+        unsafe { *self.registers.get_unchecked(reg16 as usize) }
+    }
+
+    #[inline]
+    fn set_reg16(&mut self, reg16: Reg16, x: u16) {
+        unsafe { *self.registers.get_unchecked_mut(reg16 as usize) = x }
+    }
+
+    #[inline]
+    fn halted(&self) -> bool {
+        self.halted
+    }
+
+    #[inline]
+    fn set_halted(&mut self, x: bool) {
+        self.halted = x;
+    }
+
+    #[inline]
+    fn iff1(&self) -> bool {
+        self.iff & 1 != 0
+    }
+
+    #[inline]
+    fn set_iff1(&mut self, x: bool) {
+        if x {
+            self.iff |= 1
+        } else {
+            self.iff &= 0xFE
+        }
+    }
+
+    #[inline]
+    fn iff2(&self) -> bool {
+        self.iff & 2 != 0
+    }
+
+    #[inline]
+    fn set_iff2(&mut self, x: bool) {
+        if x {
+            self.iff |= 2
+        } else {
+            self.iff &= 0xFD
+        }
+    }
+
+    #[inline]
+    fn interrupt_mode(&self) -> InterruptMode {
+        self.interrupt_mode
+    }
+
+    #[inline]
+    fn set_interrupt_mode(&mut self, x: InterruptMode) {
+        self.interrupt_mode = x;
+    }
+
+    #[inline]
+    fn prefix(&self) -> Prefix {
+        self.prefix
+    }
+
+    #[inline]
+    fn set_prefix(&mut self, prefix: Prefix) {
+        self.prefix = prefix
+    }
+
+    #[inline]
+    fn interrupt_status(&self) -> InterruptStatus {
+        self.interrupt_status
+    }
+
+    #[inline]
+    fn set_interrupt_status(&mut self, interrupt_status: InterruptStatus) {
+        self.interrupt_status = interrupt_status
+    }
+
+    #[inline]
+    fn state(&self) -> Z80State {
+        self.clone()
     }
 }

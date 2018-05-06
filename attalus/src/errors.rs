@@ -1,4 +1,3 @@
-
 use std::fmt::{self, Debug, Display};
 
 use failure::{Backtrace, Context, Fail};
@@ -8,8 +7,7 @@ pub trait Kind: Display + Send + Sync + Debug + Clone + PartialEq + 'static {}
 #[derive(Debug)]
 pub struct Error<K: Kind>(Context<K>);
 
-impl<K: Kind> Display for Error<K>
-{
+impl<K: Kind> Display for Error<K> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Display::fmt(&self.0, f)
     }
@@ -56,16 +54,11 @@ pub enum CommonKind {
 
 impl Kind for CommonKind {}
 
-impl Display for CommonKind
-{
+impl Display for CommonKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
-            &CommonKind::Dead(ref s) => {
-                format!("fatal error: {}", s)
-            }
-            &CommonKind::Live(ref s) => {
-                format!("error: {}", s)
-            }
+            &CommonKind::Dead(ref s) => format!("fatal error: {}", s),
+            &CommonKind::Live(ref s) => format!("error: {}", s),
         };
 
         Display::fmt(&s, f)

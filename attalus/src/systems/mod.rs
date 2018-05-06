@@ -1,1 +1,1 @@
-pub mod sega_master_system;
+pub mod sms;

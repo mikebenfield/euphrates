@@ -1,11 +1,31 @@
 pub trait Z80Irq {
     fn requesting_mi(&self) -> Option<u8>;
-    fn requesting_nmi(&self) -> bool;
+    fn requesting_nmi(&mut self) -> bool;
+}
 
-    /// The Z80 responds to nonmaskable interrupts due to the change in voltage
-    /// in the NMI pin from high to low, so it will not continually execute
-    /// interrupts when the voltage is held low. In software, that means we need
-    /// to tell the device the interrupt is being executed and to stop
-    /// requesting it.
-    fn clear_nmi(&mut self);
+pub trait Z80IrqImpl {
+    type Impler: Z80Irq + ?Sized;
+
+    fn close<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&Self::Impler) -> T;
+
+    fn close_mut<F, T>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&mut Self::Impler) -> T;
+}
+
+impl<T> Z80Irq for T
+where
+    T: Z80IrqImpl + ?Sized,
+{
+    #[inline]
+    fn requesting_mi(&self) -> Option<u8> {
+        self.close(|z| z.requesting_mi())
+    }
+
+    #[inline]
+    fn requesting_nmi(&mut self) -> bool {
+        self.close_mut(|z| z.requesting_nmi())
+    }
 }

@@ -1,4 +1,3 @@
-use std;
 use std::fmt::{self, Display};
 
 use utilities;
@@ -9,6 +8,30 @@ use self::ConditionCode::*;
 use self::Reg16::*;
 use self::Reg8::*;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum Z80Memo {
+    Instruction { pc: u16, opcode: Opcode },
+
+    MaskableInterrupt { mode: u8, byte: u8 },
+
+    NonmaskableInterrupt,
+}
+
+impl Display for Z80Memo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        use self::Z80Memo::*;
+        match *self {
+            NonmaskableInterrupt => "Nonmaskable interrupt".fmt(f),
+            MaskableInterrupt { mode, byte } => {
+                format_args!("Maskable interrupt: mode {}, byte: {:0>2X}", mode, byte).fmt(f)
+            }
+            Instruction { pc, opcode } => {
+                format_args!("Instruction {:0>4X}: {: <11}", pc, opcode).fmt(f)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Opcode {
     OneByte([u8; 1]),
@@ -18,20 +41,17 @@ pub enum Opcode {
 }
 
 impl Display for Opcode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
-        use std::fmt::Write;
-        let slice: &[u8] = match self {
-            &Opcode::OneByte(ref x) => x,
-            &Opcode::TwoBytes(ref x) => x,
-            &Opcode::ThreeBytes(ref x) => x,
-            &Opcode::FourBytes(ref x) => x,
-        };
-        let mut s = "".to_owned();
-        write!(s, "{:0>2X}", slice[0])?;
-        for x in slice[1..].iter() {
-            write!(s, " {:0>2X}", x)?;
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            &Opcode::OneByte(ref x) => format_args!("{:0>2X}", x[0]).fmt(f),
+            &Opcode::TwoBytes(ref x) => format_args!("{:0>2X} {:0>2X}", x[0], x[1]).fmt(f),
+            &Opcode::ThreeBytes(ref x) => {
+                format_args!("{:0>2X} {:0>2X} {:0>2X}", x[0], x[1], x[2]).fmt(f)
+            }
+            &Opcode::FourBytes(ref x) => {
+                format_args!("{:0>2X} {:0>2X} {:0>2X} {:0>2X}", x[0], x[1], x[2], x[3]).fmt(f)
+            }
         }
-        f.pad(&s)
     }
 }
 
@@ -49,7 +69,7 @@ pub enum Parameter {
 }
 
 impl Display for Parameter {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             Parameter::Reg8(x) => x.fmt(f),
             Parameter::Reg16(x) => x.fmt(f),
@@ -137,7 +157,7 @@ pub enum Mnemonic {
 }
 
 impl Display for Mnemonic {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let s = format!("{:?}", self);
         let lower = s.to_lowercase();
         f.pad(&lower)
@@ -178,7 +198,7 @@ impl FullMnemonic {
 }
 
 impl Display for FullMnemonic {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let s = match self {
             &FullMnemonic::ZeroParameters(f) => format!("{}", f),
             &FullMnemonic::OneParameter(f, p1) => format!("{} {}", f, p1),
@@ -203,7 +223,7 @@ pub struct TargetMnemonic<'a> {
 }
 
 impl<'a> Display for TargetMnemonic<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use self::FullMnemonic::*;
         use self::Mnemonic::*;
         use self::Parameter::*;
@@ -758,7 +778,7 @@ impl Opcode {
         macro_rules! find_code {
             // rst needs to be handled separately, as it's the only one with a u16 literal and
             // this is an easy way to distinguish it from a u8 literal
-            ([$code:expr]; rst; [$arg:expr]; $t_states:expr; $is_undoc:expr) => {
+            ([$code:expr]; rst; [$arg:expr]; $req:ident; $t_states:expr; $is_undoc:expr) => {
                 if let &Opcode::OneByte(x) = self {
                     if $code == x[0] {
                         return Some(FullMnemonic::OneParameter(
@@ -768,7 +788,14 @@ impl Opcode {
                     }
                 }
             };
-            ([$code:expr,n,n]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
+            (
+                [$code:expr,n,n];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $req:ident;
+                $t_states:expr;
+                $is_undoc:expr
+            ) => {
                 if let &Opcode::ThreeBytes(x) = self {
                     if $code == x[0] {
                         nn = utilities::to16(x[1], x[2]);
@@ -776,7 +803,14 @@ impl Opcode {
                     }
                 }
             };
-            ([$code:expr,e]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
+            (
+                [$code:expr,e];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $req:ident;
+                $t_states:expr;
+                $is_undoc:expr
+            ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         e = x[1] as i8;
@@ -784,7 +818,14 @@ impl Opcode {
                     }
                 }
             };
-            ([$code:expr,d]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
+            (
+                [$code:expr,d];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $req:ident;
+                $t_states:expr;
+                $is_undoc:expr
+            ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         d = x[1] as i8;
@@ -792,7 +833,14 @@ impl Opcode {
                     }
                 }
             };
-            ([$code:expr,n]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
+            (
+                [$code:expr,n];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $req:ident;
+                $t_states:expr;
+                $is_undoc:expr
+            ) => {
                 if let &Opcode::TwoBytes(x) = self {
                     if $code == x[0] {
                         n = x[1];
@@ -804,6 +852,7 @@ impl Opcode {
                 [$code1:expr, $code2:expr,n];
                 $mnemonic:ident;
                 $arg_list:tt;
+                $req:ident;
                 $t_states:expr;
                 $is_undoc:expr
             ) => {
@@ -818,6 +867,7 @@ impl Opcode {
                 [$code1:expr, $code2:expr,d];
                 $mnemonic:ident;
                 $arg_list:tt;
+                $req:ident;
                 $t_states:expr;
                 $is_undoc:expr
             ) => {
@@ -832,6 +882,7 @@ impl Opcode {
                 [$code1:expr, $code2:expr,d,n];
                 $mnemonic:ident;
                 $arg_list:tt;
+                $req:ident;
                 $t_states:expr;
                 $is_undoc:expr
             ) => {
@@ -847,6 +898,7 @@ impl Opcode {
                 [$code1:expr, $code2:expr,n,n];
                 $mnemonic:ident;
                 $arg_list:tt;
+                $req:ident;
                 $t_states:expr;
                 $is_undoc:expr
             ) => {
@@ -861,6 +913,7 @@ impl Opcode {
                 [$code1:expr, $code2:expr,d, $code3:expr];
                 $mnemonic:ident;
                 $arg_list:tt;
+                $req:ident;
                 $t_states:expr;
                 $is_undoc:expr
             ) => {
@@ -871,7 +924,14 @@ impl Opcode {
                     }
                 }
             };
-            ([$code:expr]; $mnemonic:ident; $arg_list:tt; $t_states:expr; $is_undoc:expr) => {
+            (
+                [$code:expr];
+                $mnemonic:ident;
+                $arg_list:tt;
+                $req:ident;
+                $t_states:expr;
+                $is_undoc:expr
+            ) => {
                 if let &Opcode::OneByte(x) = self {
                     if $code == x[0] {
                         return Some(make_full_mnemonic!($mnemonic, $arg_list));
@@ -882,6 +942,7 @@ impl Opcode {
                 [$code1:expr, $code2:expr];
                 $mnemonic:ident;
                 $arg_list:tt;
+                $req:ident;
                 $t_states:expr;
                 $is_undoc:expr
             ) => {
@@ -893,112 +954,8 @@ impl Opcode {
             };
         }
 
-        process_instructions!(find_code, d, e, n, nn);
+        attalus_process_instructions!(find_code, d, e, n, nn);
 
         return None;
     }
-}
-
-pub mod manifests {
-    use self::Descriptions::*;
-    use self::PayloadType::*;
-    use super::super::{Reg16, Reg8};
-    use super::Opcode;
-    use memo::{Descriptions, Manifest, PayloadType};
-
-    pub const DEVICE: &'static str = &"Z80";
-
-    fn reg8_changed_description(payload: u64) -> String {
-        use std::mem::transmute;
-
-        let payload2: [u8; 8] = unsafe { transmute(payload) };
-        let reg: Reg8 = unsafe { transmute(payload2[0]) };
-        format!(
-            "register: {}, new value: {:0>2X}, old value: {:0>2X}",
-            reg, payload2[1], payload2[2]
-        )
-    }
-
-    static REG8_CHANGED_MANIFEST: Manifest = Manifest {
-        device: DEVICE,
-        summary: "8 bit register changed",
-        payload_type: U8,
-        descriptions: Function(reg8_changed_description),
-    };
-
-    pub static REG8_CHANGED: &'static Manifest = &REG8_CHANGED_MANIFEST;
-
-    fn reg16_changed_description(payload: u64) -> String {
-        use std::mem::transmute;
-
-        let payload2: [u16; 4] = unsafe { transmute(payload) };
-        let reg: Reg16 = unsafe { transmute(payload2[0] as u8) };
-        format!(
-            "register: {}, new value: {:0>4X}, old value: {:0>4X}",
-            reg, payload2[1], payload2[2]
-        )
-    }
-
-    pub const REG16_CHANGED: &'static Manifest = &Manifest {
-        device: DEVICE,
-        summary: "16 bit register changed",
-        payload_type: U16,
-        descriptions: Function(reg16_changed_description),
-    };
-
-    fn instruction_description(payload: u64) -> String {
-        use std::mem::transmute;
-
-        let payload2: [u8; 8] = unsafe { transmute(payload) };
-
-        let pc_array: [u8; 2] = [payload2[0], payload2[1]];
-        let pc: u16 = unsafe { transmute(pc_array) };
-
-        let opcode = Opcode::from_payload(payload2);
-        let mnemonic_string = match opcode.mnemonic() {
-            None => "(Unknown opcode)".to_owned(),
-            Some(mnemonic) => format!("{}", mnemonic),
-        };
-
-        format!(" -- {:0>4X} -- {:11} -- {}", pc, opcode, mnemonic_string)
-    }
-
-    static INSTRUCTION_MANIFEST: Manifest = Manifest {
-        device: DEVICE,
-        summary: "Instruction",
-        payload_type: U8,
-        descriptions: Function(instruction_description),
-    };
-
-    /// Two bytes_MANIFEST: PC, native endianness
-    /// One byte: number of bytes in the instruction
-    /// One to four bytes: the opcode
-    pub static INSTRUCTION: &'static Manifest = &INSTRUCTION_MANIFEST;
-
-    static MASKABLE_INTERRUPT_DENIED_MANIFEST: Manifest = Manifest {
-        device: DEVICE,
-        summary: "Maskable interrupt denied",
-        payload_type: U64,
-        descriptions: Strings(&[]),
-    };
-
-    pub static MASKABLE_INTERRUPT_DENIED: &'static Manifest = &MASKABLE_INTERRUPT_DENIED_MANIFEST;
-
-    static MASKABLE_INTERRUPT_ALLOWED_MANIFEST: Manifest = Manifest {
-        device: DEVICE,
-        summary: "Maskable interrupt allowed",
-        payload_type: U64,
-        descriptions: Strings(&[]),
-    };
-
-    pub static MASKABLE_INTERRUPT_ALLOWED: &'static Manifest = &MASKABLE_INTERRUPT_ALLOWED_MANIFEST;
-
-    static NONMASKABLE_INTERRUPT_MANIFEST: Manifest = Manifest {
-        device: DEVICE,
-        summary: "Nonmaskable interrupt",
-        payload_type: U64,
-        descriptions: Strings(&[]),
-    };
-
-    pub static NONMASKABLE_INTERRUPT: &'static Manifest = &NONMASKABLE_INTERRUPT_MANIFEST;
 }

@@ -3,13 +3,13 @@
 const MAX_BYTES: u64 = 0x10000000; // 256 MiB
 
 use std;
-use std::path::Path;
-use std::io::{Read, Write};
 use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
 use failure::Error;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use bincode;
 
@@ -48,7 +48,8 @@ where
 }
 
 pub fn deserialize<'a, T>(bytes: &'a [u8]) -> Result<T>
-where T: Deserialize<'a>
+where
+    T: Deserialize<'a>,
 {
     bincode::config()
         .limit(MAX_BYTES)
@@ -66,7 +67,6 @@ where
         .deserialize_from(reader)
         .map_err(|e| format_err!("Deserialization error {}", e))
 }
-
 
 pub fn deserialize_at<P, T>(path: P) -> Result<T>
 where

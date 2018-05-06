@@ -6,42 +6,46 @@ extern crate clap;
 extern crate failure;
 extern crate sdl2;
 
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
 use failure::Error;
 use sdl2::Sdl;
 
-use attalus::hardware::z80::Z80Internal;
-use attalus::save;
-use attalus::systems::sega_master_system::{self, MasterSystem, MasterSystemResource,
-                                           MasterSystemState, Recording, SimpleMultimediaResource};
-use attalus_sdl2::master_system_user_interface;
+use attalus::hardware::sn76489::Sn76489State;
+use attalus::systems::sms::{
+    self, MasterSystem, MasterSystemCreate, MemoryMapperType, Recording, SmsMemoryState,
+};
+
+use attalus_sdl2::sms_user_interface;
 use attalus_sdl2::{simple_audio::Audio, simple_graphics::Window};
 
 type Result<T> = std::result::Result<T, Error>;
 
 fn new_master_system(
-    state: MasterSystemState,
+    filename: &str,
     sdl: &Sdl,
-    frequency: sega_master_system::Frequency,
+    memory_mapper_type: MemoryMapperType,
     debug: bool,
-) -> Result<Box<MasterSystem<SimpleMultimediaResource<Audio, Window>>>> {
-    let audio = attalus_sdl2::simple_audio::Audio::new(&sdl)?;
+    frequency: Option<u64>,
+) -> Result<Box<MasterSystem>> {
+    let audio = Audio::new(&sdl)?;
 
-    let mut graphics = attalus_sdl2::simple_graphics::Window::new(&sdl)?;
+    let mut graphics = Window::new(&sdl)?;
     graphics.set_size(768, 576);
     graphics.set_texture_size(256, 192);
     graphics.set_title("Attalus");
 
-    Ok(SimpleMultimediaResource {
-        graphics,
-        audio,
-        debug,
-        frequency,
-    }.create(state, Default::default()))
+    Ok(
+        MasterSystemCreate::<Sn76489State, SmsMemoryState>::from_file(
+            filename,
+            graphics,
+            audio,
+            memory_mapper_type,
+            debug,
+            frequency,
+        )?,
+    )
 }
 
 fn run_rom(matches: &ArgMatches) -> Result<()> {
@@ -53,117 +57,105 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
     };
     let debug = matches.value_of("debug").unwrap() == "true";
 
-    let rom = {
-        let mut contents = Vec::new();
-        File::open(&filename)?.read_to_end(&mut contents)?;
-        contents
-    };
-
     let sdl = sdl2::init().unwrap();
 
-    let state = if memory_map == "sega" {
-        MasterSystemState::new_with_sega_memory_map(&rom)?
-    } else {
-        MasterSystemState::new_with_codemasters_memory_map(&rom)?
-    };
+    let master_system = new_master_system(
+        filename,
+        &sdl,
+        if memory_map == "sega" {
+            MemoryMapperType::Sega
+        } else {
+            MemoryMapperType::Codemasters
+        },
+        debug,
+        Some(sms::NTSC_Z80_FREQUENCY),
+    )?;
 
-    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc, debug)?;
-
-    let mut user_interface =
-        master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
+    let mut user_interface = sms_user_interface::ui(master_system, &sdl, save_directory, &[]);
     user_interface.run()?;
 
     Ok(())
 }
 
 fn run_playback(matches: &ArgMatches) -> Result<()> {
-    use std::time::Instant;
+    unimplemented!()
+    // use std::time::Instant;
 
-    let load_filename = matches.value_of("loadfile").unwrap();
+    // let load_filename = matches.value_of("loadfile").unwrap();
 
-    let sdl = sdl2::init().unwrap();
+    // let sdl = sdl2::init().unwrap();
 
-    let recording: Recording<MasterSystemState> = save::deserialize_at(&load_filename)?;
+    // let recording: Recording<SmsState> = save::deserialize_at(&load_filename)?;
 
-    let master_system = new_master_system(
-        recording.state,
-        &sdl,
-        sega_master_system::Frequency::Unlimited,
-        false,
-    )?;
+    // let master_system = new_master_system(recording.state, &sdl, None, false)?;
 
-    let mut user_interface = attalus_sdl2::master_system_user_interface::playback_ui(
-        master_system,
-        &recording.player_statuses,
-    )?;
+    // let mut user_interface =
+    //     attalus_sdl2::sms_user_interface::playback_ui(master_system, &recording.player_statuses)?;
 
-    let start_cycles = Z80Internal::cycles(user_interface.master_system());
-    let start_time = Instant::now();
+    // let start_cycles = Z80Internal::cycles(user_interface.master_system());
+    // let start_time = Instant::now();
 
-    user_interface.run()?;
+    // user_interface.run()?;
 
-    let end_cycles = Z80Internal::cycles(user_interface.master_system());
-    let end_time = Instant::now();
+    // let end_cycles = Z80Internal::cycles(user_interface.master_system());
+    // let end_time = Instant::now();
 
-    let time = end_time.duration_since(start_time);
+    // let time = end_time.duration_since(start_time);
 
-    let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
-    println!("Total cycles: {}", end_cycles - start_cycles);
-    println!("Time: {} secs", sec_time);
-    println!(
-        "Frequency: {} Hz",
-        (end_cycles - start_cycles) as f64 / sec_time
-    );
+    // let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
+    // println!("Total cycles: {}", end_cycles - start_cycles);
+    // println!("Time: {} secs", sec_time);
+    // println!(
+    //     "Frequency: {} Hz",
+    //     (end_cycles - start_cycles) as f64 / sec_time
+    // );
 
-    Ok(())
+    // Ok(())
 }
 
 fn run_load(matches: &ArgMatches) -> Result<()> {
-    let load_filename = matches.value_of("loadfile").unwrap();
-    let save_directory = match matches.value_of("savedirectory") {
-        None => None,
-        Some(s) => Some(PathBuf::from(s)),
-    };
-    let debug = matches.value_of("debug").unwrap() == "true";
+    unimplemented!()
 
-    let sdl = sdl2::init().unwrap();
+    // let load_filename = matches.value_of("loadfile").unwrap();
+    // let save_directory = match matches.value_of("savedirectory") {
+    //     None => None,
+    //     Some(s) => Some(PathBuf::from(s)),
+    // };
+    // let debug = matches.value_of("debug").unwrap() == "true";
 
-    let state: MasterSystemState = save::deserialize_at(&load_filename)?;
+    // let sdl = sdl2::init().unwrap();
 
-    let master_system = new_master_system(state, &sdl, sega_master_system::Frequency::Ntsc, debug)?;
+    // let state: SmsState = save::deserialize_at(&load_filename)?;
 
-    let mut user_interface =
-        master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
+    // let master_system = new_master_system(state, &sdl, sms::NTSC_Z80_FREQUENCY, debug)?;
 
-    user_interface.run()?;
+    // let mut user_interface = sms_user_interface::ui(master_system, &sdl, save_directory, &[])?;
 
-    Ok(())
+    // user_interface.run()?;
+
+    // Ok(())
 }
 
 fn run_record(matches: &ArgMatches) -> Result<()> {
-    let load_filename = matches.value_of("loadfile").unwrap();
-    let save_directory = match matches.value_of("savedirectory") {
-        None => None,
-        Some(s) => Some(PathBuf::from(s)),
-    };
-    let debug = matches.value_of("debug").unwrap() == "true";
+    unimplemented!()
 
-    let sdl = sdl2::init().unwrap();
+    // let load_filename = matches.value_of("loadfile").unwrap();
+    // let save_directory = match matches.value_of("savedirectory") {
+    //     None => None,
+    //     Some(s) => Some(PathBuf::from(s)),
+    // };
+    // let debug = matches.value_of("debug").unwrap() == "true";
 
-    let recording: Recording<MasterSystemState> = save::deserialize_at(&load_filename)?;
-    let master_system = new_master_system(
-        recording.state,
-        &sdl,
-        sega_master_system::Frequency::Ntsc,
-        debug,
-    )?;
+    // let sdl = sdl2::init().unwrap();
 
-    let mut user_interface =
-        master_system_user_interface::ui(master_system, &sdl, save_directory, &[])?;
+    // let recording: Recording<SmsState> = save::deserialize_at(&load_filename)?;
+    // let master_system = new_master_system(recording.state, &sdl, sms::NTSC_Z80_FREQUENCY, debug)?;
 
-    user_interface.run()?;
+    // let mut user_interface = sms_user_interface::ui(master_system, &sdl, save_directory, &[])?;
 
-    Ok(())
+    // user_interface.run()?;
+
+    // Ok(())
 }
 
 fn run() -> Result<()> {

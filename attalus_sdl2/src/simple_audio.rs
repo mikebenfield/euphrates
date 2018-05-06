@@ -77,8 +77,14 @@ impl SimpleAudio for Audio {
         Ok(())
     }
 
-    fn buffer(&mut self) -> &mut [i16] {
-        &mut self.buffer
+    #[inline]
+    fn buffer_set(&mut self, i: usize, value: i16) {
+        self.buffer[i] = value
+    }
+
+    #[inline]
+    fn buffer_len(&self) -> usize {
+        self.buffer.len()
     }
 
     fn queue_buffer(&mut self) -> std::result::Result<(), failure::Error> {

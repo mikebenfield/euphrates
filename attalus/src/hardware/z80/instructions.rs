@@ -1,1371 +1,1579 @@
-use memo::{Inbox, Payload};
-use hardware::io16::Io16;
+use memo::Inbox;
+
 use hardware::memory16::Memory16;
 
 use super::*;
-use super::InterruptMode::*;
-use super::Reg16::*;
-use super::Reg8::*;
-use super::ConditionCode;
-use super::memo::manifests;
-use utilities;
 
-/// Most of the functions in the rotate and shift group have similar addressing modes,
-/// implementations, and flag behavior, so we write a macro to generate the
-/// required functions in each case.
-macro_rules! rotate_shift_functions_noa_impl {
-    ($fn_impl: ident $fn_impl2: ident
-    $fn_general: ident $fn_store: ident) => {
-        fn $fn_impl2<Z, T1>(z: &mut Z, arg: T1) -> u8
-        where
-            Z: Z80Internal + ?Sized,
-            T1: Changeable<u8, Z>,
-        {
-            let a = arg.view(z);
-            let result = $fn_impl(z, a);
-            arg.change(z, result);
-            z.clear_flag(HF | NF);
-            result
-        }
+use self::ConditionCode::*;
+use self::Reg16::*;
+use self::Reg8::*;
 
-        pub fn $fn_general<Z, T1>(z: &mut Z, arg: T1)
-        where
-            Z: Z80Internal + ?Sized,
-            T1: Changeable<u8, Z>,
-        {
-            let result = $fn_impl2(z, arg);
-            z.set_parity(result);
-            z.set_sign(result);
-            z.set_zero(result);
-        }
+macro_rules! process_argument {
+    ($nn:tt, $n:tt, $d:tt, $e:tt,n) => {
+        $n
+    };
+    ($nn:tt, $n:tt, $d:tt, $e:tt,nn) => {
+        $nn
+    };
+    ($nn:tt, $n:tt, $d:tt, $e:tt,d) => {
+        $d
+    };
+    ($nn:tt, $n:tt, $d:tt, $e:tt,e) => {
+        $e
+    };
+    ($nn:tt, $n:tt, $d:tt, $e:tt,(nn)) => {
+        Address($nn)
+    };
+    ($nn:tt, $n:tt, $d:tt, $e:tt,($reg:ident + d)) => {
+        Shift($reg, $d)
+    };
+    ($nn:tt, $n:tt, $d:tt, $e:tt,($address:expr)) => {
+        Address($address)
+    };
+    ($nn:tt, $n:tt, $d:tt, $e:tt, $arg:expr) => {
+        $arg
+    };
+}
 
-        pub fn $fn_store<Z, T1>(z: &mut Z, arg: T1, store: Reg8)
-        where
-            Z: Z80Internal + ?Sized,
-            T1: Changeable<u8, Z>,
-        {
-            let result = $fn_impl2(z, arg);
-            z.set_parity(result);
-            z.set_sign(result);
-            z.set_zero(result);
-            store.change(z, result);
-        }
+macro_rules! process_arguments {
+    ($self_: ident,
+     $mnemonic: ident,
+     $nn: tt,
+     $n: tt,
+     $d: tt,
+     $e: tt,
+     ($($args: tt),*)
+    ) => {
+        $self_.
+        $mnemonic
+        (
+            $(
+                process_argument!($nn, $n, $d, $e, $args)
+            ),*
+        )
     }
 }
 
-macro_rules! rotate_shift_functions_impl {
-    ($fn_impl: ident $fn_impl2: ident $fn_general: ident
-    $fn_store: ident $fn_a: ident) => {
-        pub fn $fn_a<Z>(z: &mut Z)
-        where
-            Z: Z80Internal + ?Sized
-        {
-            $fn_impl2(z, A);
-        }
-        rotate_shift_functions_noa_impl!{$fn_impl $fn_impl2 $fn_general $fn_store}
+#[inline]
+fn send_instruction_memo<Z>(z: &mut Z, instruction_start: u16, instruction_after: u16)
+where
+    Z: Memory16 + Inbox + ?Sized,
+    Z::Memo: From<Z80Memo>,
+{
+    if !z.active() {
+        return;
+    }
+
+    let opcode = match instruction_after.wrapping_sub(instruction_start) {
+        1 => Opcode::OneByte([z.read(instruction_start)]),
+        2 => Opcode::TwoBytes([
+            z.read(instruction_start),
+            z.read(instruction_start.wrapping_add(1)),
+        ]),
+        3 => Opcode::ThreeBytes([
+            z.read(instruction_start),
+            z.read(instruction_start.wrapping_add(1)),
+            z.read(instruction_start.wrapping_add(2)),
+        ]),
+        4 => Opcode::FourBytes([
+            z.read(instruction_start),
+            z.read(instruction_start.wrapping_add(1)),
+            z.read(instruction_start.wrapping_add(2)),
+            z.read(instruction_start.wrapping_add(3)),
+        ]),
+        _ => panic!("opcode more than 4 bytes?"),
+    };
+
+    // make sure this is a real instruction and not just a prefix
+    match opcode {
+        Opcode::OneByte([0xFD]) => {}
+        Opcode::OneByte([0xDD]) => {}
+        Opcode::OneByte([0xED]) => {}
+        Opcode::OneByte([0xCB]) => {}
+        Opcode::TwoBytes([0xFD, 0xCB]) => {}
+        Opcode::TwoBytes([0xDD, 0xCB]) => {}
+        _ => z.receive(From::from(Z80Memo::Instruction {
+            pc: instruction_start,
+            opcode,
+        })),
     }
 }
 
-pub fn rst<Z>(z: &mut Z, p: u16)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let sp = SP.view(z);
-    let pch = PCH.view(z);
-    let pcl = PCL.view(z);
-    Address(sp.wrapping_sub(1)).change(z, pch);
-    Address(sp.wrapping_sub(2)).change(z, pcl);
-    SP.change(z, sp.wrapping_sub(2));
-    PC.change(z, p);
-}
+macro_rules! process_instruction {
+    // instructions jrcc, jpcc, callcc, retcc, lddr, ldir, indr, inir otdr,
+    // otir, cpdr, and cpir take a variable number of cycles depending on
+    // whether their condition is met
+    (@block
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            ;
+            $mnemonic: ident () ;
+            xx ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
 
-pub fn nonmaskable_interrupt<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Z80Irq + Inbox + ?Sized,
-{
-    // The Z80 manual implies that IFF2 is set to IFF1, but this
-    // is false (see Young 5.3)
-    manifests::NONMASKABLE_INTERRUPT.send(z, Payload::U64([0]));
-    z.inc_r(1);
-    z.set_iff1(false);
-    z.clear_nmi();
-    z.inc_cycles(11);
-    if z.halted() {
-        let pc = PC.view(z);
-        PC.change(z, pc.wrapping_add(1));
-    }
-    rst(z, 0x66);
-}
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc,
+            );
 
-pub fn maskable_interrupt<Z>(z: &mut Z, x: u8) -> bool
-where
-    Z: Z80Internal + Memory16 + Z80Irq + Inbox + ?Sized,
-{
-    if z.iff1() {
-        manifests::MASKABLE_INTERRUPT_ALLOWED.send(z, Payload::U64([0]));
-
-        z.inc_r(1);
-
-        z.set_iff1(false);
-        z.set_iff2(false);
-
-        if z.halted() {
-            let pc = PC.view(z);
-            PC.change(z, pc.wrapping_add(1));
-        }
-
-        let im = z.interrupt_mode();
-        match im {
-            Im1 => {
-                rst(z, 0x38);
-                z.inc_cycles(13);
+            self.$mnemonic();
+            if self.reg16(BC) == 0 {
+                self.inc_cycles(16);
+            } else {
+                self.inc_cycles(21);
             }
-            Im2 => {
-                let i = I.view(z);
-                let new_pc = utilities::to16(x, i);
-                rst(z, new_pc);
-                z.inc_cycles(19);
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            e ;
+            jrcc ($cc: ident, e) ;
+            xx ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+            let e = self.read(pc) as i8;
+            self.set_reg16(PC, pc.wrapping_add(1));
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc.wrapping_add(1),
+            );
+
+            self.jrcc($cc, e);
+            if $cc.view(self) {
+                self.inc_cycles(12);
+            } else {
+                self.inc_cycles(7);
             }
-            _ => unimplemented!(),
         }
-        true
-    } else {
-        manifests::MASKABLE_INTERRUPT_DENIED.send(z, Payload::U64([0]));
-        false
-    }
-}
-
-//// 8-Bit Load Group
-/////////////////////
-
-pub fn ld<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + ?Sized,
-    T1: Changeable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let val = arg2.view(z);
-    arg1.change(z, val);
-}
-
-// XXX text about interrupts in manual
-pub fn ld_ir<Z>(z: &mut Z, arg1: Reg8, arg2: Reg8)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let val = arg2.view(z);
-    arg1.change(z, val);
-    let iff2 = z.iff2();
-    z.set_sign(val);
-    z.set_zero(val);
-    z.clear_flag(NF | HF);
-    z.set_flag_by(PF, iff2);
-}
-
-//// 16-Bit Load Group
-//////////////////////
-
-pub fn ld16<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + ?Sized,
-    T1: Changeable<u16, Z>,
-    T2: Viewable<u16, Z>,
-{
-    let val = arg2.view(z);
-    arg1.change(z, val);
-}
-
-pub fn push<Z>(z: &mut Z, reg: Reg16)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let (lo, hi) = utilities::to8(reg.view(z));
-    let sp = SP.view(z);
-    Address(sp.wrapping_sub(1)).change(z, hi);
-    Address(sp.wrapping_sub(2)).change(z, lo);
-    SP.change(z, sp.wrapping_sub(2));
-}
-
-pub fn pop<Z>(z: &mut Z, reg: Reg16)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let sp = SP.view(z);
-    let lo = Address(sp).view(z);
-    let hi = Address(sp.wrapping_add(1)).view(z);
-    reg.change(z, utilities::to16(lo, hi));
-    SP.change(z, sp.wrapping_add(2));
-}
-
-//// Exchange, Block Transfer, and Search Group
-///////////////////////////////////////////////
-
-pub fn ex<Z, T1>(z: &mut Z, reg1: T1, reg2: Reg16)
-where
-    Z: Z80Internal + ?Sized,
-    T1: Changeable<u16, Z>,
-{
-    let val1 = reg1.view(z);
-    let val2 = reg2.view(z);
-    reg1.change(z, val2);
-    reg2.change(z, val1);
-}
-
-pub fn exx<Z>(z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-    for &(reg1, reg2) in [(BC, BC0), (DE, DE0), (HL, HL0)].iter() {
-        let val1 = reg1.view(z);
-        let val2 = reg2.view(z);
-        reg1.change(z, val2);
-        reg2.change(z, val1);
-    }
-}
-
-pub fn ldid<Z>(z: &mut Z, inc: u16)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let hl = HL.view(z);
-    let de = DE.view(z);
-    let bc = BC.view(z);
-
-    let phl = Viewable::<u8, Z>::view(Address(hl), z);
-    Address(de).change(z, phl);
-
-    HL.change(z, hl.wrapping_add(inc));
-    DE.change(z, de.wrapping_add(inc));
-    BC.change(z, bc.wrapping_sub(1));
-
-    z.clear_flag(HF | NF);
-    z.set_flag_by(PF, bc != 1);
-}
-
-pub fn ldi<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    ldid(z, 1);
-}
-
-pub fn ldd<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    ldid(z, 0xFFFF);
-}
-
-pub fn ldir<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    loop {
-        ldi(z);
-        if BC.view(z) == 0 {
-            z.inc_cycles(17);
-            return;
-        }
-        z.inc_cycles(21);
-
-        // check the possibility that we have overwritten our own opcode
-        let pc = PC.view(z);
-        let apc1 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(2)), z);
-        let apc2 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(1)), z);
-        if apc1 != 0xED || apc2 != 0xB0 {
-            PC.change(z, pc.wrapping_sub(2));
-            return;
-        }
-        z.inc_r(2);
-    }
-}
-
-pub fn lddr<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    loop {
-        ldd(z);
-        if BC.view(z) == 0 {
-            z.inc_cycles(17);
-            return;
-        }
-        z.inc_cycles(21);
-
-        // check the possibility that we have overwritten our own opcode
-        let pc = PC.view(z);
-        let apc1 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(2)), z);
-        let apc2 = Viewable::<u8, Z>::view(Address(pc.wrapping_sub(1)), z);
-        if apc1 != 0xED || apc2 != 0xB8 {
-            PC.change(z, pc.wrapping_sub(1));
-            return;
-        }
-        z.inc_r(2);
-    }
-}
-
-pub fn cpid<Z>(z: &mut Z, inc: u16)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let bc = BC.view(z);
-    let a = A.view(z);
-    let hl = HL.view(z);
-
-    let phl: u8 = Address(HL).view(z);
-    let result = a.wrapping_sub(phl);
-
-    HL.change(z, hl.wrapping_add(inc));
-    BC.change(z, bc.wrapping_sub(1));
-
-    z.set_sign(result);
-    z.set_zero(result);
-    z.set_flag_by(HF, phl & 0xF > a & 0xF);
-    z.set_flag_by(PF, bc != 1);
-    z.set_flag(NF);
-}
-
-pub fn cpi<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    cpid(z, 1);
-}
-
-pub fn cpir<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    while {
-        cpi(z);
-        z.inc_cycles(2);
-        BC.view(z) != 0 && !z.is_set_flag(ZF)
-    } {
-        // r was already incremented twice by `run`
-        z.inc_r(2);
-    }
-
-    z.inc_cycles(17);
-}
-
-pub fn cpd<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    cpid(z, 0xFFFF);
-}
-
-pub fn cpdr<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    while {
-        cpd(z);
-        z.inc_cycles(21);
-        BC.view(z) != 0 && !z.is_set_flag(ZF)
-    } {
-        // r was already incremented twice by `run`
-        z.inc_r(2);
-    }
-
-    z.inc_cycles(17);
-}
-
-//// 8-Bit Arithmetic Group
-///////////////////////////
-
-fn add_impl<Z>(z: &mut Z, a: u8, x: u8, cf: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    // XXX optimize?
-    let result16 = (x as u16).wrapping_add(a as u16).wrapping_add(cf as u16);
-    let result8 = result16 as u8;
-
-    z.set_zero(result8);
-    z.set_sign(result8);
-
-    z.set_flag_by(CF, result16 & (1 << 8) != 0);
-
-    // carry from bit 3 happened if:
-    // x and a have same bit 4 AND result is set OR
-    // x and a have different bit 4 AND result is clear
-    let hf = (x ^ a ^ result8) & (1 << 4) != 0;
-    z.set_flag_by(HF, hf);
-
-    // overflow happened if:
-    // x and a both have bit 7 AND result does not OR
-    // x and a have clear bit 7 AND result is set
-    // in other words, x and y have the same bit 7 and
-    // result is different
-    let overflow = !(x ^ a) & (x ^ result8) & (1 << 7) != 0;
-    z.set_flag_by(PF, overflow);
-
-    z.clear_flag(NF);
-
-    result8
-}
-
-pub fn add<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let a = arg1.view(z);
-    let b = arg2.view(z);
-    let result = add_impl(z, a, b, 0);
-    arg1.change(z, result);
-}
-
-pub fn adc<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-    let a = arg1.view(z);
-    let x = arg2.view(z);
-    let result = add_impl(z, a, x, cf);
-    arg1.change(z, result);
-}
-
-fn sub_impl<Z>(z: &mut Z, a: u8, x: u8, cf: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    let result = add_impl(z, a, !x, 1 ^ cf);
-    let cf_set = z.is_set_flag(CF);
-    let hf_set = z.is_set_flag(HF);
-    z.set_flag_by(CF, !cf_set);
-    z.set_flag_by(HF, !hf_set);
-    z.set_flag(NF);
-    result
-}
-
-pub fn sub<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let a = arg1.view(z);
-    let x = arg2.view(z);
-    let result = sub_impl(z, a, x, 0);
-    arg1.change(z, result);
-}
-
-pub fn sbc<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-    let a = arg1.view(z);
-    let x = arg2.view(z);
-    let result = sub_impl(z, a, x, cf);
-    arg1.change(z, result);
-}
-
-fn andor_impl<Z>(z: &mut Z, result: u8)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    A.change(z, result);
-
-    // note that for AND and OR, the manual says PF is set according to whether
-    // there is overflow. I'm betting that is a mistake.
-    z.set_parity(result);
-    z.set_sign(result);
-    z.set_zero(result);
-    z.clear_flag(HF | NF | CF);
-}
-
-pub fn and<Z, T1>(z: &mut Z, arg: T1)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8, Z>,
-{
-    let result = arg.view(z) & A.view(z);
-    andor_impl(z, result);
-    z.set_flag(HF);
-}
-
-pub fn or<Z, T1>(z: &mut Z, arg: T1)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8, Z>,
-{
-    let result = arg.view(z) | A.view(z);
-    andor_impl(z, result);
-}
-
-pub fn xor<Z, T1>(z: &mut Z, arg: T1)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8, Z>,
-{
-    let result = arg.view(z) ^ A.view(z);
-    andor_impl(z, result);
-}
-
-pub fn cp<Z, T1>(z: &mut Z, arg: T1)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Viewable<u8, Z>,
-{
-    let x = arg.view(z);
-    let a = A.view(z);
-    // cp is like a subtraction whose result we ignore
-    sub_impl(z, a, x, 0);
-}
-
-pub fn inc<Z, T1>(z: &mut Z, arg: T1)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8, Z>,
-{
-    let x = arg.view(z);
-    let result = x.wrapping_add(1);
-    arg.change(z, result);
-    z.set_zero(result);
-    z.set_sign(result);
-    z.set_flag_by(HF, x & 0xF == 0xF);
-    z.set_flag_by(PF, x == 0x7F);
-    z.clear_flag(NF);
-}
-
-pub fn dec<Z, T1>(z: &mut Z, arg: T1)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-    T1: Changeable<u8, Z>,
-{
-    let x = arg.view(z);
-    let result = x.wrapping_sub(1);
-    arg.change(z, result);
-    z.set_zero(result);
-    z.set_sign(result);
-    z.set_flag_by(HF, x & 0xF == 0);
-    z.set_flag_by(PF, x == 0x80);
-    z.set_flag(NF);
-}
-
-//// General-Purpose Arithmetic and CPU Control Groups
-//////////////////////////////////////////////////////
-
-pub fn daa<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    // see the table in Young
-    let a = A.view(z);
-    let cf = z.is_set_flag(CF);
-    let hf = z.is_set_flag(HF);
-    let nf = z.is_set_flag(NF);
-    let diff = match (cf, a >> 4, hf, a & 0xF) {
-        (false, 0...9, false, 0...9) => 0,
-        (false, 0...9, true, 0...9) => 0x6,
-        (false, 0...8, _, 0xA...0xF) => 0x6,
-        (false, 0xA...0xF, false, 0...9) => 0x60,
-        (true, _, false, 0...9) => 0x60,
-        _ => 0x66,
     };
 
-    let new_cf = match (cf, a >> 4, a & 0xF) {
-        (false, 0...9, 0...9) => 0,
-        (false, 0...8, 0xA...0xF) => 0,
-        _ => 1,
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            nn ;
+            callcc ($cc: ident, nn) ;
+            xx ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+            let nn = Viewable::<u16>::view(Address(pc), self);
+            self.set_reg16(PC, pc.wrapping_add(2));
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc.wrapping_add(2),
+            );
+
+            self.callcc($cc, nn);
+            if $cc.view(self) {
+                self.inc_cycles(17);
+            } else {
+                self.inc_cycles(10);
+            }
+        }
     };
 
-    let new_hf = match (nf, hf, a & 0xF) {
-        (false, _, 0xA...0xF) => 1,
-        (true, true, 0...5) => 1,
-        _ => 0,
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            ;
+            retcc ($cc: ident) ;
+            xx ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc,
+            );
+
+            self.retcc($cc);
+            if $cc.view(self) {
+                self.inc_cycles(11);
+            } else {
+                self.inc_cycles(5);
+            }
+        }
     };
 
-    let new_a = if nf {
-        a.wrapping_sub(diff)
-    } else {
-        a.wrapping_add(diff)
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            ;
+            cpir () ;
+            xx ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc,
+            );
+
+            self.cpir();
+            if self.reg16(BC) == 0 || self.is_set_flag(ZF) {
+                self.inc_cycles(16);
+            } else {
+                self.inc_cycles(21);
+            }
+        }
     };
-    A.change(z, new_a);
-
-    z.set_parity(new_a);
-    z.set_zero(new_a);
-    z.set_sign(new_a);
-    z.set_flag_by(CF, new_cf != 0);
-    z.set_flag_by(HF, new_hf != 0);
-}
-
-pub fn cpl<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let a = A.view(z);
-    A.change(z, !a);
-    z.set_flag(HF | NF);
-}
-
-pub fn neg<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    // subtracts A from 0
-    let a = A.view(z);
-    let result = sub_impl(z, 0, a, 0);
-    A.change(z, result);
-    z.set_flag_by(PF, a == 0x80);
-    z.set_flag_by(CF, a != 0);
-}
-
-pub fn ccf<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let cf = z.is_set_flag(CF);
-    z.set_flag_by(HF, cf);
-    z.set_flag_by(CF, !cf);
-    z.clear_flag(NF);
-}
-
-pub fn scf<Z>(z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.clear_flag(HF | NF);
-    z.set_flag(CF);
-}
-
-pub fn nop<Z>(_z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-}
-
-pub fn halt<Z>(z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_halted(true);
-}
-
-pub fn di<Z>(z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_iff1(false);
-    z.set_iff2(false);
-}
-
-/// `ei` instruction.
-///
-/// The `ei` instruction leaves `iff1` in an intermediate state. A maskable
-/// interrupt may not happen until after the *following* instruction. This
-/// requires support from the emulator: calling this function is not sufficient
-/// to accurately emulate `ei`.
-pub fn ei<Z>(z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_iff2(true);
-}
-
-pub fn im<Z>(z: &mut Z, m: u8)
-where
-    Z: Z80Internal + ?Sized,
-{
-    match m {
-        0 => z.set_interrupt_mode(Im0),
-        1 => z.set_interrupt_mode(Im1),
-        2 => z.set_interrupt_mode(Im2),
-        _ => panic!("Z80: Invalid interrupt mode"),
-    }
-}
-
-pub fn im1<Z>(z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_interrupt_mode(Im1);
-}
-
-pub fn im2<Z>(z: &mut Z)
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_interrupt_mode(Im2);
-}
-
-//// 16-Bit Arithmetic Group
-////////////////////////////
-
-fn add16_impl<Z>(z: &mut Z, x: u16, y: u16, cf: u16) -> u16
-where
-    Z: Z80Internal + ?Sized,
-{
-    // XXX optimize?
-    let result32 = (x as u32).wrapping_add(y as u32).wrapping_add(cf as u32);
-    let result16 = result32 as u16;
-
-    z.set_flag_by(CF, result32 & (1 << 16) != 0);
-
-    // carry from bit 11 happened if:
-    // x and y have same bit 12 AND result is set OR
-    // x and y have different bit 12 AND result is clear
-    let hf = (x ^ y ^ result16) & (1 << 12) != 0;
-    z.set_flag_by(HF, hf);
-
-    z.clear_flag(NF);
-
-    result16
-}
-
-pub fn add16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let x = arg1.view(z);
-    let y = arg2.view(z);
-    let result = add16_impl(z, x, y, 0);
-    arg1.change(z, result);
-}
-
-fn adc16_impl<Z>(z: &mut Z, x: u16, y: u16, cf: u16) -> u16
-where
-    Z: Z80Internal + ?Sized,
-{
-    let result = add16_impl(z, x, y, cf as u16);
-
-    z.set_sign((result >> 8) as u8);
-    z.set_zero((result as u8) | (result >> 8) as u8);
-
-    // overflow happened if:
-    // x and y both have bit 15 AND result does not OR
-    // x and y have clear bit 15 AND result is set
-    // in other words, x and y have the same bit 15, which is different from bit
-    // 15 of result
-    let overflow = !(x ^ y) & (x ^ result) & (1 << 15) != 0;
-    z.set_flag_by(PF, overflow);
-
-    result
-}
-
-pub fn adc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let x = arg1.view(z);
-    let y = arg2.view(z);
-    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-    let result = adc16_impl(z, x, y, cf as u16);
-    arg1.change(z, result);
-}
-
-pub fn sbc16<Z>(z: &mut Z, arg1: Reg16, arg2: Reg16)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let x = arg1.view(z);
-    let y = arg2.view(z);
-    let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-    let result = adc16_impl(z, x, !y, (1 ^ cf) as u16);
-    arg1.change(z, result);
-    let cf = z.is_set_flag(CF);
-    let hf = z.is_set_flag(HF);
-    z.set_flag_by(CF, !cf);
-    z.set_flag_by(HF, !hf);
-    z.set_flag(NF);
-}
-
-pub fn inc16<Z>(z: &mut Z, arg: Reg16)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let val = arg.view(z);
-    arg.change(z, val.wrapping_add(1));
-}
-
-pub fn dec16<Z>(z: &mut Z, arg: Reg16)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let val = arg.view(z);
-    arg.change(z, val.wrapping_sub(1));
-}
-
-//// Rotate and Shift Group
-///////////////////////////
-
-fn rlc_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_flag_by(CF, x & 0x80 != 0);
-    x.rotate_left(1)
-}
-
-rotate_shift_functions_impl!{
-    rlc_impl rlc_impl2 rlc rlc_store rlca
-}
-
-fn rl_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    let mut result = x << 1;
-    if z.is_set_flag(CF) {
-        result |= 1;
-    } else {
-        result &= !1;
-    }
-    z.set_flag_by(CF, x & 0x80 != 0);
-    result
-}
-
-rotate_shift_functions_impl!{
-    rl_impl rl_impl2 rl rl_store rla
-}
-
-fn rrc_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_flag_by(CF, x & 1 != 0);
-    x.rotate_right(1)
-}
-
-rotate_shift_functions_impl!{
-    rrc_impl rrc_impl2 rrc rrc_store rrca
-}
-
-fn rr_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    let mut result = x >> 1;
-    if z.is_set_flag(CF) {
-        result |= 0x80;
-    } else {
-        result &= !0x80;
-    }
-    z.set_flag_by(CF, x & 1 != 0);
-    result
-}
-
-rotate_shift_functions_impl!{
-    rr_impl rr_impl2 rr rr_store rra
-}
-
-fn sla_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_flag_by(CF, x & 0x80 != 0);
-    x << 1
-}
-
-rotate_shift_functions_noa_impl!{
-    sla_impl sla_impl2 sla sla_store
-}
-
-// SLL is undocumented; see Young
-fn sll_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_flag_by(CF, x & 0x80 != 0);
-    let mut result = x << 1;
-    result |= 1;
-    result
-}
-
-rotate_shift_functions_noa_impl!{
-    sll_impl sll_impl2 sll sll_store
-}
-
-fn sra_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_flag_by(CF, x & 1 != 0);
-    let result = ((x as i8) >> 1) as u8;
-    result
-}
-
-rotate_shift_functions_noa_impl!{
-    sra_impl sra_impl2 sra sra_store
-}
-
-fn srl_impl<Z>(z: &mut Z, x: u8) -> u8
-where
-    Z: Z80Internal + ?Sized,
-{
-    z.set_flag_by(CF, x & 1 != 0);
-    x >> 1
-}
-
-rotate_shift_functions_noa_impl!{
-    srl_impl srl_impl2 srl srl_store
-}
-
-pub fn rld<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let hl: u8 = Address(HL).view(z);
-    let hl_lo: u8 = 0xF & hl;
-    let hl_hi: u8 = 0xF0 & hl;
-    let a_lo = 0xF & A.view(z);
-    let a_hi = 0xF0 & A.view(z);
-    Address(HL).change(z, hl_lo << 4 | a_lo);
-    A.change(z, hl_hi >> 4 | a_hi);
-    let a = A.view(z);
-
-    z.set_parity(a);
-    z.set_sign(a);
-    z.set_zero(a);
-    z.clear_flag(HF | NF);
-}
-
-pub fn rrd<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let hl: u8 = Address(HL).view(z);
-    let hl_lo: u8 = 0xF & hl;
-    let hl_hi: u8 = 0xF0 & hl;
-    let a_lo = 0xF & A.view(z);
-    let a_hi = 0xF0 & A.view(z);
-    Address(HL).change(z, a_lo << 4 | hl_hi >> 4);
-    A.change(z, hl_lo | a_hi);
-    let a = A.view(z);
-
-    z.set_parity(a);
-    z.set_sign(a);
-    z.set_zero(a);
-    z.clear_flag(HF | NF);
-}
-
-//// Bit set, reset, and Test Group
-///////////////////////////////////
-
-pub fn bit<Z, T>(z: &mut Z, b: u8, arg: T)
-where
-    Z: Z80Internal + ?Sized,
-    T: Viewable<u8, Z>,
-{
-    let x = arg.view(z);
-    let bitflag = 1 << b;
-    let x_contains = x & bitflag != 0;
-
-    z.set_flag_by(ZF | PF, !x_contains);
-    z.set_flag(HF);
-    z.clear_flag(NF);
-    z.set_flag_by(SF, b == 7 && x_contains);
-}
-
-pub fn set<Z, T>(z: &mut Z, b: u8, arg: T)
-where
-    Z: Z80Internal + ?Sized,
-    T: Changeable<u8, Z>,
-{
-    let mut x = arg.view(z);
-    utilities::set_bit(&mut x, b);
-    arg.change(z, x);
-}
-
-pub fn set_store<Z, T>(z: &mut Z, b: u8, arg: T, reg: Reg8)
-where
-    Z: Z80Internal + ?Sized,
-    T: Changeable<u8, Z>,
-{
-    arg.change(z, b);
-    let x = arg.view(z);
-    reg.change(z, x);
-}
-
-pub fn res<Z, T>(z: &mut Z, b: u8, arg: T)
-where
-    Z: Z80Internal + ?Sized,
-    T: Changeable<u8, Z>,
-{
-    let mut x = arg.view(z);
-    utilities::clear_bit(&mut x, b);
-    arg.change(z, x);
-}
-
-pub fn res_store<Z, T>(z: &mut Z, b: u8, arg: T, reg: Reg8)
-where
-    Z: Z80Internal + ?Sized,
-    T: Changeable<u8, Z>,
-{
-    res(z, b, arg);
-    let x = arg.view(z);
-    reg.change(z, x);
-}
-
-//// Jump Group
-///////////////
-
-pub fn jp<Z, T>(z: &mut Z, arg: T)
-where
-    Z: Z80Internal + ?Sized,
-    T: Viewable<u16, Z>,
-{
-    let addr = arg.view(z);
-    PC.change(z, addr);
-}
-
-pub fn jpcc<Z>(z: &mut Z, cc: ConditionCode, arg: u16)
-where
-    Z: Z80Internal + ?Sized,
-{
-    if cc.view(z) {
-        jp(z, arg);
-    }
-}
-
-pub fn jr<Z>(z: &mut Z, e: i8)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let pc = PC.view(z);
-    let new_pc = pc.wrapping_add(e as i16 as u16);
-    PC.change(z, new_pc);
-}
-
-pub fn jrcc<Z>(z: &mut Z, cc: ConditionCode, e: i8)
-where
-    Z: Z80Internal + ?Sized,
-{
-    if cc.view(z) {
-        jr(z, e);
-        z.inc_cycles(12);
-    } else {
-        z.inc_cycles(7);
-    }
-}
-
-pub fn djnz<Z>(z: &mut Z, e: i8)
-where
-    Z: Z80Internal + ?Sized,
-{
-    let b = B.view(z);
-    let new_b = b.wrapping_sub(1);
-    B.change(z, new_b);
-    if new_b != 0 {
-        jr(z, e);
-        z.inc_cycles(13);
-    } else {
-        z.inc_cycles(8);
-    }
-}
-
-//// Call and Return Group
-//////////////////////////
-
-pub fn call<Z>(z: &mut Z, nn: u16)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let pch = PCH.view(z);
-    let pcl = PCL.view(z);
-    let sp = SP.view(z);
-    Address(sp.wrapping_sub(1)).change(z, pch);
-    Address(sp.wrapping_sub(2)).change(z, pcl);
-    SP.change(z, sp.wrapping_sub(2));
-    PC.change(z, nn);
-}
-
-pub fn callcc<Z>(z: &mut Z, cc: ConditionCode, nn: u16)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    if cc.view(z) {
-        call(z, nn);
-        z.inc_cycles(17);
-    } else {
-        z.inc_cycles(10);
-    }
-}
-
-pub fn ret<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let sp = SP.view(z);
-    let n1 = Address(sp).view(z);
-    PCL.change(z, n1);
-    let n2 = Address(sp.wrapping_add(1)).view(z);
-    PCH.change(z, n2);
-    SP.change(z, sp.wrapping_add(2));
-}
-
-pub fn retcc<Z>(z: &mut Z, cc: ConditionCode)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    if cc.view(z) {
-        ret(z);
-        z.inc_cycles(11);
-    } else {
-        z.inc_cycles(5);
-    }
-}
-
-pub fn reti<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    retn(z);
-}
-
-pub fn retn<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + ?Sized,
-{
-    let iff2 = z.iff2();
-    z.set_iff1(iff2);
-
-    let sp = SP.view(z);
-    let pcl = Address(sp).view(z);
-    let pch = Address(sp.wrapping_add(1)).view(z);
-    PCL.change(z, pcl);
-    PCH.change(z, pch);
-    SP.change(z, sp.wrapping_add(2));
-}
-
-//// Input and Output Group
-///////////////////////////
-
-pub fn in_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Io16 + ?Sized,
-    T1: Changeable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let address_lo = arg2.view(z);
-    let address_hi = arg1.view(z);
-    let address = utilities::to16(address_lo, address_hi);
-    let x = z.input(address);
-    arg1.change(z, x);
-}
-
-fn in_impl<Z, T1>(z: &mut Z, arg: T1) -> u8
-where
-    Z: Z80Internal + Io16 + ?Sized,
-    T1: Viewable<u8, Z>,
-{
-    let address_lo = arg.view(z);
-    let address_hi = B.view(z);
-    let address = utilities::to16(address_lo, address_hi);
-    let x = z.input(address);
-
-    z.set_parity(x);
-    z.set_sign(x);
-    z.set_zero(x);
-    z.clear_flag(HF | NF);
-
-    x
-}
-
-pub fn in_f<Z, T1>(z: &mut Z, arg: T1)
-where
-    Z: Z80Internal + Io16 + ?Sized,
-    T1: Viewable<u8, Z>,
-{
-    in_impl(z, arg);
-}
-
-pub fn in_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Io16 + ?Sized,
-    T1: Changeable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let x = in_impl(z, arg2);
-    arg1.change(z, x);
-}
-
-/// The Z80 manual lists this instruction under IN r, (C) as "undefined" It
-/// reads from the input ports and sets flags but doesn't change any register.
-pub fn in0<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Io16 + ?Sized,
-{
-    let addr = BC.view(z);
-    let x = z.input(addr);
-
-    z.set_parity(x);
-    z.set_sign(x);
-    z.set_zero(x);
-    z.clear_flag(HF | NF);
-}
-
-fn inid_impl<Z>(z: &mut Z, inc: u16) -> u8
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    let b = B.view(z);
-    let hl = HL.view(z);
-    let addr = BC.view(z);
-    let x = z.input(addr);
-    Address(hl).change(z, x);
-    B.change(z, b.wrapping_sub(1));
-    HL.change(z, hl.wrapping_add(inc));
-    b.wrapping_sub(1)
-}
-
-pub fn ini<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    let new_b = inid_impl(z, 1);
-
-    z.set_zero(new_b);
-    z.set_flag(NF);
-}
-
-pub fn inir<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    while {
-        z.inc_cycles(21);
-        inid_impl(z, 1) != 0
-    } {
-        // r was already incremented twice by `run`
-        z.inc_r(2);
-    }
-
-    z.set_flag(ZF | NF);
-
-    z.inc_cycles(16);
-}
-
-pub fn ind<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    let new_b = inid_impl(z, 0xFFFF);
-
-    z.set_zero(new_b);
-    z.set_flag(NF);
-}
-
-pub fn indr<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    while {
-        z.inc_cycles(21);
-        inid_impl(z, 0xFFFF) != 0
-    } {
-        // r was already incremented twice by `run`
-        z.inc_r(2);
-    }
-
-    z.set_flag(ZF | NF);
-
-    z.inc_cycles(16);
-}
-
-pub fn out_n<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Io16 + ?Sized,
-    T1: Viewable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let address_lo = arg1.view(z);
-    let address_hi = A.view(z);
-    let address = utilities::to16(address_lo, address_hi);
-    let x = arg2.view(z);
-    z.output(address, x);
-}
-
-pub fn out_c<Z, T1, T2>(z: &mut Z, arg1: T1, arg2: T2)
-where
-    Z: Z80Internal + Io16 + ?Sized,
-    T1: Viewable<u8, Z>,
-    T2: Viewable<u8, Z>,
-{
-    let address_lo = arg1.view(z);
-    let address_hi = B.view(z);
-    let address = utilities::to16(address_lo, address_hi);
-    let x = arg2.view(z);
-    z.output(address, x);
-}
 
-fn outid_impl<Z>(z: &mut Z, inc: u16)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    let b = B.view(z);
-    let new_b = b.wrapping_sub(1);
-    B.change(z, new_b);
-    let addr = BC.view(z);
-    let hl = HL.view(z);
-    let x = Address(hl).view(z);
-    z.output(addr, x);
-    HL.change(z, hl.wrapping_add(inc));
-}
-
-pub fn outi<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    outid_impl(z, 1);
-    let new_b = B.view(z);
-
-    z.set_zero(new_b);
-    z.set_flag(NF);
-}
-
-pub fn otir<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    while {
-        z.inc_cycles(21);
-        outid_impl(z, 1);
-        B.view(z) != 0
-    } {
-        // r was already incremented twice by `run`
-        z.inc_r(2);
-    }
-
-    z.set_flag(ZF | NF);
-
-    z.inc_cycles(16);
-}
-
-pub fn outd<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    outid_impl(z, 0xFFFF);
-    let new_b = B.view(z);
-
-    z.set_zero(new_b);
-    z.set_flag(NF);
-}
-
-pub fn otdr<Z>(z: &mut Z)
-where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
-{
-    while {
-        z.inc_cycles(21);
-        outid_impl(z, 0xFFFF);
-        B.view(z) != 0
-    } {
-        // r was already incremented twice by `run`
-        z.inc_r(2);
-    }
-
-    z.set_flag(ZF | NF);
-
-    z.inc_cycles(16);
-}
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            ;
+            cpdr () ;
+            xx ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc,
+            );
+
+            self.cpdr();
+            if self.reg16(BC) == 0 || self.is_set_flag(ZF) {
+                self.inc_cycles(16);
+            } else {
+                self.inc_cycles(21);
+            }
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            ;
+            $mnemonic: ident () ;
+            xx ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        process_instruction!{@block
+            [ $opcode; $opcode_name; ; $mnemonic () ; xx ; $documented ; z80 ]
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            ;
+            $mnemonic:ident($($arguments:tt)*) ;
+            $cycles:expr ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc,
+            );
+
+            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.inc_cycles($cycles);
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            n ;
+            $mnemonic:ident($($arguments:tt)*) ;
+            $cycles:expr ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+            let n = self.read(pc);
+            self.set_reg16(PC, pc.wrapping_add(1));
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc.wrapping_add(1),
+            );
+
+            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.inc_cycles($cycles);
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            e ;
+            $mnemonic:ident($($arguments:tt)*) ;
+            $cycles:expr ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+            let e = self.read(pc) as i8;
+            self.set_reg16(PC, pc.wrapping_add(1));
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc.wrapping_add(1),
+            );
+
+            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.inc_cycles($cycles);
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            d ;
+            $mnemonic:ident($($arguments:tt)*) ;
+            $cycles:expr ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+            let d = self.read(pc) as i8;
+            self.set_reg16(PC, pc.wrapping_add(1));
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc.wrapping_add(1),
+            );
+
+            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.inc_cycles($cycles);
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            d, n ;
+            $mnemonic:ident($($arguments:tt)*) ;
+            $cycles:expr ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+            let d = self.read(pc) as i8;
+            let n = self.read(pc.wrapping_add(1));
+            self.set_reg16(PC, pc.wrapping_add(2));
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc.wrapping_add(2),
+            );
+
+            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.inc_cycles($cycles);
+        }
+    };
+
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            nn ;
+            $mnemonic:ident($($arguments:tt)*) ;
+            $cycles:expr ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self) {
+            let pc = self.reg16(PC);
+            let nn = Viewable::<u16>::view(Address(pc), self);
+            self.set_reg16(PC, pc.wrapping_add(2));
+
+            send_instruction_memo(
+                self,
+                pc.wrapping_sub(Self::PREFIX_SIZE + 1),
+                pc.wrapping_add(2),
+            );
+
+            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.inc_cycles($cycles);
+        }
+    };
+
+    ($anything: tt) => {};
+}
+
+macro_rules! create_function {
+    ($fn_name:ident, $mac_name:ident, $prefix_size:expr) => {
+        pub fn $fn_name<Z>(z: &mut Z, opcode: u8)
+        where
+            Z: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
+            Z::Memo: From<Z80Memo>,
+        {
+            #[allow(non_snake_case)]
+            trait ArrayTrait {
+                const PREFIX_SIZE: u16 = $prefix_size;
+
+                fn x00(&mut self);
+                fn x01(&mut self);
+                fn x02(&mut self);
+                fn x03(&mut self);
+                fn x04(&mut self);
+                fn x05(&mut self);
+                fn x06(&mut self);
+                fn x07(&mut self);
+                fn x08(&mut self);
+                fn x09(&mut self);
+                fn x0A(&mut self);
+                fn x0B(&mut self);
+                fn x0C(&mut self);
+                fn x0D(&mut self);
+                fn x0E(&mut self);
+                fn x0F(&mut self);
+                fn x10(&mut self);
+                fn x11(&mut self);
+                fn x12(&mut self);
+                fn x13(&mut self);
+                fn x14(&mut self);
+                fn x15(&mut self);
+                fn x16(&mut self);
+                fn x17(&mut self);
+                fn x18(&mut self);
+                fn x19(&mut self);
+                fn x1A(&mut self);
+                fn x1B(&mut self);
+                fn x1C(&mut self);
+                fn x1D(&mut self);
+                fn x1E(&mut self);
+                fn x1F(&mut self);
+                fn x20(&mut self);
+                fn x21(&mut self);
+                fn x22(&mut self);
+                fn x23(&mut self);
+                fn x24(&mut self);
+                fn x25(&mut self);
+                fn x26(&mut self);
+                fn x27(&mut self);
+                fn x28(&mut self);
+                fn x29(&mut self);
+                fn x2A(&mut self);
+                fn x2B(&mut self);
+                fn x2C(&mut self);
+                fn x2D(&mut self);
+                fn x2E(&mut self);
+                fn x2F(&mut self);
+                fn x30(&mut self);
+                fn x31(&mut self);
+                fn x32(&mut self);
+                fn x33(&mut self);
+                fn x34(&mut self);
+                fn x35(&mut self);
+                fn x36(&mut self);
+                fn x37(&mut self);
+                fn x38(&mut self);
+                fn x39(&mut self);
+                fn x3A(&mut self);
+                fn x3B(&mut self);
+                fn x3C(&mut self);
+                fn x3D(&mut self);
+                fn x3E(&mut self);
+                fn x3F(&mut self);
+                fn x40(&mut self);
+                fn x41(&mut self);
+                fn x42(&mut self);
+                fn x43(&mut self);
+                fn x44(&mut self);
+                fn x45(&mut self);
+                fn x46(&mut self);
+                fn x47(&mut self);
+                fn x48(&mut self);
+                fn x49(&mut self);
+                fn x4A(&mut self);
+                fn x4B(&mut self);
+                fn x4C(&mut self);
+                fn x4D(&mut self);
+                fn x4E(&mut self);
+                fn x4F(&mut self);
+                fn x50(&mut self);
+                fn x51(&mut self);
+                fn x52(&mut self);
+                fn x53(&mut self);
+                fn x54(&mut self);
+                fn x55(&mut self);
+                fn x56(&mut self);
+                fn x57(&mut self);
+                fn x58(&mut self);
+                fn x59(&mut self);
+                fn x5A(&mut self);
+                fn x5B(&mut self);
+                fn x5C(&mut self);
+                fn x5D(&mut self);
+                fn x5E(&mut self);
+                fn x5F(&mut self);
+                fn x60(&mut self);
+                fn x61(&mut self);
+                fn x62(&mut self);
+                fn x63(&mut self);
+                fn x64(&mut self);
+                fn x65(&mut self);
+                fn x66(&mut self);
+                fn x67(&mut self);
+                fn x68(&mut self);
+                fn x69(&mut self);
+                fn x6A(&mut self);
+                fn x6B(&mut self);
+                fn x6C(&mut self);
+                fn x6D(&mut self);
+                fn x6E(&mut self);
+                fn x6F(&mut self);
+                fn x70(&mut self);
+                fn x71(&mut self);
+                fn x72(&mut self);
+                fn x73(&mut self);
+                fn x74(&mut self);
+                fn x75(&mut self);
+                fn x76(&mut self);
+                fn x77(&mut self);
+                fn x78(&mut self);
+                fn x79(&mut self);
+                fn x7A(&mut self);
+                fn x7B(&mut self);
+                fn x7C(&mut self);
+                fn x7D(&mut self);
+                fn x7E(&mut self);
+                fn x7F(&mut self);
+                fn x80(&mut self);
+                fn x81(&mut self);
+                fn x82(&mut self);
+                fn x83(&mut self);
+                fn x84(&mut self);
+                fn x85(&mut self);
+                fn x86(&mut self);
+                fn x87(&mut self);
+                fn x88(&mut self);
+                fn x89(&mut self);
+                fn x8A(&mut self);
+                fn x8B(&mut self);
+                fn x8C(&mut self);
+                fn x8D(&mut self);
+                fn x8E(&mut self);
+                fn x8F(&mut self);
+                fn x90(&mut self);
+                fn x91(&mut self);
+                fn x92(&mut self);
+                fn x93(&mut self);
+                fn x94(&mut self);
+                fn x95(&mut self);
+                fn x96(&mut self);
+                fn x97(&mut self);
+                fn x98(&mut self);
+                fn x99(&mut self);
+                fn x9A(&mut self);
+                fn x9B(&mut self);
+                fn x9C(&mut self);
+                fn x9D(&mut self);
+                fn x9E(&mut self);
+                fn x9F(&mut self);
+                fn xA0(&mut self);
+                fn xA1(&mut self);
+                fn xA2(&mut self);
+                fn xA3(&mut self);
+                fn xA4(&mut self);
+                fn xA5(&mut self);
+                fn xA6(&mut self);
+                fn xA7(&mut self);
+                fn xA8(&mut self);
+                fn xA9(&mut self);
+                fn xAA(&mut self);
+                fn xAB(&mut self);
+                fn xAC(&mut self);
+                fn xAD(&mut self);
+                fn xAE(&mut self);
+                fn xAF(&mut self);
+                fn xB0(&mut self);
+                fn xB1(&mut self);
+                fn xB2(&mut self);
+                fn xB3(&mut self);
+                fn xB4(&mut self);
+                fn xB5(&mut self);
+                fn xB6(&mut self);
+                fn xB7(&mut self);
+                fn xB8(&mut self);
+                fn xB9(&mut self);
+                fn xBA(&mut self);
+                fn xBB(&mut self);
+                fn xBC(&mut self);
+                fn xBD(&mut self);
+                fn xBE(&mut self);
+                fn xBF(&mut self);
+                fn xC0(&mut self);
+                fn xC1(&mut self);
+                fn xC2(&mut self);
+                fn xC3(&mut self);
+                fn xC4(&mut self);
+                fn xC5(&mut self);
+                fn xC6(&mut self);
+                fn xC7(&mut self);
+                fn xC8(&mut self);
+                fn xC9(&mut self);
+                fn xCA(&mut self);
+                fn xCB(&mut self);
+                fn xCC(&mut self);
+                fn xCD(&mut self);
+                fn xCE(&mut self);
+                fn xCF(&mut self);
+                fn xD0(&mut self);
+                fn xD1(&mut self);
+                fn xD2(&mut self);
+                fn xD3(&mut self);
+                fn xD4(&mut self);
+                fn xD5(&mut self);
+                fn xD6(&mut self);
+                fn xD7(&mut self);
+                fn xD8(&mut self);
+                fn xD9(&mut self);
+                fn xDA(&mut self);
+                fn xDB(&mut self);
+                fn xDC(&mut self);
+                fn xDD(&mut self);
+                fn xDE(&mut self);
+                fn xDF(&mut self);
+                fn xE0(&mut self);
+                fn xE1(&mut self);
+                fn xE2(&mut self);
+                fn xE3(&mut self);
+                fn xE4(&mut self);
+                fn xE5(&mut self);
+                fn xE6(&mut self);
+                fn xE7(&mut self);
+                fn xE8(&mut self);
+                fn xE9(&mut self);
+                fn xEA(&mut self);
+                fn xEB(&mut self);
+                fn xEC(&mut self);
+                fn xED(&mut self);
+                fn xEE(&mut self);
+                fn xEF(&mut self);
+                fn xF0(&mut self);
+                fn xF1(&mut self);
+                fn xF2(&mut self);
+                fn xF3(&mut self);
+                fn xF4(&mut self);
+                fn xF5(&mut self);
+                fn xF6(&mut self);
+                fn xF7(&mut self);
+                fn xF8(&mut self);
+                fn xF9(&mut self);
+                fn xFA(&mut self);
+                fn xFB(&mut self);
+                fn xFC(&mut self);
+                fn xFD(&mut self);
+                fn xFE(&mut self);
+                fn xFF(&mut self);
+
+                const ARRAY: [fn(&mut Self); 0x100] = [
+                    Self::x00,
+                    Self::x01,
+                    Self::x02,
+                    Self::x03,
+                    Self::x04,
+                    Self::x05,
+                    Self::x06,
+                    Self::x07,
+                    Self::x08,
+                    Self::x09,
+                    Self::x0A,
+                    Self::x0B,
+                    Self::x0C,
+                    Self::x0D,
+                    Self::x0E,
+                    Self::x0F,
+                    Self::x10,
+                    Self::x11,
+                    Self::x12,
+                    Self::x13,
+                    Self::x14,
+                    Self::x15,
+                    Self::x16,
+                    Self::x17,
+                    Self::x18,
+                    Self::x19,
+                    Self::x1A,
+                    Self::x1B,
+                    Self::x1C,
+                    Self::x1D,
+                    Self::x1E,
+                    Self::x1F,
+                    Self::x20,
+                    Self::x21,
+                    Self::x22,
+                    Self::x23,
+                    Self::x24,
+                    Self::x25,
+                    Self::x26,
+                    Self::x27,
+                    Self::x28,
+                    Self::x29,
+                    Self::x2A,
+                    Self::x2B,
+                    Self::x2C,
+                    Self::x2D,
+                    Self::x2E,
+                    Self::x2F,
+                    Self::x30,
+                    Self::x31,
+                    Self::x32,
+                    Self::x33,
+                    Self::x34,
+                    Self::x35,
+                    Self::x36,
+                    Self::x37,
+                    Self::x38,
+                    Self::x39,
+                    Self::x3A,
+                    Self::x3B,
+                    Self::x3C,
+                    Self::x3D,
+                    Self::x3E,
+                    Self::x3F,
+                    Self::x40,
+                    Self::x41,
+                    Self::x42,
+                    Self::x43,
+                    Self::x44,
+                    Self::x45,
+                    Self::x46,
+                    Self::x47,
+                    Self::x48,
+                    Self::x49,
+                    Self::x4A,
+                    Self::x4B,
+                    Self::x4C,
+                    Self::x4D,
+                    Self::x4E,
+                    Self::x4F,
+                    Self::x50,
+                    Self::x51,
+                    Self::x52,
+                    Self::x53,
+                    Self::x54,
+                    Self::x55,
+                    Self::x56,
+                    Self::x57,
+                    Self::x58,
+                    Self::x59,
+                    Self::x5A,
+                    Self::x5B,
+                    Self::x5C,
+                    Self::x5D,
+                    Self::x5E,
+                    Self::x5F,
+                    Self::x60,
+                    Self::x61,
+                    Self::x62,
+                    Self::x63,
+                    Self::x64,
+                    Self::x65,
+                    Self::x66,
+                    Self::x67,
+                    Self::x68,
+                    Self::x69,
+                    Self::x6A,
+                    Self::x6B,
+                    Self::x6C,
+                    Self::x6D,
+                    Self::x6E,
+                    Self::x6F,
+                    Self::x70,
+                    Self::x71,
+                    Self::x72,
+                    Self::x73,
+                    Self::x74,
+                    Self::x75,
+                    Self::x76,
+                    Self::x77,
+                    Self::x78,
+                    Self::x79,
+                    Self::x7A,
+                    Self::x7B,
+                    Self::x7C,
+                    Self::x7D,
+                    Self::x7E,
+                    Self::x7F,
+                    Self::x80,
+                    Self::x81,
+                    Self::x82,
+                    Self::x83,
+                    Self::x84,
+                    Self::x85,
+                    Self::x86,
+                    Self::x87,
+                    Self::x88,
+                    Self::x89,
+                    Self::x8A,
+                    Self::x8B,
+                    Self::x8C,
+                    Self::x8D,
+                    Self::x8E,
+                    Self::x8F,
+                    Self::x90,
+                    Self::x91,
+                    Self::x92,
+                    Self::x93,
+                    Self::x94,
+                    Self::x95,
+                    Self::x96,
+                    Self::x97,
+                    Self::x98,
+                    Self::x99,
+                    Self::x9A,
+                    Self::x9B,
+                    Self::x9C,
+                    Self::x9D,
+                    Self::x9E,
+                    Self::x9F,
+                    Self::xA0,
+                    Self::xA1,
+                    Self::xA2,
+                    Self::xA3,
+                    Self::xA4,
+                    Self::xA5,
+                    Self::xA6,
+                    Self::xA7,
+                    Self::xA8,
+                    Self::xA9,
+                    Self::xAA,
+                    Self::xAB,
+                    Self::xAC,
+                    Self::xAD,
+                    Self::xAE,
+                    Self::xAF,
+                    Self::xB0,
+                    Self::xB1,
+                    Self::xB2,
+                    Self::xB3,
+                    Self::xB4,
+                    Self::xB5,
+                    Self::xB6,
+                    Self::xB7,
+                    Self::xB8,
+                    Self::xB9,
+                    Self::xBA,
+                    Self::xBB,
+                    Self::xBC,
+                    Self::xBD,
+                    Self::xBE,
+                    Self::xBF,
+                    Self::xC0,
+                    Self::xC1,
+                    Self::xC2,
+                    Self::xC3,
+                    Self::xC4,
+                    Self::xC5,
+                    Self::xC6,
+                    Self::xC7,
+                    Self::xC8,
+                    Self::xC9,
+                    Self::xCA,
+                    Self::xCB,
+                    Self::xCC,
+                    Self::xCD,
+                    Self::xCE,
+                    Self::xCF,
+                    Self::xD0,
+                    Self::xD1,
+                    Self::xD2,
+                    Self::xD3,
+                    Self::xD4,
+                    Self::xD5,
+                    Self::xD6,
+                    Self::xD7,
+                    Self::xD8,
+                    Self::xD9,
+                    Self::xDA,
+                    Self::xDB,
+                    Self::xDC,
+                    Self::xDD,
+                    Self::xDE,
+                    Self::xDF,
+                    Self::xE0,
+                    Self::xE1,
+                    Self::xE2,
+                    Self::xE3,
+                    Self::xE4,
+                    Self::xE5,
+                    Self::xE6,
+                    Self::xE7,
+                    Self::xE8,
+                    Self::xE9,
+                    Self::xEA,
+                    Self::xEB,
+                    Self::xEC,
+                    Self::xED,
+                    Self::xEE,
+                    Self::xEF,
+                    Self::xF0,
+                    Self::xF1,
+                    Self::xF2,
+                    Self::xF3,
+                    Self::xF4,
+                    Self::xF5,
+                    Self::xF6,
+                    Self::xF7,
+                    Self::xF8,
+                    Self::xF9,
+                    Self::xFA,
+                    Self::xFB,
+                    Self::xFC,
+                    Self::xFD,
+                    Self::xFE,
+                    Self::xFF,
+                ];
+            }
+            impl<T> ArrayTrait for T
+            where
+                T: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
+                T::Memo: From<Z80Memo>,
+            {
+                $mac_name!{process_instruction}
+            }
+            <Z as ArrayTrait>::ARRAY[opcode as usize](z);
+        }
+    };
+}
+
+create_function!{execute_noprefix, attalus_z80_noprefix, 0}
+
+create_function!{execute_cb, attalus_z80_cb, 1}
+
+create_function!{execute_ed, attalus_z80_ed, 1}
+
+create_function!{execute_dd, attalus_z80_dd, 1}
+
+create_function!{execute_fd, attalus_z80_fd, 1}
+
+macro_rules! process_instruction_double_prefix {
+    (
+        [
+            $opcode:expr ;
+            $opcode_name:ident ;
+            ;
+            $mnemonic:ident($($arguments:tt)*) ;
+            $cycles:expr ;
+            $documented:ident ;
+            z80
+        ]
+    ) => {
+        fn $opcode_name(&mut self, d: i8) {
+            let pc = self.reg16(PC);
+
+            send_instruction_memo(self, pc.wrapping_sub(4), pc);
+
+            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.inc_cycles($cycles);
+        }
+    };
+}
+
+macro_rules! create_function_double_prefix {
+    ($fn_name:ident, $mac_name:ident) => {
+        pub fn $fn_name<Z>(z: &mut Z, opcode: u8)
+        where
+            Z: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
+            Z::Memo: From<Z80Memo>,
+        {
+            #[allow(non_snake_case)]
+            trait ArrayTrait {
+                fn x00(&mut self, d: i8);
+                fn x01(&mut self, d: i8);
+                fn x02(&mut self, d: i8);
+                fn x03(&mut self, d: i8);
+                fn x04(&mut self, d: i8);
+                fn x05(&mut self, d: i8);
+                fn x06(&mut self, d: i8);
+                fn x07(&mut self, d: i8);
+                fn x08(&mut self, d: i8);
+                fn x09(&mut self, d: i8);
+                fn x0A(&mut self, d: i8);
+                fn x0B(&mut self, d: i8);
+                fn x0C(&mut self, d: i8);
+                fn x0D(&mut self, d: i8);
+                fn x0E(&mut self, d: i8);
+                fn x0F(&mut self, d: i8);
+                fn x10(&mut self, d: i8);
+                fn x11(&mut self, d: i8);
+                fn x12(&mut self, d: i8);
+                fn x13(&mut self, d: i8);
+                fn x14(&mut self, d: i8);
+                fn x15(&mut self, d: i8);
+                fn x16(&mut self, d: i8);
+                fn x17(&mut self, d: i8);
+                fn x18(&mut self, d: i8);
+                fn x19(&mut self, d: i8);
+                fn x1A(&mut self, d: i8);
+                fn x1B(&mut self, d: i8);
+                fn x1C(&mut self, d: i8);
+                fn x1D(&mut self, d: i8);
+                fn x1E(&mut self, d: i8);
+                fn x1F(&mut self, d: i8);
+                fn x20(&mut self, d: i8);
+                fn x21(&mut self, d: i8);
+                fn x22(&mut self, d: i8);
+                fn x23(&mut self, d: i8);
+                fn x24(&mut self, d: i8);
+                fn x25(&mut self, d: i8);
+                fn x26(&mut self, d: i8);
+                fn x27(&mut self, d: i8);
+                fn x28(&mut self, d: i8);
+                fn x29(&mut self, d: i8);
+                fn x2A(&mut self, d: i8);
+                fn x2B(&mut self, d: i8);
+                fn x2C(&mut self, d: i8);
+                fn x2D(&mut self, d: i8);
+                fn x2E(&mut self, d: i8);
+                fn x2F(&mut self, d: i8);
+                fn x30(&mut self, d: i8);
+                fn x31(&mut self, d: i8);
+                fn x32(&mut self, d: i8);
+                fn x33(&mut self, d: i8);
+                fn x34(&mut self, d: i8);
+                fn x35(&mut self, d: i8);
+                fn x36(&mut self, d: i8);
+                fn x37(&mut self, d: i8);
+                fn x38(&mut self, d: i8);
+                fn x39(&mut self, d: i8);
+                fn x3A(&mut self, d: i8);
+                fn x3B(&mut self, d: i8);
+                fn x3C(&mut self, d: i8);
+                fn x3D(&mut self, d: i8);
+                fn x3E(&mut self, d: i8);
+                fn x3F(&mut self, d: i8);
+                fn x40(&mut self, d: i8);
+                fn x41(&mut self, d: i8);
+                fn x42(&mut self, d: i8);
+                fn x43(&mut self, d: i8);
+                fn x44(&mut self, d: i8);
+                fn x45(&mut self, d: i8);
+                fn x46(&mut self, d: i8);
+                fn x47(&mut self, d: i8);
+                fn x48(&mut self, d: i8);
+                fn x49(&mut self, d: i8);
+                fn x4A(&mut self, d: i8);
+                fn x4B(&mut self, d: i8);
+                fn x4C(&mut self, d: i8);
+                fn x4D(&mut self, d: i8);
+                fn x4E(&mut self, d: i8);
+                fn x4F(&mut self, d: i8);
+                fn x50(&mut self, d: i8);
+                fn x51(&mut self, d: i8);
+                fn x52(&mut self, d: i8);
+                fn x53(&mut self, d: i8);
+                fn x54(&mut self, d: i8);
+                fn x55(&mut self, d: i8);
+                fn x56(&mut self, d: i8);
+                fn x57(&mut self, d: i8);
+                fn x58(&mut self, d: i8);
+                fn x59(&mut self, d: i8);
+                fn x5A(&mut self, d: i8);
+                fn x5B(&mut self, d: i8);
+                fn x5C(&mut self, d: i8);
+                fn x5D(&mut self, d: i8);
+                fn x5E(&mut self, d: i8);
+                fn x5F(&mut self, d: i8);
+                fn x60(&mut self, d: i8);
+                fn x61(&mut self, d: i8);
+                fn x62(&mut self, d: i8);
+                fn x63(&mut self, d: i8);
+                fn x64(&mut self, d: i8);
+                fn x65(&mut self, d: i8);
+                fn x66(&mut self, d: i8);
+                fn x67(&mut self, d: i8);
+                fn x68(&mut self, d: i8);
+                fn x69(&mut self, d: i8);
+                fn x6A(&mut self, d: i8);
+                fn x6B(&mut self, d: i8);
+                fn x6C(&mut self, d: i8);
+                fn x6D(&mut self, d: i8);
+                fn x6E(&mut self, d: i8);
+                fn x6F(&mut self, d: i8);
+                fn x70(&mut self, d: i8);
+                fn x71(&mut self, d: i8);
+                fn x72(&mut self, d: i8);
+                fn x73(&mut self, d: i8);
+                fn x74(&mut self, d: i8);
+                fn x75(&mut self, d: i8);
+                fn x76(&mut self, d: i8);
+                fn x77(&mut self, d: i8);
+                fn x78(&mut self, d: i8);
+                fn x79(&mut self, d: i8);
+                fn x7A(&mut self, d: i8);
+                fn x7B(&mut self, d: i8);
+                fn x7C(&mut self, d: i8);
+                fn x7D(&mut self, d: i8);
+                fn x7E(&mut self, d: i8);
+                fn x7F(&mut self, d: i8);
+                fn x80(&mut self, d: i8);
+                fn x81(&mut self, d: i8);
+                fn x82(&mut self, d: i8);
+                fn x83(&mut self, d: i8);
+                fn x84(&mut self, d: i8);
+                fn x85(&mut self, d: i8);
+                fn x86(&mut self, d: i8);
+                fn x87(&mut self, d: i8);
+                fn x88(&mut self, d: i8);
+                fn x89(&mut self, d: i8);
+                fn x8A(&mut self, d: i8);
+                fn x8B(&mut self, d: i8);
+                fn x8C(&mut self, d: i8);
+                fn x8D(&mut self, d: i8);
+                fn x8E(&mut self, d: i8);
+                fn x8F(&mut self, d: i8);
+                fn x90(&mut self, d: i8);
+                fn x91(&mut self, d: i8);
+                fn x92(&mut self, d: i8);
+                fn x93(&mut self, d: i8);
+                fn x94(&mut self, d: i8);
+                fn x95(&mut self, d: i8);
+                fn x96(&mut self, d: i8);
+                fn x97(&mut self, d: i8);
+                fn x98(&mut self, d: i8);
+                fn x99(&mut self, d: i8);
+                fn x9A(&mut self, d: i8);
+                fn x9B(&mut self, d: i8);
+                fn x9C(&mut self, d: i8);
+                fn x9D(&mut self, d: i8);
+                fn x9E(&mut self, d: i8);
+                fn x9F(&mut self, d: i8);
+                fn xA0(&mut self, d: i8);
+                fn xA1(&mut self, d: i8);
+                fn xA2(&mut self, d: i8);
+                fn xA3(&mut self, d: i8);
+                fn xA4(&mut self, d: i8);
+                fn xA5(&mut self, d: i8);
+                fn xA6(&mut self, d: i8);
+                fn xA7(&mut self, d: i8);
+                fn xA8(&mut self, d: i8);
+                fn xA9(&mut self, d: i8);
+                fn xAA(&mut self, d: i8);
+                fn xAB(&mut self, d: i8);
+                fn xAC(&mut self, d: i8);
+                fn xAD(&mut self, d: i8);
+                fn xAE(&mut self, d: i8);
+                fn xAF(&mut self, d: i8);
+                fn xB0(&mut self, d: i8);
+                fn xB1(&mut self, d: i8);
+                fn xB2(&mut self, d: i8);
+                fn xB3(&mut self, d: i8);
+                fn xB4(&mut self, d: i8);
+                fn xB5(&mut self, d: i8);
+                fn xB6(&mut self, d: i8);
+                fn xB7(&mut self, d: i8);
+                fn xB8(&mut self, d: i8);
+                fn xB9(&mut self, d: i8);
+                fn xBA(&mut self, d: i8);
+                fn xBB(&mut self, d: i8);
+                fn xBC(&mut self, d: i8);
+                fn xBD(&mut self, d: i8);
+                fn xBE(&mut self, d: i8);
+                fn xBF(&mut self, d: i8);
+                fn xC0(&mut self, d: i8);
+                fn xC1(&mut self, d: i8);
+                fn xC2(&mut self, d: i8);
+                fn xC3(&mut self, d: i8);
+                fn xC4(&mut self, d: i8);
+                fn xC5(&mut self, d: i8);
+                fn xC6(&mut self, d: i8);
+                fn xC7(&mut self, d: i8);
+                fn xC8(&mut self, d: i8);
+                fn xC9(&mut self, d: i8);
+                fn xCA(&mut self, d: i8);
+                fn xCB(&mut self, d: i8);
+                fn xCC(&mut self, d: i8);
+                fn xCD(&mut self, d: i8);
+                fn xCE(&mut self, d: i8);
+                fn xCF(&mut self, d: i8);
+                fn xD0(&mut self, d: i8);
+                fn xD1(&mut self, d: i8);
+                fn xD2(&mut self, d: i8);
+                fn xD3(&mut self, d: i8);
+                fn xD4(&mut self, d: i8);
+                fn xD5(&mut self, d: i8);
+                fn xD6(&mut self, d: i8);
+                fn xD7(&mut self, d: i8);
+                fn xD8(&mut self, d: i8);
+                fn xD9(&mut self, d: i8);
+                fn xDA(&mut self, d: i8);
+                fn xDB(&mut self, d: i8);
+                fn xDC(&mut self, d: i8);
+                fn xDD(&mut self, d: i8);
+                fn xDE(&mut self, d: i8);
+                fn xDF(&mut self, d: i8);
+                fn xE0(&mut self, d: i8);
+                fn xE1(&mut self, d: i8);
+                fn xE2(&mut self, d: i8);
+                fn xE3(&mut self, d: i8);
+                fn xE4(&mut self, d: i8);
+                fn xE5(&mut self, d: i8);
+                fn xE6(&mut self, d: i8);
+                fn xE7(&mut self, d: i8);
+                fn xE8(&mut self, d: i8);
+                fn xE9(&mut self, d: i8);
+                fn xEA(&mut self, d: i8);
+                fn xEB(&mut self, d: i8);
+                fn xEC(&mut self, d: i8);
+                fn xED(&mut self, d: i8);
+                fn xEE(&mut self, d: i8);
+                fn xEF(&mut self, d: i8);
+                fn xF0(&mut self, d: i8);
+                fn xF1(&mut self, d: i8);
+                fn xF2(&mut self, d: i8);
+                fn xF3(&mut self, d: i8);
+                fn xF4(&mut self, d: i8);
+                fn xF5(&mut self, d: i8);
+                fn xF6(&mut self, d: i8);
+                fn xF7(&mut self, d: i8);
+                fn xF8(&mut self, d: i8);
+                fn xF9(&mut self, d: i8);
+                fn xFA(&mut self, d: i8);
+                fn xFB(&mut self, d: i8);
+                fn xFC(&mut self, d: i8);
+                fn xFD(&mut self, d: i8);
+                fn xFE(&mut self, d: i8);
+                fn xFF(&mut self, d: i8);
+
+                const ARRAY: [fn(&mut Self, i8); 0x100] = [
+                    Self::x00,
+                    Self::x01,
+                    Self::x02,
+                    Self::x03,
+                    Self::x04,
+                    Self::x05,
+                    Self::x06,
+                    Self::x07,
+                    Self::x08,
+                    Self::x09,
+                    Self::x0A,
+                    Self::x0B,
+                    Self::x0C,
+                    Self::x0D,
+                    Self::x0E,
+                    Self::x0F,
+                    Self::x10,
+                    Self::x11,
+                    Self::x12,
+                    Self::x13,
+                    Self::x14,
+                    Self::x15,
+                    Self::x16,
+                    Self::x17,
+                    Self::x18,
+                    Self::x19,
+                    Self::x1A,
+                    Self::x1B,
+                    Self::x1C,
+                    Self::x1D,
+                    Self::x1E,
+                    Self::x1F,
+                    Self::x20,
+                    Self::x21,
+                    Self::x22,
+                    Self::x23,
+                    Self::x24,
+                    Self::x25,
+                    Self::x26,
+                    Self::x27,
+                    Self::x28,
+                    Self::x29,
+                    Self::x2A,
+                    Self::x2B,
+                    Self::x2C,
+                    Self::x2D,
+                    Self::x2E,
+                    Self::x2F,
+                    Self::x30,
+                    Self::x31,
+                    Self::x32,
+                    Self::x33,
+                    Self::x34,
+                    Self::x35,
+                    Self::x36,
+                    Self::x37,
+                    Self::x38,
+                    Self::x39,
+                    Self::x3A,
+                    Self::x3B,
+                    Self::x3C,
+                    Self::x3D,
+                    Self::x3E,
+                    Self::x3F,
+                    Self::x40,
+                    Self::x41,
+                    Self::x42,
+                    Self::x43,
+                    Self::x44,
+                    Self::x45,
+                    Self::x46,
+                    Self::x47,
+                    Self::x48,
+                    Self::x49,
+                    Self::x4A,
+                    Self::x4B,
+                    Self::x4C,
+                    Self::x4D,
+                    Self::x4E,
+                    Self::x4F,
+                    Self::x50,
+                    Self::x51,
+                    Self::x52,
+                    Self::x53,
+                    Self::x54,
+                    Self::x55,
+                    Self::x56,
+                    Self::x57,
+                    Self::x58,
+                    Self::x59,
+                    Self::x5A,
+                    Self::x5B,
+                    Self::x5C,
+                    Self::x5D,
+                    Self::x5E,
+                    Self::x5F,
+                    Self::x60,
+                    Self::x61,
+                    Self::x62,
+                    Self::x63,
+                    Self::x64,
+                    Self::x65,
+                    Self::x66,
+                    Self::x67,
+                    Self::x68,
+                    Self::x69,
+                    Self::x6A,
+                    Self::x6B,
+                    Self::x6C,
+                    Self::x6D,
+                    Self::x6E,
+                    Self::x6F,
+                    Self::x70,
+                    Self::x71,
+                    Self::x72,
+                    Self::x73,
+                    Self::x74,
+                    Self::x75,
+                    Self::x76,
+                    Self::x77,
+                    Self::x78,
+                    Self::x79,
+                    Self::x7A,
+                    Self::x7B,
+                    Self::x7C,
+                    Self::x7D,
+                    Self::x7E,
+                    Self::x7F,
+                    Self::x80,
+                    Self::x81,
+                    Self::x82,
+                    Self::x83,
+                    Self::x84,
+                    Self::x85,
+                    Self::x86,
+                    Self::x87,
+                    Self::x88,
+                    Self::x89,
+                    Self::x8A,
+                    Self::x8B,
+                    Self::x8C,
+                    Self::x8D,
+                    Self::x8E,
+                    Self::x8F,
+                    Self::x90,
+                    Self::x91,
+                    Self::x92,
+                    Self::x93,
+                    Self::x94,
+                    Self::x95,
+                    Self::x96,
+                    Self::x97,
+                    Self::x98,
+                    Self::x99,
+                    Self::x9A,
+                    Self::x9B,
+                    Self::x9C,
+                    Self::x9D,
+                    Self::x9E,
+                    Self::x9F,
+                    Self::xA0,
+                    Self::xA1,
+                    Self::xA2,
+                    Self::xA3,
+                    Self::xA4,
+                    Self::xA5,
+                    Self::xA6,
+                    Self::xA7,
+                    Self::xA8,
+                    Self::xA9,
+                    Self::xAA,
+                    Self::xAB,
+                    Self::xAC,
+                    Self::xAD,
+                    Self::xAE,
+                    Self::xAF,
+                    Self::xB0,
+                    Self::xB1,
+                    Self::xB2,
+                    Self::xB3,
+                    Self::xB4,
+                    Self::xB5,
+                    Self::xB6,
+                    Self::xB7,
+                    Self::xB8,
+                    Self::xB9,
+                    Self::xBA,
+                    Self::xBB,
+                    Self::xBC,
+                    Self::xBD,
+                    Self::xBE,
+                    Self::xBF,
+                    Self::xC0,
+                    Self::xC1,
+                    Self::xC2,
+                    Self::xC3,
+                    Self::xC4,
+                    Self::xC5,
+                    Self::xC6,
+                    Self::xC7,
+                    Self::xC8,
+                    Self::xC9,
+                    Self::xCA,
+                    Self::xCB,
+                    Self::xCC,
+                    Self::xCD,
+                    Self::xCE,
+                    Self::xCF,
+                    Self::xD0,
+                    Self::xD1,
+                    Self::xD2,
+                    Self::xD3,
+                    Self::xD4,
+                    Self::xD5,
+                    Self::xD6,
+                    Self::xD7,
+                    Self::xD8,
+                    Self::xD9,
+                    Self::xDA,
+                    Self::xDB,
+                    Self::xDC,
+                    Self::xDD,
+                    Self::xDE,
+                    Self::xDF,
+                    Self::xE0,
+                    Self::xE1,
+                    Self::xE2,
+                    Self::xE3,
+                    Self::xE4,
+                    Self::xE5,
+                    Self::xE6,
+                    Self::xE7,
+                    Self::xE8,
+                    Self::xE9,
+                    Self::xEA,
+                    Self::xEB,
+                    Self::xEC,
+                    Self::xED,
+                    Self::xEE,
+                    Self::xEF,
+                    Self::xF0,
+                    Self::xF1,
+                    Self::xF2,
+                    Self::xF3,
+                    Self::xF4,
+                    Self::xF5,
+                    Self::xF6,
+                    Self::xF7,
+                    Self::xF8,
+                    Self::xF9,
+                    Self::xFA,
+                    Self::xFB,
+                    Self::xFC,
+                    Self::xFD,
+                    Self::xFE,
+                    Self::xFF,
+                ];
+            }
+
+            impl<T> ArrayTrait for T
+            where
+                T: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
+                T::Memo: From<Z80Memo>,
+            {
+                $mac_name!{process_instruction_double_prefix}
+            }
+
+            let pc = z.reg16(PC);
+            let d = z.read(pc.wrapping_sub(2)) as i8;
+            <Z as ArrayTrait>::ARRAY[opcode as usize](z, d);
+        }
+    };
+}
+
+create_function_double_prefix!{execute_ddcb, attalus_z80_ddcb}
+
+create_function_double_prefix!{execute_fdcb, attalus_z80_fdcb}
