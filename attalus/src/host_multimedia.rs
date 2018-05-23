@@ -135,12 +135,11 @@ where
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct FakeAudio(Box<[i16]>);
+pub struct FakeAudio;
 
 impl SimpleAudio for FakeAudio {
     #[inline]
-    fn configure(&mut self, _frequency: u32, buffer_size: u16) -> Result<()> {
-        self.0 = vec![0i16; buffer_size as usize].into_boxed_slice();
+    fn configure(&mut self, _frequency: u32, _buffer_size: u16) -> Result<()> {
         Ok(())
     }
 
@@ -159,7 +158,7 @@ impl SimpleAudio for FakeAudio {
 
     #[inline]
     fn buffer_len(&self) -> usize {
-        self.0.len()
+        1024 // lie
     }
 
     #[inline]
