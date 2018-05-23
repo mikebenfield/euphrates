@@ -91,6 +91,8 @@ pub enum SmsEmulationError {
     SomeError,
     #[fail(display = "Audio Error {}", _0)]
     AudioError(Error),
+    #[fail(display = "Graphics Error {}", _0)]
+    GraphicsError(#[cause] SmsVdpGraphicsError),
 }
 
 #[derive(Debug, Fail)]
@@ -550,7 +552,7 @@ where
         + AsRef<TimeStatus>,
 {
     loop {
-        sms_vdp::line(sms).expect("Fix this! XXX");
+        sms_vdp::line(sms).map_err(|e| SmsEmulationError::GraphicsError(e))?;
 
         let vdp_cycles = SmsVdpInternal::cycles(sms);
         let z80_target_cycles = 2 * vdp_cycles / 3;

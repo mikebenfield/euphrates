@@ -327,9 +327,6 @@ where
         self.mut_0().set_reg8(B, new_b);
         if new_b != 0 {
             self.jr(e);
-            self.mut_0().inc_cycles(13);
-        } else {
-            self.mut_0().inc_cycles(8);
         }
     }
 
@@ -388,14 +385,9 @@ where
     }
 
     fn jrcc(&mut self, cc: ConditionCode, e: i8) {
-        // XXX - think about whether to include these cycle increments in this
-        // function
         let flags = self.mut_0().reg8(F);
         if cc.check(flags) {
             self.jr(e);
-            self.mut_0().inc_cycles(12);
-        } else {
-            self.mut_0().inc_cycles(7);
         }
     }
 

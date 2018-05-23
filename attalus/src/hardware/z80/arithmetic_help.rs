@@ -111,7 +111,6 @@ pub fn add_help<Z>(z: &mut Z, a: u8, x: u8, cf: u8) -> u8
 where
     Z: Z80Internal + ?Sized,
 {
-    // XXX optimize?
     let result16 = (x as u16).wrapping_add(a as u16).wrapping_add(cf as u16);
     let result8 = result16 as u8;
 
@@ -129,7 +128,7 @@ where
     // overflow happened if:
     // x and a both have bit 7 AND result does not OR
     // x and a have clear bit 7 AND result is set
-    // in other words, x and y have the same bit 7 and
+    // in other words, x and a have the same bit 7 and
     // result is different
     let overflow = !(x ^ a) & (x ^ result8) & (1 << 7) != 0;
     z.set_flag_by(PF, overflow);

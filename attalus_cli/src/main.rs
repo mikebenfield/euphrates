@@ -71,7 +71,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         Some(sms::NTSC_Z80_FREQUENCY),
     )?;
 
-    let mut user_interface = sms_user_interface::ui(master_system, &sdl, save_directory, &[]);
+    let mut user_interface = sms_user_interface::ui(master_system, &sdl, save_directory, &[])?;
     user_interface.run()?;
 
     Ok(())

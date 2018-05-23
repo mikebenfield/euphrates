@@ -65,7 +65,9 @@ pub fn format(mut rom: Box<[u8]>) -> Result<Box<[[u8; 0x4000]]>, SmsRomError> {
     }
 
     if len == 0x2000 {
-        // mirror the ROM, maybe? XXX
+        // mirror the ROM manually. Not sure what happens in actual hardware,
+        // but this works on the ROMs I've tested. SMS Plus just rejects ROMs
+        // smaller than 0x4000.
         let mut x = Vec::with_capacity(0x4000);
         x.extend_from_slice(&rom[..]);
         x.extend_from_slice(&rom[..]);

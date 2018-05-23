@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 
+use failure::Error;
+
 use sdl2;
 
-use attalus::systems::sms::{joypad_a_bits, joypad_b_bits, Command, CommandResult, MasterSystem,
-                            PlaybackStatus, Query, QueryResult, SmsEmulationError,
-                            SmsPlayerInputState, Ui, UiHelper, UiStatus, UserMessage};
+use attalus::systems::sms::{
+    joypad_a_bits, joypad_b_bits, Command, CommandResult, MasterSystem, PlaybackStatus, Query,
+    QueryResult, SmsEmulationError, SmsPlayerInputState, Ui, UiHelper, UiStatus, UserMessage,
+};
 
 struct PlaybackHelper(PlaybackStatus);
 
@@ -95,8 +98,8 @@ impl UiHelper for SdlUiHelper {
                         do_query(status, Query::DisassemblyAt(pc));
                     }
                     (N, true) => do_query(status, Query::Disassembly),
-                    (H, false) => status.master_system_mut().hold().expect("XXX"),
-                    (H, true) => status.master_system_mut().resume().expect("XXX"),
+                    (H, false) => status.master_system_mut().hold()?,
+                    (H, true) => status.master_system_mut().resume()?,
                     _ => {}
                 },
                 _ => {}
@@ -146,24 +149,24 @@ impl UiHelper for SdlUiHelper {
     }
 }
 
+/// May return an error if there are problems with SDL
 pub fn ui(
     master_system: Box<MasterSystem>,
     sdl: &sdl2::Sdl,
     save_directory: Option<PathBuf>,
     player_statuses: &[SmsPlayerInputState],
-) -> Ui {
+) -> Result<Ui, Error> {
     sdl.event()
-        .map_err(|s| format_err!("Error initializing the SDL event subsystem {}", s))
-        .expect("XXX");
+        .map_err(|s| format_err!("Error initializing the SDL event subsystem {}", s))?;
 
-    let event_pump = sdl.event_pump()
-        .map_err(|s| format_err!("Error obtaining the SDL event pump {}", s))
-        .expect("XXX");
+    let event_pump = sdl
+        .event_pump()
+        .map_err(|s| format_err!("Error obtaining the SDL event pump {}", s))?;
 
     let helper = Box::new(SdlUiHelper {
         event_pump,
         playback_status: PlaybackStatus::from_recorded(player_statuses),
     });
 
-    Ui::new(master_system, helper, save_directory)
+    Ok(Ui::new(master_system, helper, save_directory))
 }
