@@ -1,11 +1,10 @@
 use std;
 
-use failure;
+use failure::Error;
 
-use sdl2::{self, AudioSubsystem};
 use sdl2::audio::AudioQueue;
+use sdl2::{self, AudioSubsystem};
 
-use attalus::errors::{SimpleKind, Error};
 use attalus::host_multimedia::SimpleAudio;
 
 pub const DEFAULT_BUFFER_SIZE: u16 = 0x800;
@@ -19,10 +18,10 @@ pub struct Audio {
 }
 
 impl Audio {
-    pub fn new(sdl: &sdl2::Sdl) -> std::result::Result<Audio, Error<SimpleKind>> {
-        let audio_subsystem = sdl.audio().map_err(|s| {
-            SimpleKind(format!("Unable to create SDL audio subsystem: {}", s))
-        })?;
+    pub fn new(sdl: &sdl2::Sdl) -> std::result::Result<Audio, Error> {
+        let audio_subsystem = sdl
+            .audio()
+            .map_err(|s| format_err!("Unable to create SDL audio subsystem: {}", s))?;
 
         let queue = audio_subsystem
             .open_queue(
@@ -33,9 +32,7 @@ impl Audio {
                     samples: Some(DEFAULT_BUFFER_SIZE as u16),
                 },
             )
-            .map_err(|s| {
-                SimpleKind(format!("Unable to create SDL audio queue: {}", s))
-            })?;
+            .map_err(|s| format_err!("Unable to create SDL audio subsystem: {}", s))?;
 
         Ok(Audio {
             buffer: vec![0i16; DEFAULT_BUFFER_SIZE as usize].into_boxed_slice(),
@@ -46,12 +43,9 @@ impl Audio {
 }
 
 impl SimpleAudio for Audio {
-    fn configure(
-        &mut self,
-        frequency: u32,
-        buffer_size: u16,
-    ) -> std::result::Result<(), failure::Error> {
-        self.queue = self.audio_subsystem
+    fn configure(&mut self, frequency: u32, buffer_size: u16) -> std::result::Result<(), Error> {
+        self.queue = self
+            .audio_subsystem
             .open_queue(
                 None,
                 &sdl2::audio::AudioSpecDesired {
@@ -67,12 +61,12 @@ impl SimpleAudio for Audio {
         Ok(())
     }
 
-    fn play(&mut self) -> std::result::Result<(), failure::Error> {
+    fn play(&mut self) -> std::result::Result<(), Error> {
         self.queue.resume();
         Ok(())
     }
 
-    fn pause(&mut self) -> std::result::Result<(), failure::Error> {
+    fn pause(&mut self) -> std::result::Result<(), Error> {
         self.queue.pause();
         Ok(())
     }
@@ -87,7 +81,7 @@ impl SimpleAudio for Audio {
         self.buffer.len()
     }
 
-    fn queue_buffer(&mut self) -> std::result::Result<(), failure::Error> {
+    fn queue_buffer(&mut self) -> std::result::Result<(), Error> {
         if self.queue.queue(&self.buffer) {
             Ok(())
         } else {
@@ -97,7 +91,7 @@ impl SimpleAudio for Audio {
         }
     }
 
-    fn clear(&mut self) -> std::result::Result<(), failure::Error> {
+    fn clear(&mut self) -> std::result::Result<(), Error> {
         self.queue.clear();
         Ok(())
     }

@@ -11,4 +11,3 @@ path = "src/lib.rs"
 attalus = { path = "../attalus" }
 sdl2 = "0.31"
 failure = "0.1"
-bitflags = "1.0"
