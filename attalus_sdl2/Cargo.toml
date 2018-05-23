@@ -10,4 +10,4 @@ path = "src/lib.rs"
 [dependencies]
 attalus = { path = "../attalus" }
 sdl2 = "0.31"
-failure = "0.1"
+failure = "0.1.1"
