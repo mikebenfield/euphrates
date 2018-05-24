@@ -167,7 +167,8 @@ where
 
                 // It seems most BIOSes leave SP as 0xDFEE
                 if default_mappings {
-                    sms.z80.set_reg16(Reg16::SP, 0xDF00);
+                    sms.z80.set_reg16(Reg16::SP, 0xDFEE);
+                    sms.vdp.reset_defaults();
                 }
                 return Ok(Box::new(sms));
             }};

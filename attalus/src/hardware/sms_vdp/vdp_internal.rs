@@ -711,6 +711,40 @@ pub trait SmsVdpInternal {
             None
         }
     }
+
+    /// Set power-on register settings.
+    ///
+    /// These are set according to Sega's official documentation, which I have
+    /// for the Mark III and Game Gear.
+    fn reset_defaults(&mut self) {
+        if self.kind() == Kind::Gg {
+            // according to Sega Game Gear Hardware Reference Manual, pg 21
+            self.set_register(0, 0);
+            self.set_register(1, 0);
+            self.set_register(2, 0); // (not set, according to manual)
+            self.set_register(3, 0); // (not set, according to manual)
+            self.set_register(4, 0); // (not set, according to manual)
+            self.set_register(5, 0); // (not set, according to manual)
+            self.set_register(6, 0); // (not set, according to manual)
+            self.set_register(7, 0);
+            self.set_register(8, 0);
+            self.set_register(9, 0);
+            self.set_register(10, 1); // really? that's what the manual says
+        } else {
+            // according to Sega Mk3 Software Reference Manual, pg 18
+            self.set_register(0, 0x36);
+            self.set_register(1, 0xA0);
+            self.set_register(2, 0xFF);
+            self.set_register(3, 0xFF);
+            self.set_register(4, 0xFF);
+            self.set_register(5, 0xFF);
+            self.set_register(6, 0xFB);
+            self.set_register(7, 0x00);
+            self.set_register(8, 0x00);
+            self.set_register(9, 0x00);
+            self.set_register(10, 0xFF);
+        }
+    }
 }
 
 /// For use in the Impler pattern for `SmsVdpInternal`.
