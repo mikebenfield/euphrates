@@ -938,6 +938,8 @@ pub const CONTROL_FLAG: u8 = 0x1;
 pub const LINE_INTERRUPT_FLAG: u8 = 0x2;
 
 /// The state of the VDP.
+///
+/// Suitable for serializing.
 #[derive(Clone, Copy)]
 pub struct SmsVdpState {
     pub cycles: u64,

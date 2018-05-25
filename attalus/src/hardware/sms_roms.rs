@@ -5,6 +5,7 @@ use std::io::Error as IoError;
 use std::io::Read;
 use std::path::Path;
 
+/// Error generated when attempting to load an invalid ROM image.
 #[derive(Debug, Fail)]
 pub enum SmsRomError {
     #[fail(
@@ -28,8 +29,8 @@ impl From<IoError> for SmsRomError {
 /// 0x4000]]` to represent them. This function:
 ///
 /// * strips off a 512 byte header, if present
-/// * does ROM mirroring of `0x2000` byte slices (it just puts two copies of the ROM image
-///   into a `[u8; 0x4000]`).
+/// * does ROM mirroring of `0x2000` byte slices (it just puts two copies of the
+///   ROM image into a `[u8; 0x4000]`).
 /// * pads ROMs shorter than `0x2000` bytes
 ///
 /// ROMs longer than `0x2000` bytes but not a multiple of `0x4000` will give an

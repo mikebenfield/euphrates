@@ -8,6 +8,14 @@ use super::sms_vdp::SmsVdpInterface;
 use super::sn76489::Sn76489Interface;
 
 /// An Impler for `Io16`.
+///
+/// If `T` implements
+///
+/// * `SmsPlayerInput`,
+/// * `SmsVdpInterface`, and
+/// * `Sn74689Interface`,
+///
+/// then `SmsIo16Impler<T>` implements `Io16`.
 pub struct SmsIo16Impler<T: ?Sized>(ConstOrMut<T>);
 
 unsafe impl<T: ?Sized> ImplerImpl for SmsIo16Impler<T> {

@@ -1,3 +1,5 @@
+//! Memory maps for the Sega Master System.
+
 use std;
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
@@ -15,13 +17,34 @@ pub use self::codemasters::*;
 pub use self::memo::*;
 pub use self::sega::*;
 
+/// A 16 KiB page of memory.
+///
+/// This is used to indicate, for each of four 16 KiB slots of logical memory,
+/// what physical page of memory it's mapped to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum MemoryPage {
+    /// The 8 KiB of system RAM, mirrored across 16 KiB.
     SystemRam,
+
+    /// The first 16 KiB page of RAM on the cartridge.
+    ///
+    /// Games with the Sega Memory Mapper have 0, 16, or 32 KiB of RAM on board.
     FirstCartridgeRam(u8),
+
+    /// The second 16 KiB page of RAM on the cartridge.
     SecondCartridgeRam(u8),
+
+    /// The first half of the slot is mapped to a page of ROM indicated by the
+    /// parameter; the second half is mapped to 8 KiB of on-cartridge RAM.
+    ///
+    /// It seems some Codemasters games have 8 KiB of on-cartridge RAM.
     HalfCartridgeRam(u8),
+
+    /// The page of ROM indicated by the parameter.
     Rom(u8),
+
+    /// The page of ROM indicated by the parameter, except the first KiB of
+    /// logical memory is mapped to the first KiB of physical ROM.
     RomButFirstKiB(u8),
 }
 
@@ -52,6 +75,10 @@ mod _impl0 {
 
 }
 
+/// On-cartridge RAM, which can be dynamically allocated if needed.
+///
+/// This is for cartridges using the Sega Memory Mapper, which have 0, 16, or 32
+/// KiB of RAM.
 #[derive(Clone)]
 pub enum MainCartridgeRam {
     Zero,
@@ -82,23 +109,82 @@ mod _impl1 {
     impl Eq for super::MainCartridgeRam {}
 }
 
+/// The memory inside a Sega Master System.
+///
+/// Includes the cartridge ROM, 8 KiB of system RAM, 0, 16, or 32 KiB of "main"
+/// cartridge RAM, and 0 or 8 KiB of "half" cartridge RAM.
 pub trait SmsMemory {
+    /// What memory page is `slot` mapped to?
+    ///
+    /// Panics if `slot > 3`.
     fn page(&self, slot: u8) -> MemoryPage;
 
+    /// How much ROM on the cartridge, in bytes?
     fn rom_len(&self) -> usize;
+
+    /// Read a byte of ROM.
+    ///
+    /// Panics if `index` is greater than the length of the ROM.
     fn rom_read(&self, index: usize) -> u8;
+
+    /// Write a byte of ROM.
+    ///
+    /// Of course, this is not possible in actual hardware.
+    ///
+    /// Panics if `index` is greater than the length of the ROM.
+    ///
+    /// It is desirable that implementations share the same ROM behind an `Arc`
+    /// when cloned. If that's the case, this method must
+    /// XXX
     fn rom_write(&mut self, index: usize, value: u8);
 
+    /// How much RAM is on the cartridge, in bytes?
+    ///
+    /// Note that this refers only to the 0, 16, or 32 KiB of RAM
+    /// used in the Sega Memory Mapper. Since this may be dynamically
+    /// allocated when requested by the ROM, it may increase.
     fn main_cartridge_ram_len(&self) -> usize;
+
+    /// Read a byte of cartridge RAM.
+    ///
+    /// Panics if `index` is greater than the length of the RAM.
     fn main_cartridge_ram_read(&self, index: usize) -> u8;
+
+    /// Write a byte of cartridge RAM.
+    ///
+    /// Panics if `index` is greater than the length of the RAM.
     fn main_cartridge_ram_write(&mut self, index: usize, value: u8);
 
+    /// How much RAM is on the cartridge, in bytes?
+    ///
+    /// Note that this refers only to the 0, or 8 KiB of RAM used in the
+    /// Codemasters Memory Mapper. Since this may be dynamically allocated when
+    /// requested by the ROM, it may increase.
     fn half_cartridge_ram_len(&self) -> usize;
+
+    /// Read a byte of cartridge RAM.
+    ///
+    /// Panics if `index` is greater than the length of the RAM.
     fn half_cartridge_ram_read(&self, index: usize) -> u8;
+
+    /// Write a byte of cartridge RAM.
+    ///
+    /// Panics if `index` is greater than the length of the RAM.
     fn half_cartridge_ram_write(&mut self, index: usize, value: u8);
 
+    /// How much system RAM, in bytes?
+    ///
+    /// (This is always 0x2000.)
     fn system_ram_len(&self) -> usize;
+
+    /// Read a byte of system RAM.
+    ///
+    /// Panics if `index` is greater than the length of the RAM.
     fn system_ram_read(&self, index: usize) -> u8;
+
+    /// Write a byte of system RAM.
+    ///
+    /// Panics if `index` is greater than the length of the RAM.
     fn system_ram_write(&mut self, index: usize, value: u8);
 
     fn state(&self) -> SmsMemoryState;
@@ -108,7 +194,8 @@ pub trait SmsMemory {
     /// The default implementation, which should not be overridden, calls
     /// `map_page_impl`. In the case that the page indicated is from ROM, it
     /// takes the rom page indicated modulo the total number of ROM pages, and
-    /// sends that to `map_page_impl`.
+    /// sends that to `map_page_impl`, which what an implementation of this
+    /// trait should implement.
     fn map_page(&mut self, slot: u8, page: MemoryPage) {
         use self::MemoryPage::*;
         let rom_pages = (self.rom_len() / 0x4000) as u8;
@@ -227,6 +314,18 @@ where
     }
 }
 
+/// Captures the state of the memory in the Master System.
+///
+/// In particular, it captures the ROM, system RAM, the main cartridge RAM, the
+/// half page cartridge RAM, and the mappings of the four slots of logical
+/// memory.
+///
+/// Implements `Memory16` and `SmsMemory`. Note that the implementation of
+/// `Memory16` is done via a `match` statement to dispatch to the correct page
+/// of memory, which is not the fastest approach.
+///
+/// This is suitable for serializing or for initializing the state of another
+/// implementation via `SmsMemoryLoad`.
 #[derive(Clone)]
 pub struct SmsMemoryState {
     pub rom: Arc<Box<[[u8; 0x4000]]>>,
@@ -255,7 +354,10 @@ mod _impl2 {
 }
 
 impl SmsMemoryState {
-    fn check_valid(&self) -> Option<SmsMemoryLoadError> {
+    /// Are the mapped ROM pages in this `SmsMemoryState` valid?
+    ///
+    /// That is, are they smaller than the total number of pages in the ROM?
+    pub fn check_valid(&self) -> Option<SmsMemoryLoadError> {
         use self::SmsMemoryLoadError::*;
         let rom_pages = self.rom.len();
         if rom_pages == 0 || rom_pages > 0x100 {
@@ -493,6 +595,7 @@ impl SmsMemory for SmsMemoryState {
     }
 }
 
+/// Error generated by `SmsMemoryLoad`.
 #[derive(Debug, Fail)]
 pub enum SmsMemoryLoadError {
     /// The ROM size is not valid.
@@ -522,12 +625,27 @@ pub enum SmsMemoryLoadError {
     },
 }
 
+/// A `SmsMemory` that can be initialized via a `SmsMemoryState` or a ROM.
 pub trait SmsMemoryLoad: Sized {
+    /// Load from an `SmsMemoryState`.
+    ///
+    /// This is provided in addition to `load_ref` since it may be possible for
+    /// an implementation to use components from the `SmsMemoryState` and save
+    /// the cost of allocating and copying.
+    ///
+    /// Note that there are default impementations of `load` and `load_ref`,
+    /// but they call each other, so an implementer of this trait must
+    /// override one of them.
     #[inline]
     fn load(state: SmsMemoryState) -> Result<Self, SmsMemoryLoadError> {
         Self::load_ref(&state)
     }
 
+    /// Load from a reference to a `SmsMemoryState`.
+    ///
+    /// Note that there are default impementations of `load` and `load_ref`,
+    /// but they call each other, so an implementer of this trait must
+    /// override one of them.
     #[inline]
     fn load_ref(state: &SmsMemoryState) -> Result<Self, SmsMemoryLoadError> {
         Self::load(state.clone())
@@ -545,13 +663,24 @@ pub trait SmsMemoryLoad: Sized {
     }
 }
 
+/// A memory mapper for the Sega Master System.
+///
+/// The memory mappers for the SMS control which logical memory slot is mapped
+/// to which physical memory page via writes to certain memory locations.
+///
+/// An `SmsMapper` implements this scheme; each time an address is written to,
+/// `write_reg` should be called before actually writing to memory.
 pub trait SmsMapper<M: ?Sized> {
+    /// If `address` corresponds to a memory control register, change the memory
+    /// mappings in `memory` as appropriate.
     fn write_reg(memory: &mut M, address: u16, value: u8);
 
     /// reset this memory to its default mapping state
     fn default_mappings(memory: &mut M);
 }
 
+/// Use in conjunction with an `SmsMapper` and a `Memory` to get an
+/// implementation of `Memory16` using the `SmsMapper`.
 pub struct SmsMapMemory16Impler<Memory: ?Sized, Mapper: ?Sized>(
     ConstOrMut<Memory>,
     PhantomData<Mapper>,
@@ -593,6 +722,11 @@ where
     }
 }
 
+/// An implementation of `SmsMemory` using pointer manipulation to map logical
+/// memory addresses to physical memory addresses.
+///
+/// This is likely faster than the manual dispatch of `SmsMemoryState`, but I
+/// haven't done a comparison yet.
 pub struct PointerSmsMemory {
     state: UnsafeCell<SmsMemoryState>,
     scrap: Arc<[u8; 0x400]>,
@@ -936,6 +1070,8 @@ impl SmsMemory for PointerSmsMemory {
 
     #[inline]
     fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
+        // let's not go through a bunch of moving around pointers unless we
+        // really have to
         if self.page(slot) != page {
             self.force_map_page(slot, page)
         }

@@ -1,5 +1,6 @@
 use super::*;
 
+/// The Codemasters memory mapper.
 pub struct CodemastersMapper;
 
 impl<M> SmsMapper<M> for CodemastersMapper

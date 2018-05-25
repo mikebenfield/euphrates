@@ -1,5 +1,6 @@
 use super::*;
 
+/// The Sega memory mapper.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SegaMapper;
 

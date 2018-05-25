@@ -2,6 +2,7 @@ use impler::{ConstOrMut, Impler, ImplerImpl};
 
 use super::*;
 
+/// The hardware intereface of the VDP.
 pub trait SmsVdpInterface {
     /// Write a byte to the data port.
     fn write_data(&mut self, x: u8);
@@ -81,31 +82,40 @@ impl<T> SmsVdpInterface for T
 where
     T: SmsVdpInterfaceImpl + ?Sized,
 {
+    /// Write a byte to the data port.
     #[inline]
     fn write_data(&mut self, x: u8) {
         self.close_mut(|z| z.write_data(x))
     }
 
+    /// Read a byte from the data port.
     #[inline]
     fn read_data(&mut self) -> u8 {
         self.close_mut(|z| z.read_data())
     }
 
+    /// Write a byte to the control port.
     #[inline]
     fn write_control(&mut self, x: u8) {
         self.close_mut(|z| z.write_control(x))
     }
 
+    /// Read a byte from the control port.
     #[inline]
     fn read_control(&mut self) -> u8 {
         self.close_mut(|z| z.read_control())
     }
 
+    /// Read the V counter.
     #[inline]
     fn read_v(&mut self) -> u8 {
         self.close_mut(|z| z.read_v())
     }
 
+    /// Read the H counter.
+    ///
+    /// This is, and will likely remain, useless in this implementation. But
+    /// this only seems to matter for the light gun.
     #[inline]
     fn read_h(&mut self) -> u8 {
         self.close_mut(|z| z.read_h())

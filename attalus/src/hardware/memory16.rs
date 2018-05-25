@@ -9,7 +9,7 @@ pub trait Memory16 {
     fn write(&mut self, logical_address: u16, value: u8);
 }
 
-/// For use in the Impler pattern for `Memory16`.
+/// For the Impler pattern for `Memory16`.
 pub trait Memory16Impl {
     type Impler: Memory16;
 

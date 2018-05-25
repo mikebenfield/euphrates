@@ -98,6 +98,7 @@ impl SmsPlayerInput for SmsPlayerInputState {
     }
 }
 
+/// What buttons are being pressed this frame?
 pub trait SmsPlayerInput {
     fn joypad_a(&self) -> u8;
     fn set_joypad_a(&mut self, x: u8);
@@ -109,6 +110,7 @@ pub trait SmsPlayerInput {
     fn set_state(&mut self, x: SmsPlayerInputState);
 }
 
+/// An Impler for `SmsPlayerInput`.
 pub trait SmsPlayerInputImpl {
     type Impler: SmsPlayerInput;
 

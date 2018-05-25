@@ -1,3 +1,5 @@
+//! Emulated hardware devices.
+
 pub mod io16;
 pub mod memory16;
 pub mod sms_io;
