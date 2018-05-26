@@ -104,6 +104,8 @@ where
             return Ok(());
         }
 
+        // allow 7 extra pixels so we don't have to check writes
+        // when horizontally scrolled
         let mut line_buffer = [0x80u8; 256];
 
         let v = s.v();
@@ -163,38 +165,75 @@ where
         }
 
         // draw tiles
-        let scrolled_v = (v + s.y_scroll() as u16) % if SmsVdpInternal::resolution(s) == Low {
-            28 * 8
-        } else {
-            32 * 8
-        };
-        let tile_index_base = (scrolled_v / 8) * 32;
-        let tile_line = scrolled_v % 8;
-        for tile in 0..32u16 {
-            let current_tile_address = s.name_table_address() + 2 * (tile + tile_index_base);
-            let low_byte = s.vram(current_tile_address);
-            let high_byte = s.vram(current_tile_address.wrapping_add(1));
-            let vert_flip = 4 & high_byte != 0;
-            let horiz_flip = 2 & high_byte != 0;
-            let priority = 0x10 & high_byte != 0;
-            let palette = ((high_byte & 8) << 1) as u16;
-            let pattern_index = utilities::to16(low_byte, high_byte & 1);
-            let tile_line_really = if vert_flip { 7 - tile_line } else { tile_line };
-            let palette_indices: [u8; 8] = unsafe {
-                s.pattern_address_to_palette_indices(pattern_index * 32, tile_line_really)
-            };
-            for j in 0..8 {
-                let x = if horiz_flip {
-                    tile as usize * 8 + (7 - j)
-                } else {
-                    tile as usize * 8 + j
-                } as u8;
+        let vert_scroll_locked = s.vert_scroll_locked();
 
-                let scrolled_x = x.wrapping_add(s.x_scroll()) as usize;
-                if line_buffer[scrolled_x] == 0x80 || (priority && palette_indices[j] as usize > 0)
-                {
-                    line_buffer[scrolled_x] = s.cram(palette_indices[j] as u16 + palette) as u8;
+        let scroll_x = if s.horiz_scroll_lock() && v < 16 {
+            0
+        } else {
+            s.x_scroll()
+        };
+        let pixel_offset_x = scroll_x & 7;
+        let tile_offset_x = (-((scroll_x >> 3) as i16)) as u16;
+
+        let vert_tile_count = if SmsVdpInternal::resolution(s) == Low {
+            224u16
+        } else {
+            256u16
+        };
+
+        let scroll_y = s.y_scroll() as u16;
+        let logical_y = if v < scroll_y {
+            vert_tile_count + v - scroll_y
+        } else {
+            v - scroll_y
+        };
+        let pixel_offset_y = logical_y & 7;
+        let tile_offset_y = logical_y >> 3;
+
+        {
+            let mut write_tile = |tile, tile_line, start_x| {
+                let current_tile_address = s.name_table_address() + 2 * tile;
+                let low_byte = s.vram(current_tile_address);
+                let high_byte = s.vram(current_tile_address.wrapping_add(1));
+                let vert_flip = 4 & high_byte != 0;
+                let horiz_flip = 2 & high_byte != 0;
+                let priority = 0x10 & high_byte != 0;
+                let palette = ((high_byte & 8) << 1) as u16;
+                let pattern_index = utilities::to16(low_byte, high_byte & 1);
+                let tile_line_really = if vert_flip { 7 - tile_line } else { tile_line };
+                let palette_indices: [u8; 8] = unsafe {
+                    s.pattern_address_to_palette_indices(pattern_index * 32, tile_line_really)
+                };
+                for j in 0..8usize {
+                    let tile_col = if horiz_flip { (7 - j) } else { j };
+                    let x = j + start_x;
+                    if x >= 256 {
+                        break;
+                    }
+                    if line_buffer[x] & 0x80 != 0
+                        || (priority && palette_indices[tile_col] as usize > 0)
+                    {
+                        line_buffer[x] = s.cram(palette_indices[tile_col] as u16 + palette) as u8;
+                    }
                 }
+            };
+
+            // first, draw region 3/4
+            for tile in 23..if vert_scroll_locked { 32 } else { 23 } {
+                write_tile(
+                    v >> 3 + (tile_offset_x.wrapping_add(tile)) % 32,
+                    v & 7,
+                    tile as usize * 8 + pixel_offset_x as usize,
+                )
+            }
+
+            // now draw region 1 or 2
+            for tile in 0..if vert_scroll_locked { 24 } else { 32 } {
+                write_tile(
+                    32 * tile_offset_y + (tile_offset_x.wrapping_add(tile)) % 32,
+                    pixel_offset_y,
+                    tile as usize * 8 + pixel_offset_x as usize,
+                );
             }
         }
 

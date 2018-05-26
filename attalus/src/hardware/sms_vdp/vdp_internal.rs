@@ -52,9 +52,8 @@ pub trait SmsVdpInternal {
 
     /// Vertical scroll.
     ///
-    /// Games set the `y_scroll` value by setting register 9, but the value
-    /// used is only updated once per frame, so we need to store the an
-    /// additional byte.
+    /// Games set the `y_scroll` value by setting register 9, but the value used
+    /// is only updated once per frame, so we need to store an additional byte.
     fn y_scroll(&self) -> u8;
 
     /// Set the vertical scroll.
