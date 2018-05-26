@@ -341,7 +341,7 @@ pub trait SmsVdpInternal {
         unsafe { self.register_unchecked(1) & (1 << 1) != 0 }
     }
 
-    /// Are sprites zoomed (bit 0 of register 0)?
+    /// Are sprites zoomed (bit 0 of register 1)?
     ///
     /// Normal sprites are 8x8 pixels while tall ones are 8x16. Zooming them
     /// makes them 16x16 or 16x32. There is still only data for 64 or 128 pixels
@@ -349,7 +349,7 @@ pub trait SmsVdpInternal {
     /// pixels.
     #[inline]
     fn zoomed_sprites(&self) -> bool {
-        unsafe { self.register_unchecked(0) & 1 != 0 }
+        unsafe { self.register_unchecked(1) & 1 != 0 }
     }
 
     /// Where in VRAM is the name table?

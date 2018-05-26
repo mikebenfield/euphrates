@@ -116,7 +116,9 @@ where
             if sprite_y == 0xD1 && SmsVdpInternal::resolution(s) == Low {
                 break;
             }
-            let sprite_line = v.wrapping_sub(sprite_y);
+
+            // which line of the sprite are we rendering?
+            let sprite_line = v.wrapping_sub(sprite_y) / if s.zoomed_sprites() { 2 } else { 1 };
             if sprite_line >= sprite_height {
                 continue;
             }
@@ -131,8 +133,9 @@ where
                 unsafe { s.pattern_address_to_palette_indices(pattern_addr, sprite_line) };
             let sprite_x = unsafe { s.sprite_x(i) } as usize;
             let shift_x = if s.shift_sprites() { 8 } else { 0 };
-            for i in 0..8 {
-                let render_x = sprite_x.wrapping_add(i).wrapping_sub(shift_x);
+            for j in 0..8 {
+                let index = if s.zoomed_sprites() { 2 * j } else { j };
+                let render_x = sprite_x.wrapping_add(index).wrapping_sub(shift_x);
                 if render_x > 255 {
                     break;
                 }
@@ -140,8 +143,21 @@ where
                     s.trigger_sprite_collision();
                     continue;
                 }
-                if palette_indices[i] != 0 {
-                    line_buffer[render_x] = s.cram(palette_indices[i] as u16 + 16) as u8;
+                if palette_indices[j] != 0 {
+                    line_buffer[render_x] = s.cram(palette_indices[j] as u16 + 16) as u8;
+                }
+                if s.zoomed_sprites() {
+                    let render_x2 = render_x + 1;
+                    if render_x2 > 255 {
+                        break;
+                    }
+                    if line_buffer[render_x2] != 0x80 {
+                        s.trigger_sprite_collision();
+                        continue;
+                    }
+                    if palette_indices[j] != 0 {
+                        line_buffer[render_x2] = s.cram(palette_indices[j] as u16 + 16) as u8;
+                    }
                 }
             }
         }
