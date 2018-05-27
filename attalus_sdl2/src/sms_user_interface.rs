@@ -9,6 +9,8 @@ use attalus::systems::sms::{
     QueryResult, SmsEmulationError, SmsPlayerInputState, Ui, UiHelper, UiStatus, UserMessage,
 };
 
+use simple_graphics::Window;
+
 struct PlaybackHelper(PlaybackStatus);
 
 impl UiHelper for PlaybackHelper {
@@ -39,6 +41,7 @@ pub fn playback_ui(
 struct SdlUiHelper {
     event_pump: sdl2::EventPump,
     playback_status: PlaybackStatus,
+    tile_window: Option<Window>,
 }
 
 impl UiHelper for SdlUiHelper {
@@ -145,6 +148,11 @@ impl UiHelper for SdlUiHelper {
             player_status = ps;
         }
 
+        if let Some(ref mut window) = self.tile_window {
+            use attalus::hardware::sms_vdp::debug::draw_tiles;
+            draw_tiles(status.master_system(), window)?;
+        }
+
         Ok(Some(player_status))
     }
 }
@@ -155,6 +163,7 @@ pub fn ui(
     sdl: &sdl2::Sdl,
     save_directory: Option<PathBuf>,
     player_statuses: &[SmsPlayerInputState],
+    use_tile_window: bool,
 ) -> Result<Ui, Error> {
     sdl.event()
         .map_err(|s| format_err!("Error initializing the SDL event subsystem {}", s))?;
@@ -162,10 +171,20 @@ pub fn ui(
     let event_pump = sdl
         .event_pump()
         .map_err(|s| format_err!("Error obtaining the SDL event pump {}", s))?;
+    let tile_window = if use_tile_window {
+        let mut graphics = Window::new(&sdl)?;
+        graphics.set_size(300, 300);
+        graphics.set_texture_size(300, 300);
+        graphics.set_title("Attalus tiles");
+        Some(graphics)
+    } else {
+        None
+    };
 
     let helper = Box::new(SdlUiHelper {
         event_pump,
         playback_status: PlaybackStatus::from_recorded(player_statuses),
+        tile_window,
     });
 
     Ok(Ui::new(master_system, helper, save_directory))

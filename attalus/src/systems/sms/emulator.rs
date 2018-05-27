@@ -95,6 +95,12 @@ pub enum SmsEmulationError {
     GraphicsError(#[cause] SmsVdpGraphicsError),
 }
 
+impl From<SmsVdpGraphicsError> for SmsEmulationError {
+    fn from(x: SmsVdpGraphicsError) -> Self {
+        SmsEmulationError::GraphicsError(x)
+    }
+}
+
 #[derive(Debug, Fail)]
 pub enum SmsCreationError {
     #[fail(display = "ROM error: {}", _0)]
@@ -553,7 +559,7 @@ where
         + AsRef<TimeStatus>,
 {
     loop {
-        sms_vdp::line(sms).map_err(|e| SmsEmulationError::GraphicsError(e))?;
+        sms_vdp::line(sms)?;
 
         let vdp_cycles = SmsVdpInternal::cycles(sms);
         let z80_target_cycles = 2 * vdp_cycles / 3;

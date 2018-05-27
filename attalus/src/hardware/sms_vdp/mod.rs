@@ -6,6 +6,7 @@ mod vdp_interface;
 mod vdp_internal;
 mod vdp_irq;
 
+pub mod debug;
 pub mod replaceable;
 
 pub use self::graphics::*;
@@ -66,7 +67,6 @@ pub const FRAME_INTERRUPT_FLAG: u8 = 0x80;
 /// Bit 6 of the status register indicates whether too many sprites have
 /// attempted to be rendered on a single line.
 pub const SPRITE_OVERFLOW_FLAG: u8 = 0x40;
-
 
 /// Bit 5 of the status register indicates whether two sprites overlapped.
 pub const SPRITE_COLLISION_FLAG: u8 = 0x20;

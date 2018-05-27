@@ -365,7 +365,7 @@ pub trait SmsVdpInternal {
         if self.resolution() == Resolution::Low {
             address
         } else {
-            address | (1 << 11)
+            (address & 0xF7FF) | 0x0700
         }
     }
 
