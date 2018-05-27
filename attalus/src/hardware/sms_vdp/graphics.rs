@@ -176,17 +176,14 @@ where
         let tile_offset_x = (-((scroll_x >> 3) as i16)) as u16;
 
         let vert_tile_count = if SmsVdpInternal::resolution(s) == Low {
-            224u16
+            28u16
         } else {
-            256u16
+            32u16
         };
+        let vert_tile_height = 8 * vert_tile_count;
 
         let scroll_y = s.y_scroll() as u16;
-        let logical_y = if v < scroll_y {
-            vert_tile_count + v - scroll_y
-        } else {
-            v - scroll_y
-        };
+        let logical_y = (v + scroll_y as u16) % vert_tile_height;
         let pixel_offset_y = logical_y & 7;
         let tile_offset_y = logical_y >> 3;
 

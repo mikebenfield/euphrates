@@ -39,5 +39,15 @@ where
             }
         }
     }
+
+    let y_scroll = v.y_scroll();
+    for i in 0..256 {
+        use host_multimedia::SimpleColor;
+        graphics.paint(i, y_scroll as u32 % height as u32, SimpleColor {
+            red: 0xF0,
+            green: 0,
+            blue: 0xF0,
+        });
+    }
     graphics.render().map_err(|e| SmsVdpGraphicsError::Graphics(e))
 }
