@@ -54,7 +54,7 @@ pub enum InterruptMode {
 
 impl Default for InterruptMode {
     fn default() -> Self {
-        InterruptMode::Im0
+        InterruptMode::Im1
     }
 }
 

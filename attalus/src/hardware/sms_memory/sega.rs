@@ -56,8 +56,8 @@ where
             memory.map_page(3, SystemRam);
         } else {
             memory.map_page(0, Rom(0));
-            memory.map_page(0, Rom(0));
-            memory.map_page(0, Rom(0));
+            memory.map_page(1, Rom(1));
+            memory.map_page(2, Rom(0));
             memory.map_page(3, SystemRam);
         }
     }
