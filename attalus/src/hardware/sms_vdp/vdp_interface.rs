@@ -151,6 +151,7 @@ where
         let z = self.mut_0();
         let code = z.code();
         let addr = z.address();
+        z.set_data_buffer(x);
 
         match (code, z.kind()) {
             (3, Kind::Gg) => {
