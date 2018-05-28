@@ -14,7 +14,8 @@ use sdl2::Sdl;
 
 use attalus::hardware::sn76489::Sn76489State;
 use attalus::systems::sms::{
-    self, MasterSystem, MasterSystemCreate, MemoryMapperType, Recording, SmsMemoryState,
+    self, Kind, MasterSystem, MasterSystemCreate, MemoryMapperType, Recording, SmsMemoryState,
+    SmsOptions, TvSystem,
 };
 
 use attalus_sdl2::sms_user_interface;
@@ -26,8 +27,7 @@ fn new_master_system(
     filename: &str,
     sdl: &Sdl,
     memory_mapper_type: MemoryMapperType,
-    debug: bool,
-    frequency: Option<u64>,
+    options: SmsOptions,
 ) -> Result<Box<MasterSystem>> {
     let audio = Audio::new(&sdl)?;
 
@@ -42,8 +42,7 @@ fn new_master_system(
             graphics,
             audio,
             memory_mapper_type,
-            debug,
-            frequency,
+            options,
         )?,
     )
 }
@@ -56,6 +55,17 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         Some(s) => Some(PathBuf::from(s)),
     };
     let debug = matches.value_of("debug").unwrap() == "true";
+    let tv_system = match matches.value_of("tv").unwrap() {
+        "NTSC" => TvSystem::Ntsc,
+        _ => TvSystem::Pal,
+    };
+
+    let options = SmsOptions {
+        frequency: Some(sms::NTSC_Z80_FREQUENCY),
+        vdp_kind: Kind::Sms2,
+        tv_system,
+        debug,
+    };
 
     let sdl = sdl2::init().unwrap();
 
@@ -67,8 +77,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         } else {
             MemoryMapperType::Codemasters
         },
-        debug,
-        Some(sms::NTSC_Z80_FREQUENCY),
+        options,
     )?;
 
     let mut user_interface =
@@ -181,6 +190,14 @@ fn run() -> Result<()> {
         .possible_values(&["true", "false"])
         .default_value("false");
 
+    let tv_arg = Arg::with_name("tv")
+        .long("tv")
+        .value_name("(NTSC|PAL)")
+        .help("Use an NTSC or PAL Video Display Processor")
+        .takes_value(true)
+        .possible_values(&["NTSC", "PAL"])
+        .default_value("NTSC");
+
     let app = App::new("Attalus")
         .version("0.1.0")
         .author("Michael Benfield")
@@ -196,6 +213,7 @@ fn run() -> Result<()> {
                         .takes_value(true)
                         .required(true),
                 )
+                .arg(tv_arg.clone())
                 .arg(debug_arg.clone())
                 .arg(memory_map_arg.clone())
                 .arg(save_directory_arg.clone()),

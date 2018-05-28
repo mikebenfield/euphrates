@@ -122,6 +122,14 @@ impl From<SmsMemoryLoadError> for SmsCreationError {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SmsOptions {
+    pub tv_system: TvSystem,
+    pub vdp_kind: Kind,
+    pub frequency: Option<u64>,
+    pub debug: bool,
+}
+
 pub struct MasterSystemCreate<Sn76489, Mem> {
     _p: PhantomData<Sn76489>,
     _m: PhantomData<Mem>,
@@ -136,8 +144,7 @@ where
         state: SmsState,
         sg: Sg,
         sa: Sa,
-        debug: bool,
-        frequency: Option<u64>,
+        options: SmsOptions,
         default_mappings: bool,
     ) -> Result<Box<MasterSystem>, SmsCreationError>
     where
@@ -149,7 +156,7 @@ where
         Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
         let mut mem = SmsMemoryLoad::load(state.mem)?;
-        let time_status = TimeStatus::new(state.z80.cycles(), frequency);
+        let time_status = TimeStatus::new(state.z80.cycles(), options.frequency);
 
         macro_rules! ret {
             ($mapper:ident, $inbox:ty) => {{
@@ -171,6 +178,10 @@ where
                     _mapper: PhantomData,
                 };
 
+                sms.vdp.set_tv_system(options.tv_system);
+
+                // sms.vdp.set_kind(options.kind);
+
                 // It seems most BIOSes leave SP as 0xDFEE
                 if default_mappings {
                     sms.z80.set_reg16(Reg16::SP, 0xDFEE);
@@ -179,7 +190,7 @@ where
                 return Ok(Box::new(sms));
             }};
         }
-        match (state.memory_mapper_type, debug) {
+        match (state.memory_mapper_type, options.debug) {
             (MemoryMapperType::Sega, false) => ret!(SegaMapper, NothingInbox<SmsMemo>),
             (MemoryMapperType::Sega, true) => ret!(SegaMapper, DebuggingInbox),
             (MemoryMapperType::Codemasters, false) => {
@@ -193,8 +204,7 @@ where
         state: SmsState,
         sg: Sg,
         sa: Sa,
-        debug: bool,
-        frequency: Option<u64>,
+        options: SmsOptions,
     ) -> Result<Box<MasterSystem>, SmsCreationError>
     where
         Sg: 'static,
@@ -204,7 +214,7 @@ where
         Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
-        Self::from_state_help(state, sg, sa, debug, frequency, false)
+        Self::from_state_help(state, sg, sa, options, false)
     }
 
     pub fn from_file<P, Sg, Sa>(
@@ -212,8 +222,7 @@ where
         sg: Sg,
         sa: Sa,
         memory_mapper_type: MemoryMapperType,
-        debug: bool,
-        frequency: Option<u64>,
+        options: SmsOptions,
     ) -> Result<Box<MasterSystem>, SmsCreationError>
     where
         P: AsRef<Path>,
@@ -230,8 +239,7 @@ where
             sg,
             sa,
             memory_mapper_type,
-            debug,
-            frequency,
+            options,
         )
     }
 
@@ -240,8 +248,7 @@ where
         sg: Sg,
         sa: Sa,
         memory_mapper_type: MemoryMapperType,
-        debug: bool,
-        frequency: Option<u64>,
+        options: SmsOptions,
     ) -> Result<Box<MasterSystem>, SmsCreationError>
     where
         Sg: 'static,
@@ -260,7 +267,7 @@ where
             irq_state: false,
         };
 
-        Self::from_state_help(state, sg, sa, debug, frequency, true)
+        Self::from_state_help(state, sg, sa, options, true)
     }
 }
 
