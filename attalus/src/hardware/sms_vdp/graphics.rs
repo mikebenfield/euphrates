@@ -173,6 +173,7 @@ where
             s.x_scroll()
         };
         let pixel_offset_x = scroll_x & 7;
+        // let tile_offset_x = (-((scroll_x >> 3) as i16)) as u16;
         let tile_offset_x = (-((scroll_x >> 3) as i16)) as u16;
 
         let vert_tile_count = if SmsVdpInternal::resolution(s) == Low {
@@ -218,7 +219,7 @@ where
             // first, draw region 3/4
             for tile in 23..if vert_scroll_locked { 32 } else { 23 } {
                 write_tile(
-                    v >> 3 + (tile_offset_x.wrapping_add(tile)) % 32,
+                    32 * (v >> 3) + (tile_offset_x.wrapping_add(tile)) % 32,
                     v & 7,
                     tile as usize * 8 + pixel_offset_x as usize,
                 )

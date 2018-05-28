@@ -43,11 +43,31 @@ where
     let y_scroll = v.y_scroll();
     for i in 0..256 {
         use host_multimedia::SimpleColor;
-        graphics.paint(i, y_scroll as u32 % height as u32, SimpleColor {
-            red: 0xF0,
-            green: 0,
-            blue: 0xF0,
-        });
+        graphics.paint(
+            i,
+            y_scroll as u32 % height as u32,
+            SimpleColor {
+                red: 0xF0,
+                green: 0,
+                blue: 0xF0,
+            },
+        );
     }
-    graphics.render().map_err(|e| SmsVdpGraphicsError::Graphics(e))
+    if v.vert_scroll_locked() {
+        for i in 0..height as u32 {
+            use host_multimedia::SimpleColor;
+            graphics.paint(
+                24*8,
+                i,
+                SimpleColor {
+                    red: 0xF0,
+                    green: 0xF0,
+                    blue: 0,
+                },
+            );
+        }
+    }
+    graphics
+        .render()
+        .map_err(|e| SmsVdpGraphicsError::Graphics(e))
 }
