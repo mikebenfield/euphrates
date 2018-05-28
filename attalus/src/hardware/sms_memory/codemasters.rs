@@ -11,7 +11,7 @@ where
     fn write_reg(memory: &mut M, address: u16, value: u8) {
         use self::MemoryPage::*;
         let rom_pages = memory.rom_len() / 0x4000;
-        let page = value & rom_pages as u8;
+        let page = value % rom_pages as u8;
         match address {
             0x0000 => memory.map_page(0, Rom(page)),
             0x4000 => memory.map_page(1, Rom(page)),

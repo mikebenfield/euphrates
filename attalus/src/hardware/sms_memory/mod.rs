@@ -67,7 +67,7 @@ mod _impl0 {
                 FirstCartridgeRam(x) => format_args!("FirstCartridgeRam({:>02X})", x).fmt(f),
                 SecondCartridgeRam(x) => format_args!("SecondCartridgeRam({:>02X})", x).fmt(f),
                 HalfCartridgeRam(x) => format_args!("HalfCartridgeRam({:>02X})", x).fmt(f),
-                Rom(x) => format_args!("Rom({:>02X}", x).fmt(f),
+                Rom(x) => format_args!("Rom({:>02X})", x).fmt(f),
                 RomButFirstKiB(x) => format_args!("RomButFirstKiB({:>02X})", x).fmt(f),
             }
         }
