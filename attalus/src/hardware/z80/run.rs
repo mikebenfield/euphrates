@@ -96,17 +96,14 @@ where
             }
             (Halt, _) => {
                 // back out to check interrupts
-                z.set_interrupt_status(NoCheck);
                 return;
             }
             (NoPrefix, Check) => {
                 // back out to check interrupts
-                z.set_interrupt_status(NoCheck);
                 return;
             }
             (NoPrefix, Ei(ei_cycles)) if z.cycles() > ei_cycles => {
                 // back out to check interrupts
-                z.set_interrupt_status(NoCheck);
                 return;
             }
             (NoPrefix, _) => {

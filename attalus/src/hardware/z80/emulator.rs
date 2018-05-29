@@ -56,7 +56,12 @@ where
     fn emulate(&mut self, target_cycles: u64) {
         let z = self.mut_0();
         while z.cycles() < target_cycles {
-            z.check_interrupts();
+            if z.prefix() == Prefix::NoPrefix || z.prefix() == Prefix::Halt {
+                z.check_interrupts();
+                z.set_interrupt_status(InterruptStatus::NoCheck);
+            } else {
+                z.set_interrupt_status(InterruptStatus::Check);
+            }
             z.run(target_cycles);
         }
     }
