@@ -57,8 +57,36 @@ where
         for i in 0..height as u32 {
             use host_multimedia::SimpleColor;
             graphics.paint(
-                24*8,
+                24 * 8,
                 i,
+                SimpleColor {
+                    red: 0xF0,
+                    green: 0xF0,
+                    blue: 0,
+   },
+            );
+        }
+    }
+
+    let x_scroll = -(v.x_scroll() as i8) as u8;
+    for i in 0..height as u32 {
+        use host_multimedia::SimpleColor;
+        graphics.paint(
+            x_scroll as u32,
+            i,
+            SimpleColor {
+                red: 0xF0,
+                green: 0,
+                blue: 0xF0,
+            },
+        );
+    }
+    if v.horiz_scroll_locked() {
+        for i in 0..256 {
+            use host_multimedia::SimpleColor;
+            graphics.paint(
+                i,
+                16,
                 SimpleColor {
                     red: 0xF0,
                     green: 0xF0,
@@ -67,6 +95,7 @@ where
             );
         }
     }
+
     graphics
         .render()
         .map_err(|e| SmsVdpGraphicsError::Graphics(e))

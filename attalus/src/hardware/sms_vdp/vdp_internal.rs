@@ -584,7 +584,7 @@ pub trait SmsVdpInternal {
     /// unaffected by `x_scoll`. Since these pixels are not visible on the GG
     /// VDP, this effectively does nothing in that case.
     #[inline]
-    fn horiz_scroll_lock(&self) -> bool {
+    fn horiz_scroll_locked(&self) -> bool {
         unsafe { self.register_unchecked(0) & (1 << 6) != 0 }
     }
 

@@ -167,7 +167,7 @@ where
         // draw tiles
         let vert_scroll_locked = s.vert_scroll_locked();
 
-        let scroll_x = if s.horiz_scroll_lock() && v < 16 {
+        let scroll_x = if s.horiz_scroll_locked() && v < 16 {
             0
         } else {
             s.x_scroll()
