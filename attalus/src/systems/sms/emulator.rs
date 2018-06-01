@@ -5,7 +5,7 @@ use std::time::Instant;
 use failure::Error;
 
 use host_multimedia::{SimpleAudio, SimpleAudioImpl, SimpleGraphics, SimpleGraphicsImpl};
-use impler::Impler;
+use impler::{Cref, Impl, Mref};
 use memo::{Inbox, InboxImpl, NothingInbox};
 use utilities;
 
@@ -67,7 +67,7 @@ impl TimeStatus {
 }
 
 #[derive(Clone)]
-pub struct Sms<Sn76489, Sg, Sa, Mapper, Mem, Inx> {
+pub struct Sms<Sg, Sa, Sn76489, Mapper, Mem, Inx> {
     z80: Z80State,
     vdp: SmsVdpState,
     mem: Mem,
@@ -150,10 +150,10 @@ where
     where
         Sg: 'static,
         Sa: 'static,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
         let mut mem = SmsMemoryLoad::load(state.mem)?;
         let time_status = TimeStatus::new(state.z80.cycles(), options.frequency);
@@ -163,7 +163,7 @@ where
                 if default_mappings {
                     $mapper::default_mappings(&mut mem);
                 }
-                let mut sms: Sms<Sn76489, Sg, Sa, $mapper, Mem, $inbox> = Sms {
+                let mut sms: Sms<Sg, Sa, Sn76489, $mapper, Mem, $inbox> = Sms {
                     z80: state.z80,
                     vdp: state.vdp,
                     mem,
@@ -209,10 +209,10 @@ where
     where
         Sg: 'static,
         Sa: 'static,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
         Self::from_state_help(state, sg, sa, options, false)
     }
@@ -228,19 +228,13 @@ where
         P: AsRef<Path>,
         Sg: 'static,
         Sa: 'static,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
         use hardware::sms_roms::from_file;
-        Self::from_rom(
-            from_file(path)?,
-            sg,
-            sa,
-            memory_mapper_type,
-            options,
-        )
+        Self::from_rom(from_file(path)?, sg, sa, memory_mapper_type, options)
     }
 
     pub fn from_rom<Sg, Sa>(
@@ -253,10 +247,10 @@ where
     where
         Sg: 'static,
         Sa: 'static,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
-        Sms<Sn76489, Sg, Sa, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
         let state = SmsState {
             memory_mapper_type,
@@ -271,7 +265,7 @@ where
     }
 }
 
-impl<Sn76489, Sg, Sa, Mapper, Mem, Inx> MasterSystem for Sms<Sn76489, Sg, Sa, Mapper, Mem, Inx>
+impl<Sg, Sa, Sn76489, Mapper, Mem, Inx> MasterSystem for Sms<Sg, Sa, Sn76489, Mapper, Mem, Inx>
 where
     Mem: SmsMemory,
     Self: Sn76489Audio
@@ -321,32 +315,11 @@ where
     }
 }
 
-impl<Sn76489, Sg, Sa, Mapper, Mem, Inx> AsRef<TimeStatus>
-    for Sms<Sn76489, Sg, Sa, Mapper, Mem, Inx>
+impl<Sg, Sa, Sn76489, Mapper, Mem, Inx> AsRef<TimeStatus>
+    for Sms<Sg, Sa, Sn76489, Mapper, Mem, Inx>
 {
     fn as_ref(&self) -> &TimeStatus {
         &self.time_status
-    }
-}
-
-impl<Sn76489, Sg, Sa, Mapper, Mem, Inx> InboxImpl for Sms<Sn76489, Sg, Sa, Mapper, Mem, Inx>
-where
-    Inx: Inbox<Memo = SmsMemo>,
-{
-    type Impler = Inx;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        f(&self.inbox)
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        f(&mut self.inbox)
     }
 }
 
@@ -355,205 +328,208 @@ macro_rules! implement_impl {
      $type_name: ident [$($type_params: tt)*]
      [$($where_clause: tt)*]
      $impler_name: ty, $_self: ident, $f: ident,
-     $close_body: expr, $close_mut_body: expr) => {
-        impl<$($impl_params)*> $impl_name for $type_name <$($type_params)*>
+     $make_body: expr, $make_mut_body: expr) => {
+        impl<$($impl_params)*> Impl<$impl_name> for $type_name <$($type_params)*>
         where
             $($where_clause)*
         {
             type Impler = $impler_name;
-            fn close<F, T>(&$_self, $f: F) -> T
-            where
-                F: FnOnce(&Self::Impler) -> T,
-            {
-                $close_body
+
+            fn make<'a>(&'a $_self) -> Cref<'a, Self::Impler> {
+                $make_body
             }
-            fn close_mut<F, T>(&mut $_self, $f: F) -> T
-            where
-                F: FnOnce(&mut Self::Impler) -> T,
-            {
-                $close_mut_body
+
+            fn make_mut<'a>(&'a mut $_self) -> Mref<'a, Self::Impler> {
+                $make_mut_body
             }
         }
     }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] DebuggerImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] InboxImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
+        [Inx: Inbox<Memo=SmsMemo>] Inx, self, f,
+    { Cref::Const(&self.inbox) },
+    { Mref::Mut(&mut self.inbox) }
+}
+
+implement_impl! {
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] DebuggerImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Inx: Debugger] Inx, self, f,
-    { f(&self.inbox) },
-    { f(&mut self.inbox) }
+    { Cref::Const(&self.inbox) },
+    { Mref::Mut(&mut self.inbox) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SmsVdpInternalImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsVdpInternalImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
     [] SmsVdpState, self, f,
-    { f(&self.vdp) },
-    { f(&mut self.vdp) }
+    { Cref::Const(&self.vdp) },
+    { Mref::Mut(&mut self.vdp) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SmsVdpInterfaceImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
-    [] SmsVdpState, self, f,
-    { f(&self.vdp) },
-    { f(&mut self.vdp) }
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsVdpInterfaceImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
+    [] SmsVdpInterfaceImpler<SmsVdpState>, self, f,
+    { SmsVdpInterfaceImpler::new(&self.vdp) },
+    { SmsVdpInterfaceImpler::new_mut(&mut self.vdp) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SimpleGraphicsImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SimpleGraphicsImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
     [Sg: SimpleGraphics] Sg, self, f,
-    { f(&self.graphics) },
-    { f(&mut self.graphics) }
+    { Cref::Const(&self.graphics) },
+    { Mref::Mut(&mut self.graphics) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SmsVdpGraphicsImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsVdpGraphicsImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
     [Sg: SimpleGraphics] SimpleSmsVdpGraphicsImpler<Self>, self, f,
-    { SimpleSmsVdpGraphicsImpler::iclose(self, |z| f(z)) },
-    { SimpleSmsVdpGraphicsImpler::iclose_mut(self, |z| f(z)) }
+    { SimpleSmsVdpGraphicsImpler::new(self) },
+    { SimpleSmsVdpGraphicsImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Memory16Impl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Memory16Impl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Mapper: SmsMapper<Mem>,
          Mem: SmsMemory + Memory16,
         ]
         SmsMapMemory16Impler<Mem, Mapper>, self, f,
-    { SmsMapMemory16Impler::iclose(&self.mem, |z| f(z)) },
-    { SmsMapMemory16Impler::iclose_mut(&mut self.mem, |z| f(z)) }
+    { SmsMapMemory16Impler::new(&self.mem) },
+    { SmsMapMemory16Impler::new_mut(&mut self.mem) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SmsPlayerInputImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsPlayerInputImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         []
         SmsPlayerInputState, self, f,
-    { f(&self.player_input) },
-    { f(&mut self.player_input) }
+    { Cref::Const(&self.player_input) },
+    { Mref::Mut(&mut self.player_input) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SmsVdpIrqImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsVdpIrqImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         []
         SmsVdpState, self, f,
-    { f(&self.vdp) },
-    { f(&mut self.vdp) }
+    { Cref::Const(&self.vdp) },
+    { Mref::Mut(&mut self.vdp) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80InternalImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80InternalImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         []
         Z80State, self, f,
-    { f(&self.z80) },
-    { f(&mut self.z80) }
+    { Cref::Const(&self.z80) },
+    { Mref::Mut(&mut self.z80) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80NoImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80NoImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         []
         Z80NoImpler<Self>, self, f,
-    { Z80NoImpler::iclose(self, |z| f(z)) },
-    { Z80NoImpler::iclose_mut(self, |z| f(z)) }
+    { Z80NoImpler::new(self) },
+    { Z80NoImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80MemImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80MemImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Mapper: SmsMapper<Mem>,
          Mem: Memory16 + SmsMemory,
         ]
         Z80MemImpler<Self>, self, f,
-    { Z80MemImpler::iclose(self, |z| f(z)) },
-    { Z80MemImpler::iclose_mut(self, |z| f(z)) }
+    { Z80MemImpler::new(self) },
+    { Z80MemImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Sn76489InterfaceImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Sn76489InterfaceImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Sn76489: Sn76489Interface]
         Sn76489, self, f,
-    { f(&self.sn76489) },
-    { f(&mut self.sn76489) }
+    { Cref::Const(&self.sn76489) },
+    { Mref::Mut(&mut self.sn76489) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SimpleAudioImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SimpleAudioImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Sa: SimpleAudio]
         Sa, self, f,
-    { f(&self.audio) },
-    { f(&mut self.audio) }
+    { Cref::Const(&self.audio) },
+    { Mref::Mut(&mut self.audio) }
 }
 
-impl<Sg, Sa, Mapper, Mem, Inx> AsRef<Sn76489State> for Sms<Sn76489State, Sg, Sa, Mapper, Mem, Inx> {
+impl<Sg, Sa, Mapper, Mem, Inx> AsRef<Sn76489State> for Sms<Sg, Sa, Sn76489State, Mapper, Mem, Inx> {
     fn as_ref(&self) -> &Sn76489State {
         &self.sn76489
     }
 }
 
-impl<Sg, Sa, Mapper, Mem, Inx> AsMut<Sn76489State> for Sms<Sn76489State, Sg, Sa, Mapper, Mem, Inx> {
+impl<Sg, Sa, Mapper, Mem, Inx> AsMut<Sn76489State> for Sms<Sg, Sa, Sn76489State, Mapper, Mem, Inx> {
     fn as_mut(&mut self) -> &mut Sn76489State {
         &mut self.sn76489
     }
 }
 
 implement_impl! {
-    [Sg, Sa, Mapper, Mem, Inx] Sn76489AudioImpl for Sms[Sn76489State, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Mapper, Mem, Inx] Sn76489AudioImpl for Sms[Sg, Sa, Sn76489State, Mapper, Mem, Inx]
         [Self: Sn76489Interface + SimpleAudio]
         SimpleSn76489AudioImpler<Self>, self, f,
-    { SimpleSn76489AudioImpler::iclose(self, |z| f(z)) },
-    { SimpleSn76489AudioImpler::iclose_mut(self, |z| f(z)) }
+    { SimpleSn76489AudioImpler::new(self) },
+    { SimpleSn76489AudioImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Io16Impl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Io16Impl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Self: Sn76489Interface]
         SmsIo16Impler<Self>, self, f,
-    { SmsIo16Impler::iclose(self, |z| f(z)) },
-    { SmsIo16Impler::iclose_mut(self, |z| f(z)) }
+    { SmsIo16Impler::new(self) },
+    { SmsIo16Impler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80IoImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80IoImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Self: Z80Internal + Io16 + Memory16]
         Z80IoImpler<Self>, self, f,
-    { Z80IoImpler::iclose(self, |z| f(z)) },
-    { Z80IoImpler::iclose_mut(self, |z| f(z)) }
+    { Z80IoImpler::new(self) },
+    { Z80IoImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] SmsZ80IrqStateImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsZ80IrqStateImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         []
         bool, self, f,
-    { f(&self.irq_state) },
-    { f(&mut self.irq_state) }
+    { Cref::Const(&self.irq_state) },
+    { Mref::Mut(&mut self.irq_state) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80RunImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80RunImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Self: Z80Internal + Z80No + Z80Mem + Z80Io + Memory16 + Inbox<Memo=SmsMemo>]
         Z80RunInterpreterImpler<Self>, self, f,
-    { Z80RunInterpreterImpler::iclose(self, |z| f(z)) },
-    { Z80RunInterpreterImpler::iclose_mut(self, |z| f(z)) }
+    { Z80RunInterpreterImpler::new(self) },
+    { Z80RunInterpreterImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80IrqImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80IrqImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Self: SmsVdpIrq + SmsPlayerInput + SmsZ80IrqState]
         SmsZ80IrqImpler<Self>, self, f,
-    { SmsZ80IrqImpler::iclose(self, |z| f(z)) },
-    { SmsZ80IrqImpler::iclose_mut(self, |z| f(z)) }
+    { SmsZ80IrqImpler::new(self) },
+    { SmsZ80IrqImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80InterruptImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80InterruptImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Self: Z80Mem + Z80Irq + Z80Internal]
         Z80InterruptImpler<Self>, self, f,
-    { Z80InterruptImpler::iclose(self, |z| f(z)) },
-    { Z80InterruptImpler::iclose_mut(self, |z| f(z)) }
+    { Z80InterruptImpler::new(self) },
+    { Z80InterruptImpler::new_mut(self) }
 }
 
 implement_impl! {
-    [Sn76489, Sg, Sa, Mapper, Mem, Inx] Z80EmulatorImpl for Sms[Sn76489, Sg, Sa, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80EmulatorImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         [Self: Z80Internal + Z80Run + Z80Interrupt]
         Z80EmulatorImpler<Self>, self, f,
-    { Z80EmulatorImpler::iclose(self, |z| f(z)) },
-    { Z80EmulatorImpler::iclose_mut(self, |z| f(z)) }
+    { Z80EmulatorImpler::new(self) },
+    { Z80EmulatorImpler::new_mut(self) }
 }
 
 pub fn run_frame<Sms>(sms: &mut Sms) -> Result<(), SmsEmulationError>

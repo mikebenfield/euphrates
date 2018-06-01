@@ -1,4 +1,4 @@
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 
 use super::*;
 
@@ -66,80 +66,55 @@ pub trait SmsVdpInterface {
     fn read_h(&mut self) -> u8;
 }
 
-pub trait SmsVdpInterfaceImpl {
-    type Impler: SmsVdpInterface;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SmsVdpInterfaceImpl;
 
 impl<T> SmsVdpInterface for T
 where
-    T: SmsVdpInterfaceImpl + ?Sized,
+    T: Impl<SmsVdpInterfaceImpl> + ?Sized,
+    T::Impler: SmsVdpInterface,
 {
-    /// Write a byte to the data port.
     #[inline]
     fn write_data(&mut self, x: u8) {
-        self.close_mut(|z| z.write_data(x))
+        self.make_mut().write_data(x)
     }
 
-    /// Read a byte from the data port.
     #[inline]
     fn read_data(&mut self) -> u8 {
-        self.close_mut(|z| z.read_data())
+        self.make_mut().read_data()
     }
 
-    /// Write a byte to the control port.
     #[inline]
     fn write_control(&mut self, x: u8) {
-        self.close_mut(|z| z.write_control(x))
+        self.make_mut().write_control(x)
     }
 
-    /// Read a byte from the control port.
     #[inline]
     fn read_control(&mut self) -> u8 {
-        self.close_mut(|z| z.read_control())
+        self.make_mut().read_control()
     }
 
-    /// Read the V counter.
     #[inline]
     fn read_v(&mut self) -> u8 {
-        self.close_mut(|z| z.read_v())
+        self.make_mut().read_v()
     }
 
-    /// Read the H counter.
-    ///
-    /// This is, and will likely remain, useless in this implementation. But
-    /// this only seems to matter for the light gun.
     #[inline]
     fn read_h(&mut self) -> u8 {
-        self.close_mut(|z| z.read_h())
+        self.make_mut().read_h()
     }
 }
 
-pub struct SmsVdpInterfaceImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct SmsVdpInterfaceImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for SmsVdpInterfaceImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        SmsVdpInterfaceImpler(c)
+impl<T: ?Sized> SmsVdpInterfaceImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(SmsVdpInterfaceImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(SmsVdpInterfaceImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -148,7 +123,7 @@ where
     T: SmsVdpInternal,
 {
     fn write_data(&mut self, x: u8) {
-        let z = self.mut_0();
+        let z = self.0.mut_0();
         let code = z.code();
         let addr = z.address();
         z.set_data_buffer(x);
@@ -179,7 +154,7 @@ where
     }
 
     fn read_data(&mut self) -> u8 {
-        let z = self.mut_0();
+        let z = self.0.mut_0();
         let current_buffer = z.data_buffer();
         let code_addr = z.code_address();
         let addr = code_addr & 0x3FFF;
@@ -191,7 +166,7 @@ where
     }
 
     fn write_control(&mut self, x: u8) {
-        let z = self.mut_0();
+        let z = self.0.mut_0();
         if z.control_flag() {
             z.set_control_flag(false);
             let low_byte = z.code_address() & 0xFF;
@@ -219,7 +194,7 @@ where
     }
 
     fn read_control(&mut self) -> u8 {
-        let z = self.mut_0();
+        let z = self.0.mut_0();
         let current_status = z.status_flags();
         z.set_status_flags(0);
         z.set_control_flag(false);
@@ -228,9 +203,10 @@ where
     }
 
     fn read_v(&mut self) -> u8 {
-        let z = self.mut_0();
         use self::Resolution::*;
         use self::TvSystem::*;
+
+        let z = self.0.mut_0();
         let v = z.v();
         let result = match (z.tv_system(), z.resolution(), v) {
             (Ntsc, Low, 0...0xDA) => v,
@@ -252,7 +228,7 @@ where
     }
 
     fn read_h(&mut self) -> u8 {
-        let h = self.mut_0().h();
+        let h = self.0.mut_0().h();
         let result = (h >> 1) as u8;
         result as u8
     }

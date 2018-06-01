@@ -1,4 +1,4 @@
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 
 use super::*;
 
@@ -7,46 +7,30 @@ pub trait SmsVdpIrq {
     fn get(&self) -> Option<u8>;
 }
 
-pub trait SmsVdpIrqImpl {
-    type Impler: SmsVdpIrq + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SmsVdpIrqImpl;
 
 impl<T> SmsVdpIrq for T
 where
-    T: SmsVdpIrqImpl,
+    T: Impl<SmsVdpIrqImpl>,
+    T::Impler: SmsVdpIrq,
 {
     #[inline]
     fn get(&self) -> Option<u8> {
-        self.close(|z| z.get())
+        self.make().get()
     }
 }
 
-pub struct SmsVdpIrqImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct SmsVdpIrqImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for SmsVdpIrqImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        SmsVdpIrqImpler(c)
+impl<T: ?Sized> SmsVdpIrqImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(SmsVdpIrqImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(SmsVdpIrqImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -56,6 +40,6 @@ where
 {
     #[inline]
     fn get(&self) -> Option<u8> {
-        self._0().requesting_mi()
+        self.0._0().requesting_mi()
     }
 }

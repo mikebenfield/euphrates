@@ -1,5 +1,7 @@
 //! IO system with 16 bit addresses and 8 bit data.
 
+use impler::Impl;
+
 /// IO system with 16 bit addresses and 8 bit data.
 pub trait Io16 {
     /// Receive an input byte at the given `address`.
@@ -9,30 +11,20 @@ pub trait Io16 {
     fn output(&mut self, address: u16, value: u8);
 }
 
-/// For the Impler Pattern for `Io16`.
-pub trait Io16Impl {
-    type Impler: Io16;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Io16Impl;
 
 impl<T> Io16 for T
 where
-    T: Io16Impl + ?Sized,
+    T: Impl<Io16Impl> + ?Sized,
+    T::Impler: Io16,
 {
     #[inline]
     fn input(&mut self, address: u16) -> u8 {
-        self.close_mut(|z| z.input(address))
+        self.make_mut().input(address)
     }
 
     #[inline]
     fn output(&mut self, address: u16, value: u8) {
-        self.close_mut(|z| z.output(address, value))
+        self.make_mut().output(address, value)
     }
 }

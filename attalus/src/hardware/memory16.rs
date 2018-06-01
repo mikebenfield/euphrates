@@ -1,5 +1,7 @@
 //! 16 bit memory maps.
 
+use impler::Impl;
+
 /// A memory map with 16 bit addresses.
 pub trait Memory16 {
     /// Read a byte.
@@ -9,41 +11,31 @@ pub trait Memory16 {
     fn write(&mut self, logical_address: u16, value: u8);
 }
 
-/// For the Impler pattern for `Memory16`.
-pub trait Memory16Impl {
-    type Impler: Memory16;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Memory16Impl;
 
 impl<T> Memory16 for T
 where
-    T: Memory16Impl + ?Sized,
+    T: Impl<Memory16Impl>,
+    T::Impler: Memory16,
 {
-    #[inline]
+    #[inline(always)]
     fn read(&mut self, logical_address: u16) -> u8 {
-        self.close_mut(|z| z.read(logical_address))
+        self.make_mut().read(logical_address)
     }
 
-    #[inline]
+    #[inline(always)]
     fn write(&mut self, logical_address: u16, value: u8) {
-        self.close_mut(|z| z.write(logical_address, value))
+        self.make_mut().write(logical_address, value)
     }
 }
 
 impl Memory16 for [u8; 0x10000] {
-    #[inline]
+    #[inline(always)]
     fn read(&mut self, logical_address: u16) -> u8 {
         self[logical_address as usize]
     }
 
-    #[inline]
+    #[inline(always)]
     fn write(&mut self, logical_address: u16, value: u8) {
         self[logical_address as usize] = value
     }

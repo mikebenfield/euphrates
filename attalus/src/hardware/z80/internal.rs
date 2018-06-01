@@ -1,5 +1,7 @@
 use std::fmt;
 
+use impler::Impl;
+
 use super::*;
 
 /// Carry flag
@@ -227,160 +229,151 @@ where
     dest.set_interrupt_status(source.interrupt_status());
 }
 
-pub trait Z80InternalImpl {
-    type Impler: Z80Internal + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Z80InternalImpl;
 
 impl<T> Z80Internal for T
 where
-    T: Z80InternalImpl + ?Sized,
+    T: Impl<Z80InternalImpl> + ?Sized,
+    T::Impler: Z80Internal,
 {
     #[inline]
     fn cycles(&self) -> u64 {
-        self.close(|z| z.cycles())
+        self.make().cycles()
     }
 
     #[inline]
     fn set_cycles(&mut self, x: u64) {
-        self.close_mut(|z| z.set_cycles(x))
+        self.make_mut().set_cycles(x)
     }
 
     #[inline]
     fn reg8(&self, reg8: Reg8) -> u8 {
-        self.close(|z| z.reg8(reg8))
+        self.make().reg8(reg8)
     }
 
     #[inline]
     fn set_reg8(&mut self, reg8: Reg8, x: u8) {
-        self.close_mut(|z| z.set_reg8(reg8, x))
+        self.make_mut().set_reg8(reg8, x)
     }
 
     #[inline]
     fn reg16(&self, reg16: Reg16) -> u16 {
-        self.close(|z| z.reg16(reg16))
+        self.make().reg16(reg16)
     }
 
     #[inline]
     fn set_reg16(&mut self, reg16: Reg16, x: u16) {
-        self.close_mut(|z| z.set_reg16(reg16, x))
+        self.make_mut().set_reg16(reg16, x)
     }
 
     #[inline]
     fn halted(&self) -> bool {
-        self.close(|z| z.halted())
+        self.make().halted()
     }
 
     #[inline]
     fn set_halted(&mut self, x: bool) {
-        self.close_mut(|z| z.set_halted(x))
+        self.make_mut().set_halted(x)
     }
 
     #[inline]
     fn iff1(&self) -> bool {
-        self.close(|z| z.iff1())
+        self.make().iff1()
     }
 
     #[inline]
     fn set_iff1(&mut self, x: bool) {
-        self.close_mut(|z| z.set_iff1(x))
+        self.make_mut().set_iff1(x)
     }
 
     #[inline]
     fn iff2(&self) -> bool {
-        self.close(|z| z.iff2())
+        self.make().iff2()
     }
 
     #[inline]
     fn set_iff2(&mut self, x: bool) {
-        self.close_mut(|z| z.set_iff2(x))
+        self.make_mut().set_iff2(x)
     }
 
     #[inline]
     fn interrupt_mode(&self) -> InterruptMode {
-        self.close(|z| z.interrupt_mode())
+        self.make().interrupt_mode()
     }
 
     #[inline]
     fn set_interrupt_mode(&mut self, x: InterruptMode) {
-        self.close_mut(|z| z.set_interrupt_mode(x))
+        self.make_mut().set_interrupt_mode(x)
     }
 
     #[inline]
     fn prefix(&self) -> Prefix {
-        self.close(|z| z.prefix())
+        self.make().prefix()
     }
 
     #[inline]
     fn set_prefix(&mut self, prefix: Prefix) {
-        self.close_mut(|z| z.set_prefix(prefix))
+        self.make_mut().set_prefix(prefix)
     }
 
     #[inline]
     fn interrupt_status(&self) -> InterruptStatus {
-        self.close(|z| z.interrupt_status())
+        self.make().interrupt_status()
     }
 
     #[inline]
     fn set_interrupt_status(&mut self, interrupt_status: InterruptStatus) {
-        self.close_mut(|z| z.set_interrupt_status(interrupt_status))
+        self.make_mut().set_interrupt_status(interrupt_status)
     }
 
     #[inline]
     fn inc_cycles(&mut self, x: u64) {
-        self.close_mut(|z| z.inc_cycles(x))
+        self.make_mut().inc_cycles(x)
     }
 
     #[inline]
     fn inc_r(&mut self, x: u8) {
-        self.close_mut(|z| z.inc_r(x))
+        self.make_mut().inc_r(x)
     }
 
     #[inline]
     fn is_set_flag(&self, x: u8) -> bool {
-        self.close(|z| z.is_set_flag(x))
+        self.make().is_set_flag(x)
     }
 
     #[inline]
     fn set_flag(&mut self, x: u8) {
-        self.close_mut(|z| z.set_flag(x))
+        self.make_mut().set_flag(x)
     }
 
     #[inline]
     fn clear_flag(&mut self, x: u8) {
-        self.close_mut(|z| z.clear_flag(x))
+        self.make_mut().clear_flag(x)
     }
 
     #[inline]
     fn set_flag_by(&mut self, x: u8, y: bool) {
-        self.close_mut(|z| z.set_flag_by(x, y))
+        self.make_mut().set_flag_by(x, y)
     }
 
     #[inline]
     fn set_sign(&mut self, x: u8) {
-        self.close_mut(|z| z.set_sign(x))
+        self.make_mut().set_sign(x)
     }
 
     #[inline]
     fn set_zero(&mut self, x: u8) {
-        self.close_mut(|z| z.set_zero(x))
+        self.make_mut().set_zero(x)
     }
 
     #[inline]
     fn set_parity(&mut self, x: u8) {
-        self.close_mut(|z| z.set_parity(x))
+        self.make_mut().set_parity(x)
     }
 
     #[inline]
     fn state(&self) -> Z80State {
-        self.close(|z| z.state())
+        self.make().state()
     }
 }
 

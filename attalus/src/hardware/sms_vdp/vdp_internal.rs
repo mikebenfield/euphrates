@@ -1,6 +1,6 @@
 use std;
 
-use impler::Impler;
+use impler::Impl;
 
 use super::Kind;
 use super::*;
@@ -747,175 +747,166 @@ pub trait SmsVdpInternal {
 }
 
 /// For use in the Impler pattern for `SmsVdpInternal`.
-pub trait SmsVdpInternalImpl {
-    type Impler: SmsVdpInternal;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SmsVdpInternalImpl;
 
 impl<T> SmsVdpInternal for T
 where
-    T: SmsVdpInternalImpl,
+    T: Impl<SmsVdpInternalImpl> + ?Sized,
+    T::Impler: SmsVdpInternal,
 {
     #[inline]
     fn cram_latch(&self) -> u8 {
-        self.close(|z| z.cram_latch())
+        self.make().cram_latch()
     }
 
     #[inline]
     fn set_cram_latch(&mut self, x: u8) {
-        self.close_mut(|z| z.set_cram_latch(x))
+        self.make_mut().set_cram_latch(x)
     }
 
     #[inline]
     fn data_buffer(&self) -> u8 {
-        self.close(|z| z.data_buffer())
+        self.make().data_buffer()
     }
 
     #[inline]
     fn set_data_buffer(&mut self, x: u8) {
-        self.close_mut(|z| z.set_data_buffer(x))
+        self.make_mut().set_data_buffer(x)
     }
 
     #[inline]
     fn status_flags(&self) -> u8 {
-        self.close(|z| z.status_flags())
+        self.make().status_flags()
     }
 
     #[inline]
     fn set_status_flags(&mut self, x: u8) {
-        self.close_mut(|z| z.set_status_flags(x))
+        self.make_mut().set_status_flags(x)
     }
 
     #[inline]
     fn control_flag(&self) -> bool {
-        self.close(|z| z.control_flag())
+        self.make().control_flag()
     }
 
     #[inline]
     fn set_control_flag(&mut self, x: bool) {
-        self.close_mut(|z| z.set_control_flag(x))
+        self.make_mut().set_control_flag(x)
     }
 
     #[inline]
     fn line_interrupt_pending(&self) -> bool {
-        self.close(|z| z.line_interrupt_pending())
+        self.make().line_interrupt_pending()
     }
 
     #[inline]
     fn set_line_interrupt_pending(&mut self, x: bool) {
-        self.close_mut(|z| z.set_line_interrupt_pending(x))
+        self.make_mut().set_line_interrupt_pending(x)
     }
 
     #[inline]
     fn y_scroll(&self) -> u8 {
-        self.close(|z| z.y_scroll())
+        self.make().y_scroll()
     }
 
     #[inline]
     fn set_y_scroll(&mut self, x: u8) {
-        self.close_mut(|z| z.set_y_scroll(x))
+        self.make_mut().set_y_scroll(x)
     }
 
     #[inline]
     fn tv_system(&self) -> TvSystem {
-        self.close(|z| z.tv_system())
+        self.make().tv_system()
     }
 
     #[inline]
     fn set_tv_system(&mut self, x: TvSystem) {
-        self.close_mut(|z| z.set_tv_system(x))
+        self.make_mut().set_tv_system(x)
     }
 
     #[inline]
     fn kind(&self) -> Kind {
-        self.close(|z| z.kind())
+        self.make().kind()
     }
 
     #[inline]
     fn h(&self) -> u16 {
-        self.close(|z| z.h())
+        self.make().h()
     }
 
     #[inline]
     fn set_h(&mut self, x: u16) {
-        self.close_mut(|z| z.set_h(x))
+        self.make_mut().set_h(x)
     }
 
     #[inline]
     fn v(&self) -> u16 {
-        self.close(|z| z.v())
+        self.make().v()
     }
 
     #[inline]
     fn set_v(&mut self, x: u16) {
-        self.close_mut(|z| z.set_v(x))
+        self.make_mut().set_v(x)
     }
 
     #[inline]
     fn line_counter(&self) -> u8 {
-        self.close(|z| z.line_counter())
+        self.make().line_counter()
     }
 
     #[inline]
     fn set_line_counter(&mut self, x: u8) {
-        self.close_mut(|z| z.set_line_counter(x))
+        self.make_mut().set_line_counter(x)
     }
 
     #[inline]
     fn code_address(&self) -> u16 {
-        self.close(|z| z.code_address())
+        self.make().code_address()
     }
 
     #[inline]
     fn set_code_address(&mut self, x: u16) {
-        self.close_mut(|z| z.set_code_address(x))
+        self.make_mut().set_code_address(x)
     }
 
     #[inline]
     fn cycles(&self) -> u64 {
-        self.close(|z| z.cycles())
+        self.make().cycles()
     }
 
     #[inline]
     fn set_cycles(&mut self, x: u64) {
-        self.close_mut(|z| z.set_cycles(x))
+        self.make_mut().set_cycles(x)
     }
 
     #[inline]
     unsafe fn vram_unchecked(&self, index: u16) -> u8 {
-        self.close(|z| z.vram_unchecked(index))
+        self.make().vram_unchecked(index)
     }
 
     #[inline]
     unsafe fn set_vram_unchecked(&mut self, index: u16, value: u8) {
-        self.close_mut(|z| z.set_vram_unchecked(index, value))
+        self.make_mut().set_vram_unchecked(index, value)
     }
 
     #[inline]
     unsafe fn cram_unchecked(&self, index: u16) -> u16 {
-        self.close(|z| z.cram_unchecked(index))
+        self.make().cram_unchecked(index)
     }
 
     #[inline]
     unsafe fn set_cram_unchecked(&mut self, index: u16, value: u16) {
-        self.close_mut(|z| z.set_cram_unchecked(index, value))
+        self.make_mut().set_cram_unchecked(index, value)
     }
 
     #[inline]
     unsafe fn register_unchecked(&self, index: u16) -> u8 {
-        self.close(|z| z.register_unchecked(index))
+        self.make().register_unchecked(index)
     }
 
     #[inline]
     unsafe fn set_register_unchecked(&mut self, index: u16, value: u8) {
-        self.close_mut(|z| z.set_register_unchecked(index, value))
+        self.make_mut().set_register_unchecked(index, value)
     }
 }
 
@@ -1199,23 +1190,5 @@ impl SmsVdpIrq for SmsVdpState {
     #[inline]
     fn get(&self) -> Option<u8> {
         self.requesting_mi()
-    }
-}
-
-impl SmsVdpInterfaceImpl for SmsVdpState {
-    type Impler = SmsVdpInterfaceImpler<Self>;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        SmsVdpInterfaceImpler::iclose(self, |z| f(z))
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        SmsVdpInterfaceImpler::iclose_mut(self, |z| f(z))
     }
 }

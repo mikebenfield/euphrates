@@ -1,5 +1,5 @@
 use hardware::memory16::Memory16;
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 use memo::Inbox;
 
 use super::*;
@@ -14,46 +14,30 @@ pub trait Z80Run {
     fn run(&mut self, target_cycles: u64);
 }
 
-pub trait Z80RunImpl {
-    type Impler: Z80Run;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Z80RunImpl;
 
 impl<T> Z80Run for T
 where
-    T: Z80RunImpl + ?Sized,
+    T: Impl<Z80RunImpl> + ?Sized,
+    T::Impler: Z80Run,
 {
     #[inline]
     fn run(&mut self, target_cycles: u64) {
-        self.close_mut(|z| z.run(target_cycles))
+        self.make_mut().run(target_cycles)
     }
 }
 
-pub struct Z80RunInterpreterImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct Z80RunInterpreterImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for Z80RunInterpreterImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        Z80RunInterpreterImpler(c)
+impl<T: ?Sized> Z80RunInterpreterImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(Z80RunInterpreterImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(Z80RunInterpreterImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -64,7 +48,7 @@ where
 {
     #[inline]
     fn run(&mut self, target_cycles: u64) {
-        run(self.mut_0(), target_cycles)
+        run(self.0.mut_0(), target_cycles)
     }
 }
 

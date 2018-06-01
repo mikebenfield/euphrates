@@ -5,6 +5,8 @@
 use std::fmt::Display;
 use std::marker::PhantomData;
 
+use impler::Impl;
+
 pub trait Inbox {
     type Memo;
 
@@ -23,37 +25,28 @@ pub trait Inbox {
     }
 }
 
-pub trait InboxImpl {
-    type Impler: Inbox;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct InboxImpl;
 
 impl<T> Inbox for T
 where
-    T: InboxImpl + ?Sized,
+    T: Impl<InboxImpl> + ?Sized,
+    T::Impler: Inbox,
 {
-    type Memo = <<Self as InboxImpl>::Impler as Inbox>::Memo;
+    type Memo = <<T as Impl<InboxImpl>>::Impler as Inbox>::Memo;
 
     #[inline]
     fn receive_impl(&mut self, memo: Self::Memo) {
-        self.close_mut(|x| x.receive_impl(memo))
+        self.make_mut().receive_impl(memo)
     }
 
     #[inline]
     fn receive(&mut self, memo: Self::Memo) {
-        self.close_mut(|x| x.receive(memo))
+        self.make_mut().receive(memo)
     }
 
     #[inline]
     fn active(&self) -> bool {
-        self.close(|x| x.active())
+        self.make().active()
     }
 }
 

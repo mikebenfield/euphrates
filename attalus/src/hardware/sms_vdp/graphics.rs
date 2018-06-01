@@ -1,7 +1,7 @@
 use failure::Error;
 
 use host_multimedia::{SimpleColor, SimpleGraphics};
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 use utilities;
 
 use super::*;
@@ -16,46 +16,30 @@ pub trait SmsVdpGraphics {
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError>;
 }
 
-pub trait SmsVdpGraphicsImpl {
-    type Impler: SmsVdpGraphics + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SmsVdpGraphicsImpl;
 
 impl<T: ?Sized> SmsVdpGraphics for T
 where
-    T: SmsVdpGraphicsImpl,
+    T: Impl<SmsVdpGraphicsImpl>,
+    T::Impler: SmsVdpGraphics,
 {
     #[inline]
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError> {
-        self.close_mut(|z| z.draw_line())
+        self.make_mut().draw_line()
     }
 }
 
-pub struct SimpleSmsVdpGraphicsImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct SimpleSmsVdpGraphicsImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for SimpleSmsVdpGraphicsImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        SimpleSmsVdpGraphicsImpler(c)
+impl<T: ?Sized> SimpleSmsVdpGraphicsImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(SimpleSmsVdpGraphicsImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(SimpleSmsVdpGraphicsImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -74,7 +58,7 @@ where
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError> {
         use self::Resolution::*;
 
-        let s = self.mut_0();
+        let s = self.0.mut_0();
 
         let v = s.v();
 
@@ -251,28 +235,9 @@ where
     }
 }
 
-pub struct FakeSmsVdpGraphicsImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct FakeSmsVdpGraphicsImpler;
 
-unsafe impl<T: ?Sized> ImplerImpl for FakeSmsVdpGraphicsImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        FakeSmsVdpGraphicsImpler(c)
-    }
-
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
-    }
-}
-
-impl<T> SmsVdpGraphics for FakeSmsVdpGraphicsImpler<T> {
+impl SmsVdpGraphics for FakeSmsVdpGraphicsImpler {
     #[inline]
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError> {
         Ok(())

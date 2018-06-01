@@ -1,5 +1,7 @@
 use std;
 
+use impler::Impl;
+
 use failure::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -32,44 +34,35 @@ pub trait SimpleGraphics {
     fn render(&mut self) -> Result<()>;
 }
 
-pub trait SimpleGraphicsImpl {
-    type Impler: SimpleGraphics + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SimpleGraphicsImpl;
 
 impl<T> SimpleGraphics for T
 where
-    T: SimpleGraphicsImpl + ?Sized,
+    T: Impl<SimpleGraphicsImpl> + ?Sized,
+    T::Impler: SimpleGraphics,
 {
     #[inline]
     fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
-        self.close_mut(|z| z.set_resolution(width, height))
+        self.make_mut().set_resolution(width, height)
     }
 
     #[inline]
     fn resolution(&self) -> (u32, u32) {
-        self.close(|z| z.resolution())
+        self.make().resolution()
     }
 
     #[inline]
     fn paint(&mut self, x: u32, y: u32, color: SimpleColor) {
-        self.close_mut(|z| z.paint(x, y, color))
+        self.make_mut().paint(x, y, color)
     }
 
     fn get(&self, x: u32, y: u32) -> SimpleColor {
-        self.close(|z| z.get(x, y))
+        self.make().get(x, y)
     }
 
     #[inline]
     fn render(&mut self) -> Result<()> {
-        self.close_mut(|z| z.render())
+        self.make_mut().render()
     }
 }
 
@@ -89,48 +82,39 @@ pub trait SimpleAudio {
     fn clear(&mut self) -> Result<()>;
 }
 
-pub trait SimpleAudioImpl {
-    type Impler: SimpleAudio;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SimpleAudioImpl;
 
 impl<T> SimpleAudio for T
 where
-    T: SimpleAudioImpl,
+    T: Impl<SimpleAudioImpl> + ?Sized,
+    T::Impler: SimpleAudio,
 {
     fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()> {
-        self.close_mut(|z| z.configure(frequency, buffer_size))
+        self.make_mut().configure(frequency, buffer_size)
     }
 
     fn play(&mut self) -> Result<()> {
-        self.close_mut(|z| z.play())
+        self.make_mut().play()
     }
 
     fn pause(&mut self) -> Result<()> {
-        self.close_mut(|z| z.pause())
+        self.make_mut().pause()
     }
 
     fn buffer_len(&self) -> usize {
-        self.close(|z| z.buffer_len())
+        self.make().buffer_len()
     }
 
     fn buffer_set(&mut self, i: usize, value: i16) {
-        self.close_mut(|z| z.buffer_set(i, value))
+        self.make_mut().buffer_set(i, value)
     }
 
     fn queue_buffer(&mut self) -> Result<()> {
-        self.close_mut(|z| z.queue_buffer())
+        self.make_mut().queue_buffer()
     }
 
     fn clear(&mut self) -> Result<()> {
-        self.close_mut(|z| z.clear())
+        self.make_mut().clear()
     }
 }
 

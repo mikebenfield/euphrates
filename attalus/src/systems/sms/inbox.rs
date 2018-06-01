@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::{self, Write};
 
 use hardware::z80::{Opcode, TargetMnemonic};
+use impler::Impl;
 use memo::{Inbox, NothingInbox};
 
 use super::*;
@@ -73,30 +74,21 @@ pub trait Debugger {
     fn query(&self, query: Query) -> QueryResult;
 }
 
-pub trait DebuggerImpl {
-    type Impler: Debugger + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct DebuggerImpl;
 
 impl<T> Debugger for T
 where
-    T: DebuggerImpl + ?Sized,
+    T: Impl<DebuggerImpl> + ?Sized,
+    T::Impler: Debugger,
 {
     #[inline]
     fn command(&mut self, command: Command) -> CommandResult {
-        self.close_mut(|z| z.command(command))
+        self.make_mut().command(command)
     }
 
     #[inline]
     fn query(&self, query: Query) -> QueryResult {
-        self.close(|z| z.query(query))
+        self.make().query(query)
     }
 }
 

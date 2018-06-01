@@ -1,6 +1,6 @@
 //! The IO system of the Sega Master System.
 
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Mref, Ref};
 
 use super::io16::Io16;
 use super::sms_player_input::SmsPlayerInput;
@@ -16,24 +16,15 @@ use super::sn76489::Sn76489Interface;
 /// * `Sn74689Interface`,
 ///
 /// then `SmsIo16Impler<T>` implements `Io16`.
-pub struct SmsIo16Impler<T: ?Sized>(ConstOrMut<T>);
+pub struct SmsIo16Impler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for SmsIo16Impler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        SmsIo16Impler(c)
+impl<T: ?Sized> SmsIo16Impler<T> {
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(SmsIo16Impler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(SmsIo16Impler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -57,27 +48,27 @@ where
             }
             0b01000000 => {
                 // V counter
-                self.mut_0().read_v()
+                self.0.mut_0().read_v()
             }
             0b01000001 => {
                 // H counter
-                self.mut_0().read_h()
+                self.0.mut_0().read_h()
             }
             0b10000000 => {
                 // VDP data
-                self.mut_0().read_data()
+                self.0.mut_0().read_data()
             }
             0b10000001 => {
                 // VDP control
-                self.mut_0().read_control()
+                self.0.mut_0().read_control()
             }
             0b11000000 => {
                 // IO port A/B register
-                self._0().joypad_a()
+                self.0._0().joypad_a()
             }
             0b11000001 => {
                 // IO port B register
-                self._0().joypad_b()
+                self.0._0().joypad_b()
             }
             _ => {
                 unreachable!("Missing IO address in input");
@@ -101,16 +92,16 @@ where
             }
             0b01000000 =>
                 // SN76489 write
-                self.mut_0().write(value),
+                 self.0.mut_0().write(value),
             0b01000001 =>
                 // SN76489 write
-                self.mut_0().write(value),
+                 self.0.mut_0().write(value),
             0b10000000 =>
                 // VDP data port write
-                self.mut_0().write_data(value),
+                 self.0.mut_0().write_data(value),
             0b10000001 =>
                 // VDP control port write
-                self.mut_0().write_control(value),
+                 self.0.mut_0().write_control(value),
             _ => {}
         }
     }

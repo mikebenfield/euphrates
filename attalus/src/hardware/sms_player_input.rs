@@ -1,5 +1,7 @@
 //! The status of player input on the Sega Master System.
 
+use impler::Impl;
+
 /// Bit flags for Joypad Port A.
 ///
 /// Note that a button press is indicated by a flag *not* being set.
@@ -110,60 +112,50 @@ pub trait SmsPlayerInput {
     fn set_state(&mut self, x: SmsPlayerInputState);
 }
 
-/// An Impler for `SmsPlayerInput`.
-pub trait SmsPlayerInputImpl {
-    type Impler: SmsPlayerInput;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SmsPlayerInputImpl;
 
 impl<T> SmsPlayerInput for T
 where
-    T: SmsPlayerInputImpl,
+    T: Impl<SmsPlayerInputImpl> + ?Sized,
+    T::Impler: SmsPlayerInput,
 {
     #[inline]
     fn joypad_a(&self) -> u8 {
-        self.close(|z| z.joypad_a())
+        self.make().joypad_a()
     }
 
     #[inline]
     fn set_joypad_a(&mut self, x: u8) {
-        self.close_mut(|z| z.set_joypad_a(x))
+        self.make_mut().set_joypad_a(x)
     }
 
     #[inline]
     fn joypad_b(&self) -> u8 {
-        self.close(|z| z.joypad_b())
+        self.make().joypad_b()
     }
 
     #[inline]
     fn set_joypad_b(&mut self, x: u8) {
-        self.close_mut(|z| z.set_joypad_b(x))
+        self.make_mut().set_joypad_b(x)
     }
 
     #[inline]
     fn pause(&self) -> bool {
-        self.close(|z| z.pause())
+        self.make().pause()
     }
 
     #[inline]
     fn set_pause(&mut self, x: bool) {
-        self.close_mut(|z| z.set_pause(x))
+        self.make_mut().set_pause(x)
     }
 
     #[inline]
     fn state(&self) -> SmsPlayerInputState {
-        self.close(|z| z.state())
+        self.make().state()
     }
 
     #[inline]
     fn set_state(&mut self, x: SmsPlayerInputState) {
-        self.close_mut(|z| z.set_state(x))
+        self.make_mut().set_state(x)
     }
 }

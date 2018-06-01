@@ -1,7 +1,8 @@
 use std::fmt::{Display, Error, Formatter};
 
+use impler::{Cref, Mref};
+
 use hardware::memory16::Memory16;
-use impler::{ConstOrMut, Impler, ImplerImpl};
 use memo::Inbox;
 
 use super::*;
@@ -123,24 +124,17 @@ impl Display for SmsMemoryMemo {
 
 /// An Impler for both `SmsMemory` and `Memory16` if you have an `Inbox` and
 /// want to receive memos.
-pub struct OutboxSmsMemoryImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct OutboxSmsMemoryImpler<T>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for OutboxSmsMemoryImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        OutboxSmsMemoryImpler(c)
+impl<T> OutboxSmsMemoryImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(OutboxSmsMemoryImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(OutboxSmsMemoryImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -155,11 +149,11 @@ where
         use self::SmsMemoryMemo::*;
 
         let slot = (logical_address >> 14) as u8;
-        let page = self._0().page(slot);
+        let page = self.0._0().page(slot);
         let offset = logical_address & 0x3FFF;
-        let value = self.mut_0().read(logical_address);
+        let value = self.0.mut_0().read(logical_address);
 
-        self.mut_0().receive(From::from(match page {
+        self.0.mut_0().receive(From::from(match page {
             SystemRam => SystemRamRead {
                 logical_address,
                 actual_address: offset & 0x1FFF,
@@ -214,33 +208,35 @@ where
         use self::MemoryPage::*;
         use self::SmsMemoryMemo::*;
 
+        let mem = self.0.mut_0();
+
         let slot = (logical_address >> 14) as u8;
-        let page = self._0().page(slot);
+        let page = mem.page(slot);
         let offset = logical_address & 0x3FFF;
 
-        let main_cartridge_ram_len = self._0().main_cartridge_ram_len();
-        let half_cartridge_ram_len = self._0().half_cartridge_ram_len();
+        let main_cartridge_ram_len = mem.main_cartridge_ram_len();
+        let half_cartridge_ram_len = mem.half_cartridge_ram_len();
 
-        self.mut_0().write(logical_address, value);
+        mem.write(logical_address, value);
 
-        match (main_cartridge_ram_len, self._0().main_cartridge_ram_len()) {
+        match (main_cartridge_ram_len, mem.main_cartridge_ram_len()) {
             (0, 0x4000) => {
-                self.mut_0().receive(From::from(AllocateFirstPage));
+                mem.receive(From::from(AllocateFirstPage));
             }
             (0, 0x8000) => {
-                self.mut_0().receive(From::from(AllocateFirstPage));
-                self.mut_0().receive(From::from(AllocateSecondPage));
+                mem.receive(From::from(AllocateFirstPage));
+                mem.receive(From::from(AllocateSecondPage));
             }
             (0x4000, 0x8000) => {
-                self.mut_0().receive(From::from(AllocateSecondPage));
+                mem.receive(From::from(AllocateSecondPage));
             }
             _ => {}
         }
-        if half_cartridge_ram_len == 0 && self._0().half_cartridge_ram_len() != 0 {
-            self.mut_0().receive(From::from(AllocateHalfPage));
+        if half_cartridge_ram_len == 0 && mem.half_cartridge_ram_len() != 0 {
+            mem.receive(From::from(AllocateHalfPage));
         }
 
-        self.mut_0().receive(From::from(match page {
+        mem.receive(From::from(match page {
             SystemRam => SystemRamWrite {
                 logical_address,
                 actual_address: offset & 0x1FFF,

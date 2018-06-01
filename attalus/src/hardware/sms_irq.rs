@@ -1,6 +1,6 @@
 //! An implementation of `Z80Irq` for the Sega Master System.
 
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 
 use super::sms_player_input::SmsPlayerInput;
 use super::sms_vdp::SmsVdpIrq;
@@ -29,54 +29,38 @@ impl SmsZ80IrqState for bool {
     }
 }
 
-pub trait SmsZ80IrqStateImpl {
-    type Impler: SmsZ80IrqState + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SmsZ80IrqStateImpl;
 
 impl<T> SmsZ80IrqState for T
 where
-    T: SmsZ80IrqStateImpl + ?Sized,
+    T: Impl<SmsZ80IrqStateImpl> + ?Sized,
+    T::Impler: SmsZ80IrqState,
 {
     #[inline]
     fn already_accepted(&self) -> bool {
-        self.close(|z| z.already_accepted())
+        self.make().already_accepted()
     }
 
     #[inline]
     fn set_already_accepted(&mut self, x: bool) {
-        self.close_mut(|z| z.set_already_accepted(x))
+        self.make_mut().set_already_accepted(x)
     }
 }
 
 /// An Impler for Z80Irq.
 ///
 /// `T` must implement `SmsVdpIrq`, `SmsPlayerInput`, and `SmsZ80IrqState`.
-pub struct SmsZ80IrqImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct SmsZ80IrqImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for SmsZ80IrqImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        SmsZ80IrqImpler(c)
+impl<T: ?Sized> SmsZ80IrqImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(SmsZ80IrqImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(SmsZ80IrqImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -86,12 +70,12 @@ where
 {
     #[inline]
     fn requesting_mi(&self) -> Option<u8> {
-        self._0().get()
+        self.0._0().get()
     }
 
     #[inline]
     fn requesting_nmi(&mut self) -> bool {
-        let z = self.mut_0();
+        let z = self.0.mut_0();
         match (z.pause(), z.already_accepted()) {
             (true, false) => {
                 z.set_already_accepted(true);

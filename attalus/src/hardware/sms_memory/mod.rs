@@ -5,7 +5,7 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 
 use super::memory16::*;
 
@@ -217,100 +217,91 @@ pub trait SmsMemory {
     fn map_page_impl(&mut self, slot: u8, page: MemoryPage);
 }
 
-pub trait SmsMemoryImpl {
-    type Impler: SmsMemory;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct SmsMemoryImpl;
 
 impl<T> SmsMemory for T
 where
-    T: SmsMemoryImpl,
+    T: Impl<SmsMemoryImpl>,
+    T::Impler: SmsMemory,
 {
-    #[inline]
+    #[inline(always)]
     fn page(&self, slot: u8) -> MemoryPage {
-        self.close(|z| z.page(slot))
+        self.make().page(slot)
     }
 
-    #[inline]
+    #[inline(always)]
     fn rom_len(&self) -> usize {
-        self.close(|z| z.rom_len())
+        self.make().rom_len()
     }
 
-    #[inline]
+    #[inline(always)]
     fn rom_read(&self, index: usize) -> u8 {
-        self.close(|z| z.rom_read(index))
+        self.make().rom_read(index)
     }
 
-    #[inline]
+    #[inline(always)]
     fn rom_write(&mut self, index: usize, value: u8) {
-        self.close_mut(|z| z.rom_write(index, value))
+        self.make_mut().rom_write(index, value)
     }
 
-    #[inline]
+    #[inline(always)]
     fn main_cartridge_ram_len(&self) -> usize {
-        self.close(|z| z.main_cartridge_ram_len())
+        self.make().main_cartridge_ram_len()
     }
 
-    #[inline]
+    #[inline(always)]
     fn main_cartridge_ram_read(&self, index: usize) -> u8 {
-        self.close(|z| z.main_cartridge_ram_read(index))
+        self.make().main_cartridge_ram_read(index)
     }
 
-    #[inline]
+    #[inline(always)]
     fn main_cartridge_ram_write(&mut self, index: usize, value: u8) {
-        self.close_mut(|z| z.main_cartridge_ram_write(index, value))
+        self.make_mut().main_cartridge_ram_write(index, value)
     }
 
-    #[inline]
+    #[inline(always)]
     fn half_cartridge_ram_len(&self) -> usize {
-        self.close(|z| z.half_cartridge_ram_len())
+        self.make().half_cartridge_ram_len()
     }
 
-    #[inline]
+    #[inline(always)]
     fn half_cartridge_ram_read(&self, index: usize) -> u8 {
-        self.close(|z| z.half_cartridge_ram_read(index))
+        self.make().half_cartridge_ram_read(index)
     }
 
-    #[inline]
+    #[inline(always)]
     fn half_cartridge_ram_write(&mut self, index: usize, value: u8) {
-        self.close_mut(|z| z.half_cartridge_ram_write(index, value))
+        self.make_mut().half_cartridge_ram_write(index, value)
     }
 
-    #[inline]
+    #[inline(always)]
     fn system_ram_len(&self) -> usize {
-        self.close(|z| z.system_ram_len())
+        self.make().system_ram_len()
     }
 
-    #[inline]
+    #[inline(always)]
     fn system_ram_read(&self, index: usize) -> u8 {
-        self.close(|z| z.system_ram_read(index))
+        self.make().system_ram_read(index)
     }
 
-    #[inline]
+    #[inline(always)]
     fn system_ram_write(&mut self, index: usize, value: u8) {
-        self.close_mut(|z| z.system_ram_write(index, value))
+        self.make_mut().system_ram_write(index, value)
     }
 
-    #[inline]
+    #[inline(always)]
     fn state(&self) -> SmsMemoryState {
-        self.close(|z| z.state())
+        self.make().state()
     }
 
-    #[inline]
+    #[inline(always)]
     fn map_page(&mut self, slot: u8, page: MemoryPage) {
-        self.close_mut(|z| z.map_page(slot, page))
+        self.make_mut().map_page(slot, page)
     }
 
-    #[inline]
+    #[inline(always)]
     fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
-        self.close_mut(|z| z.map_page_impl(slot, page))
+        self.make_mut().map_page_impl(slot, page)
     }
 }
 
@@ -415,7 +406,7 @@ impl SmsMemoryState {
 }
 
 impl SmsMemoryLoad for SmsMemoryState {
-    #[inline]
+    #[inline(always)]
     fn load(state: SmsMemoryState) -> Result<Self, SmsMemoryLoadError> {
         if let Some(e) = state.check_valid() {
             Err(e)
@@ -485,27 +476,27 @@ impl Memory16 for SmsMemoryState {
 }
 
 impl SmsMemory for SmsMemoryState {
-    #[inline]
+    #[inline(always)]
     fn page(&self, slot: u8) -> MemoryPage {
         self.pages[slot as usize]
     }
 
-    #[inline]
+    #[inline(always)]
     fn rom_len(&self) -> usize {
         self.rom.len() * 0x4000
     }
 
-    #[inline]
+    #[inline(always)]
     fn rom_read(&self, index: usize) -> u8 {
         self.rom[index >> 14][index & 0x3FFF]
     }
 
-    #[inline]
+    #[inline(always)]
     fn rom_write(&mut self, index: usize, value: u8) {
         Arc::make_mut(&mut self.rom)[index >> 14][index & 0x3FFF] = value;
     }
 
-    #[inline]
+    #[inline(always)]
     fn main_cartridge_ram_len(&self) -> usize {
         use self::MainCartridgeRam::*;
         match self.main_cartridge_ram {
@@ -545,7 +536,7 @@ impl SmsMemory for SmsMemoryState {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn half_cartridge_ram_len(&self) -> usize {
         match self.half_cartridge_ram {
             None => 0,
@@ -553,7 +544,7 @@ impl SmsMemory for SmsMemoryState {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn half_cartridge_ram_read(&self, index: usize) -> u8 {
         match &self.half_cartridge_ram {
             &None => panic!("index out of bounds: got {} but len 0", index),
@@ -561,7 +552,7 @@ impl SmsMemory for SmsMemoryState {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn half_cartridge_ram_write(&mut self, index: usize, value: u8) {
         match &mut self.half_cartridge_ram {
             &mut None => panic!("index out of bounds: got {} but len 0", index),
@@ -569,27 +560,27 @@ impl SmsMemory for SmsMemoryState {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn system_ram_len(&self) -> usize {
         0x2000
     }
 
-    #[inline]
+    #[inline(always)]
     fn system_ram_read(&self, index: usize) -> u8 {
         self.system_ram[index]
     }
 
-    #[inline]
+    #[inline(always)]
     fn system_ram_write(&mut self, index: usize, value: u8) {
         self.system_ram[index] = value
     }
 
-    #[inline]
+    #[inline(always)]
     fn state(&self) -> SmsMemoryState {
         self.clone()
     }
 
-    #[inline]
+    #[inline(always)]
     fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
         self.pages[slot as usize] = page;
     }
@@ -636,7 +627,7 @@ pub trait SmsMemoryLoad: Sized {
     /// Note that there are default impementations of `load` and `load_ref`,
     /// but they call each other, so an implementer of this trait must
     /// override one of them.
-    #[inline]
+    #[inline(always)]
     fn load(state: SmsMemoryState) -> Result<Self, SmsMemoryLoadError> {
         Self::load_ref(&state)
     }
@@ -646,7 +637,7 @@ pub trait SmsMemoryLoad: Sized {
     /// Note that there are default impementations of `load` and `load_ref`,
     /// but they call each other, so an implementer of this trait must
     /// override one of them.
-    #[inline]
+    #[inline(always)]
     fn load_ref(state: &SmsMemoryState) -> Result<Self, SmsMemoryLoadError> {
         Self::load(state.clone())
     }
@@ -681,27 +672,20 @@ pub trait SmsMapper<M: ?Sized> {
 
 /// Use in conjunction with an `SmsMapper` and a `Memory` to get an
 /// implementation of `Memory16` using the `SmsMapper`.
-pub struct SmsMapMemory16Impler<Memory: ?Sized, Mapper: ?Sized>(
-    ConstOrMut<Memory>,
-    PhantomData<Mapper>,
-);
+pub struct SmsMapMemory16Impler<Memory: ?Sized, Mapper: ?Sized>(Ref<Memory>, PhantomData<Mapper>);
 
-unsafe impl<T: ?Sized, U: ?Sized> ImplerImpl for SmsMapMemory16Impler<T, U> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        SmsMapMemory16Impler(c, PhantomData)
+impl<T: ?Sized, U: ?Sized> SmsMapMemory16Impler<T, U> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(SmsMapMemory16Impler(unsafe { Ref::new(t) }, PhantomData))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(SmsMapMemory16Impler(
+            unsafe { Ref::new_mut(t) },
+            PhantomData,
+        ))
     }
 }
 
@@ -710,15 +694,15 @@ where
     Memory: SmsMemory + Memory16 + ?Sized,
     Mapper: SmsMapper<Memory> + ?Sized,
 {
-    #[inline]
+    #[inline(always)]
     fn read(&mut self, logical_address: u16) -> u8 {
-        self.mut_0().read(logical_address)
+        self.0.mut_0().read(logical_address)
     }
 
-    #[inline]
+    #[inline(always)]
     fn write(&mut self, logical_address: u16, value: u8) {
-        Mapper::write_reg(&mut self.mut_0(), logical_address, value);
-        self.mut_0().write(logical_address, value);
+        Mapper::write_reg(self.0.mut_0(), logical_address, value);
+        self.0.mut_0().write(logical_address, value);
     }
 }
 
@@ -735,13 +719,13 @@ pub struct PointerSmsMemory {
 }
 
 impl PointerSmsMemory {
-    #[inline]
+    #[inline(always)]
     fn state(&self) -> &SmsMemoryState {
         use std::mem::transmute;
         unsafe { transmute(self.state.get()) }
     }
 
-    #[inline]
+    #[inline(always)]
     fn state_mut(&mut self) -> &mut SmsMemoryState {
         use std::mem::transmute;
         unsafe { transmute(self.state.get()) }
@@ -758,7 +742,7 @@ mod _impl3 {
     unsafe impl Sync for PointerSmsMemory {}
 
     impl PartialEq for PointerSmsMemory {
-        #[inline]
+        #[inline(always)]
         fn eq(&self, rhs: &Self) -> bool {
             self.state() == rhs.state()
         }
@@ -767,7 +751,7 @@ mod _impl3 {
     impl Eq for PointerSmsMemory {}
 
     impl Hash for PointerSmsMemory {
-        #[inline]
+        #[inline(always)]
         fn hash<H>(&self, state: &mut H)
         where
             H: Hasher,
@@ -777,7 +761,7 @@ mod _impl3 {
     }
 
     impl Clone for PointerSmsMemory {
-        #[inline]
+        #[inline(always)]
         fn clone(&self) -> Self {
             use std::ptr::null;
             use std::ptr::null_mut;
@@ -796,7 +780,7 @@ mod _impl3 {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     impl Serialize for PointerSmsMemory {
-        #[inline]
+        #[inline(always)]
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -806,7 +790,7 @@ mod _impl3 {
     }
 
     impl<'de> Deserialize<'de> for PointerSmsMemory {
-        #[inline]
+        #[inline(always)]
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
@@ -845,7 +829,7 @@ mod _impl3 {
     }
 
     impl SmsMemoryLoad for PointerSmsMemory {
-        #[inline]
+        #[inline(always)]
         fn load(state: SmsMemoryState) -> Result<Self, SmsMemoryLoadError> {
             use std::ptr::null;
             use std::ptr::null_mut;
@@ -955,7 +939,7 @@ impl PointerSmsMemory {
         state.pages[slot as usize] = page;
     }
 
-    #[inline]
+    #[inline(always)]
     fn reset_pointers(&mut self) {
         for i in 0..4 {
             let page = self.page(i);

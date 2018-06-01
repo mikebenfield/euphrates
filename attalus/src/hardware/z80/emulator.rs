@@ -1,4 +1,4 @@
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 
 use super::*;
 
@@ -6,46 +6,30 @@ pub trait Z80Emulator {
     fn emulate(&mut self, target_cycles: u64);
 }
 
-pub trait Z80EmulatorImpl {
-    type Impler: Z80Emulator;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Z80EmulatorImpl;
 
 impl<T> Z80Emulator for T
 where
-    T: Z80EmulatorImpl + ?Sized,
+    T: Impl<Z80EmulatorImpl> + ?Sized,
+    T::Impler: Z80Emulator,
 {
     #[inline]
     fn emulate(&mut self, target_cycles: u64) {
-        self.close_mut(|z| z.emulate(target_cycles))
+        self.make_mut().emulate(target_cycles)
     }
 }
 
-pub struct Z80EmulatorImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct Z80EmulatorImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for Z80EmulatorImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        Z80EmulatorImpler(c)
+impl<T: ?Sized> Z80EmulatorImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(Z80EmulatorImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(Z80EmulatorImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -54,11 +38,11 @@ where
     T: Z80Internal + Z80Run + Z80Interrupt,
 {
     fn emulate(&mut self, target_cycles: u64) {
-        let z = self.mut_0();
+        let z = self.0.mut_0();
         while z.cycles() < target_cycles {
             if z.prefix() == Prefix::NoPrefix || z.prefix() == Prefix::Halt {
-                z.check_interrupts();
                 z.set_interrupt_status(InterruptStatus::NoCheck);
+                z.check_interrupts();
             } else {
                 z.set_interrupt_status(InterruptStatus::Check);
             }

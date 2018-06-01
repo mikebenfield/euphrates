@@ -3,32 +3,23 @@
 use failure::Error;
 
 use host_multimedia::SimpleAudio;
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 
 /// The hardware interface for the SN76489 sound chip.
 pub trait Sn76489Interface {
     fn write(&mut self, data: u8);
 }
 
-pub trait Sn76489InterfaceImpl {
-    type Impler: Sn76489Interface;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Sn76489InterfaceImpl;
 
 impl<T> Sn76489Interface for T
 where
-    T: Sn76489InterfaceImpl + ?Sized,
+    T: Impl<Sn76489InterfaceImpl> + ?Sized,
+    T::Impler: Sn76489Interface,
 {
     #[inline]
     fn write(&mut self, data: u8) {
-        self.close_mut(|z| z.write(data))
+        self.make_mut().write(data)
     }
 }
 
@@ -37,30 +28,21 @@ pub trait Sn76489Audio {
     fn hold(&mut self);
 }
 
-pub trait Sn76489AudioImpl {
-    type Impler: Sn76489Audio + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Sn76489AudioImpl;
 
 impl<T: ?Sized> Sn76489Audio for T
 where
-    T: Sn76489AudioImpl,
+    T: Impl<Sn76489AudioImpl>,
+    T::Impler: Sn76489Audio,
 {
     #[inline]
     fn queue(&mut self, target_cycles: u64) -> Result<(), Error> {
-        self.close_mut(|z| z.queue(target_cycles))
+        self.make_mut().queue(target_cycles)
     }
 
     #[inline]
     fn hold(&mut self) {
-        self.close_mut(|z| z.hold())
+        self.make_mut().hold()
     }
 }
 
@@ -132,24 +114,17 @@ macro_rules! min_nonzero {
     };
 }
 
-pub struct SimpleSn76489AudioImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct SimpleSn76489AudioImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for SimpleSn76489AudioImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        SimpleSn76489AudioImpler(c)
+impl<T: ?Sized> SimpleSn76489AudioImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(SimpleSn76489AudioImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(SimpleSn76489AudioImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -158,7 +133,7 @@ where
     T: AsRef<Sn76489State> + AsMut<Sn76489State> + SimpleAudio + ?Sized,
 {
     fn queue(&mut self, target_cycles: u64) -> Result<(), Error> {
-        if self._0().as_ref().cycles >= target_cycles {
+        if self.0._0().as_ref().cycles >= target_cycles {
             return Ok(());
         }
 
@@ -188,74 +163,73 @@ where
         }
 
         let amplitudes: [i16; 4] = [
-            convert_volume(self._0().as_ref().registers[1]),
-            convert_volume(self._0().as_ref().registers[3]),
-            convert_volume(self._0().as_ref().registers[5]),
-            convert_volume(self._0().as_ref().registers[7]),
+            convert_volume(self.0._0().as_ref().registers[1]),
+            convert_volume(self.0._0().as_ref().registers[3]),
+            convert_volume(self.0._0().as_ref().registers[5]),
+            convert_volume(self.0._0().as_ref().registers[7]),
         ];
 
         {
+            let s = self.0.mut_0();
             let mut i: usize = 0;
-            while i < self.mut_0().buffer_len() {
-                let tone0 = self._0().as_ref().polarity[0] as i16 * amplitudes[0];
-                let tone1 = self._0().as_ref().polarity[1] as i16 * amplitudes[1];
-                let tone2 = self._0().as_ref().polarity[2] as i16 * amplitudes[2];
-                let noise = self._0().as_ref().polarity[3] as i16 * amplitudes[3];
+            while i < s.buffer_len() {
+                let tone0 = s.as_ref().polarity[0] as i16 * amplitudes[0];
+                let tone1 = s.as_ref().polarity[1] as i16 * amplitudes[1];
+                let tone2 = s.as_ref().polarity[2] as i16 * amplitudes[2];
+                let noise = s.as_ref().polarity[3] as i16 * amplitudes[3];
                 let sum = tone0 + tone1 + tone2 + noise;
-                debug_assert!(self._0().buffer_len() <= u16::max_value() as usize);
+                debug_assert!(s.buffer_len() <= u16::max_value() as usize);
                 let count = min_nonzero!(
-                    (self.mut_0().buffer_len() - i) as u16,
-                    self._0().as_ref().counters[0],
-                    self._0().as_ref().counters[1],
-                    self._0().as_ref().counters[2],
-                    self._0().as_ref().counters[3]
+                    (s.buffer_len() - i) as u16,
+                    s.as_ref().counters[0],
+                    s.as_ref().counters[1],
+                    s.as_ref().counters[2],
+                    s.as_ref().counters[3]
                 );
                 let last_idx = count as usize + i;
                 for j in i..last_idx as usize {
-                    self.mut_0().buffer_set(j, sum);
+                    s.buffer_set(j, sum);
                 }
                 for j in 0..3 {
-                    self.mut_0().as_mut().counters[j] -= count;
-                    let tone_reg = self._0().as_ref().registers[2 * j];
+                    s.as_mut().counters[j] -= count;
+                    let tone_reg = s.as_ref().registers[2 * j];
                     if tone_reg == 0 || tone_reg == 1 {
-                        self.mut_0().as_mut().polarity[j] = 1;
-                        self.mut_0().as_mut().counters[j] = 0x3FF;
-                    } else if self._0().as_ref().counters[j] == 0 {
-                        self.mut_0().as_mut().polarity[j] *= -1;
-                        self.mut_0().as_mut().counters[j] = tone_reg;
+                        s.as_mut().polarity[j] = 1;
+                        s.as_mut().counters[j] = 0x3FF;
+                    } else if s.as_ref().counters[j] == 0 {
+                        s.as_mut().polarity[j] *= -1;
+                        s.as_mut().counters[j] = tone_reg;
                     }
                 }
-                self.mut_0().as_mut().counters[3] -= count;
-                if self._0().as_ref().counters[3] == 0 {
-                    self.mut_0().as_mut().counters[3] = match 0x3 & self._0().as_ref().registers[6]
-                    {
+                s.as_mut().counters[3] -= count;
+                if s.as_ref().counters[3] == 0 {
+                    s.as_mut().counters[3] = match 0x3 & s.as_ref().registers[6] {
                         0 => 0x20,
                         1 => 0x40,
                         2 => 0x80,
-                        _ => 2 * self.mut_0().as_mut().registers[4],
+                        _ => 2 * s.as_mut().registers[4],
                     };
-                    let bit0 = 1 & self._0().as_ref().linear_feedback;
+                    let bit0 = 1 & s.as_ref().linear_feedback;
                     let bit0_shifted = 1 << 15;
-                    self.mut_0().as_mut().polarity[3] = 2 * (bit0 as i8) - 1;
-                    if self._0().as_ref().registers[6] & 4 != 0 {
+                    s.as_mut().polarity[3] = 2 * (bit0 as i8) - 1;
+                    if s.as_ref().registers[6] & 4 != 0 {
                         // white noise
-                        let bit3_shifted = (8 & self._0().as_ref().linear_feedback) << 12;
+                        let bit3_shifted = (8 & s.as_ref().linear_feedback) << 12;
                         let feed_bit = bit0_shifted ^ bit3_shifted;
-                        self.mut_0().as_mut().linear_feedback =
-                            feed_bit | (self._0().as_ref().linear_feedback >> 1);
+                        s.as_mut().linear_feedback = feed_bit | (s.as_ref().linear_feedback >> 1);
                     } else {
                         // "periodic noise"
-                        self.mut_0().as_mut().linear_feedback =
-                            bit0_shifted | (self._0().as_ref().linear_feedback >> 1);
+                        s.as_mut().linear_feedback =
+                            bit0_shifted | (s.as_ref().linear_feedback >> 1);
                     }
                 }
                 i = last_idx;
             }
 
-            self.mut_0().as_mut().cycles += self.mut_0().buffer_len() as u64;
-        }
+            s.as_mut().cycles += s.buffer_len() as u64;
 
-        self.mut_0().queue_buffer()?;
+            s.queue_buffer()?;
+        }
 
         self.queue(target_cycles)
     }

@@ -1,4 +1,4 @@
-use impler::{ConstOrMut, Impler, ImplerImpl};
+use impler::{Cref, Impl, Mref, Ref};
 use utilities;
 
 use hardware::memory16::Memory16;
@@ -408,28 +408,19 @@ pub trait Z80Mem {
         T: Viewable<u8>;
 }
 
-pub trait Z80MemImpl {
-    type Impler: Z80Mem + ?Sized;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T;
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T;
-}
+pub struct Z80MemImpl;
 
 impl<U> Z80Mem for U
 where
-    U: Z80MemImpl + ?Sized,
+    U: Impl<Z80MemImpl> + ?Sized,
+    U::Impler: Z80Mem,
 {
     #[inline]
     fn adc<T>(&mut self, x: Reg8, y: T)
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.adc(x, y))
+        self.make_mut().adc(x, y)
     }
 
     #[inline]
@@ -437,7 +428,7 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.add(x, y))
+        self.make_mut().add(x, y)
     }
 
     #[inline]
@@ -445,7 +436,7 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.and(x))
+        self.make_mut().and(x)
     }
 
     #[inline]
@@ -453,17 +444,17 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.bit(x, y))
+        self.make_mut().bit(x, y)
     }
 
     #[inline]
     fn call(&mut self, x: u16) {
-        self.close_mut(|z| z.call(x))
+        self.make_mut().call(x)
     }
 
     #[inline]
     fn callcc(&mut self, x: ConditionCode, y: u16) {
-        self.close_mut(|z| z.callcc(x, y))
+        self.make_mut().callcc(x, y)
     }
 
     #[inline]
@@ -471,27 +462,27 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.cp(x))
+        self.make_mut().cp(x)
     }
 
     #[inline]
     fn cpd(&mut self) {
-        self.close_mut(|z| z.cpd())
+        self.make_mut().cpd()
     }
 
     #[inline]
     fn cpdr(&mut self) {
-        self.close_mut(|z| z.cpdr())
+        self.make_mut().cpdr()
     }
 
     #[inline]
     fn cpi(&mut self) {
-        self.close_mut(|z| z.cpi())
+        self.make_mut().cpi()
     }
 
     #[inline]
     fn cpir(&mut self) {
-        self.close_mut(|z| z.cpir())
+        self.make_mut().cpir()
     }
 
     #[inline]
@@ -499,7 +490,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.dec(x))
+        self.make_mut().dec(x)
     }
 
     #[inline]
@@ -507,7 +498,7 @@ where
     where
         T: Changeable<u16>,
     {
-        self.close_mut(|z| z.ex(x, y))
+        self.make_mut().ex(x, y)
     }
 
     #[inline]
@@ -515,7 +506,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.inc(x))
+        self.make_mut().inc(x)
     }
 
     #[inline]
@@ -523,7 +514,7 @@ where
     where
         T: Viewable<u16>,
     {
-        self.close_mut(|z| z.jp(x))
+        self.make_mut().jp(x)
     }
 
     #[inline]
@@ -532,7 +523,7 @@ where
         T1: Changeable<u8>,
         T2: Viewable<u8>,
     {
-        self.close_mut(|z| z.ld(x, y))
+        self.make_mut().ld(x, y)
     }
 
     #[inline]
@@ -541,27 +532,27 @@ where
         T1: Changeable<u16>,
         T2: Viewable<u16>,
     {
-        self.close_mut(|z| z.ld16(x, y))
+        self.make_mut().ld16(x, y)
     }
 
     #[inline]
     fn ldd(&mut self) {
-        self.close_mut(|z| z.ldd())
+        self.make_mut().ldd()
     }
 
     #[inline]
     fn lddr(&mut self) {
-        self.close_mut(|z| z.lddr())
+        self.make_mut().lddr()
     }
 
     #[inline]
     fn ldi(&mut self) {
-        self.close_mut(|z| z.ldi())
+        self.make_mut().ldi()
     }
 
     #[inline]
     fn ldir(&mut self) {
-        self.close_mut(|z| z.ldir())
+        self.make_mut().ldir()
     }
 
     #[inline]
@@ -569,17 +560,17 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.or(x))
+        self.make_mut().or(x)
     }
 
     #[inline]
     fn pop(&mut self, x: Reg16) {
-        self.close_mut(|z| z.pop(x))
+        self.make_mut().pop(x)
     }
 
     #[inline]
     fn push(&mut self, x: Reg16) {
-        self.close_mut(|z| z.push(x))
+        self.make_mut().push(x)
     }
 
     #[inline]
@@ -587,7 +578,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.res(x, y))
+        self.make_mut().res(x, y)
     }
 
     #[inline]
@@ -595,27 +586,27 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.res_store(x, y, w))
+        self.make_mut().res_store(x, y, w)
     }
 
     #[inline]
     fn ret(&mut self) {
-        self.close_mut(|z| z.ret())
+        self.make_mut().ret()
     }
 
     #[inline]
     fn retcc(&mut self, x: ConditionCode) {
-        self.close_mut(|z| z.retcc(x))
+        self.make_mut().retcc(x)
     }
 
     #[inline]
     fn reti(&mut self) {
-        self.close_mut(|z| z.reti())
+        self.make_mut().reti()
     }
 
     #[inline]
     fn retn(&mut self) {
-        self.close_mut(|z| z.retn())
+        self.make_mut().retn()
     }
 
     #[inline]
@@ -623,7 +614,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rl(x))
+        self.make_mut().rl(x)
     }
 
     #[inline]
@@ -631,12 +622,12 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rl_store(x, y))
+        self.make_mut().rl_store(x, y)
     }
 
     #[inline]
     fn rla(&mut self) {
-        self.close_mut(|z| z.rla())
+        self.make_mut().rla()
     }
 
     #[inline]
@@ -644,7 +635,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rlc(x))
+        self.make_mut().rlc(x)
     }
 
     #[inline]
@@ -652,17 +643,17 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rlc_store(x, y))
+        self.make_mut().rlc_store(x, y)
     }
 
     #[inline]
     fn rlca(&mut self) {
-        self.close_mut(|z| z.rlca())
+        self.make_mut().rlca()
     }
 
     #[inline]
     fn rld(&mut self) {
-        self.close_mut(|z| z.rld())
+        self.make_mut().rld()
     }
 
     #[inline]
@@ -670,7 +661,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rr(x))
+        self.make_mut().rr(x)
     }
 
     #[inline]
@@ -678,12 +669,12 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rr_store(x, y))
+        self.make_mut().rr_store(x, y)
     }
 
     #[inline]
     fn rra(&mut self) {
-        self.close_mut(|z| z.rra())
+        self.make_mut().rra()
     }
 
     #[inline]
@@ -691,7 +682,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rrc(x))
+        self.make_mut().rrc(x)
     }
 
     #[inline]
@@ -699,22 +690,22 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.rrc_store(x, y))
+        self.make_mut().rrc_store(x, y)
     }
 
     #[inline]
     fn rrca(&mut self) {
-        self.close_mut(|z| z.rrca())
+        self.make_mut().rrca()
     }
 
     #[inline]
     fn rrd(&mut self) {
-        self.close_mut(|z| z.rrd())
+        self.make_mut().rrd()
     }
 
     #[inline]
     fn rst(&mut self, x: u16) {
-        self.close_mut(|z| z.rst(x))
+        self.make_mut().rst(x)
     }
 
     #[inline]
@@ -722,7 +713,7 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.sbc(x, y))
+        self.make_mut().sbc(x, y)
     }
 
     #[inline]
@@ -730,7 +721,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.set(x, y))
+        self.make_mut().set(x, y)
     }
 
     #[inline]
@@ -738,7 +729,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.set_store(x, y, w))
+        self.make_mut().set_store(x, y, w)
     }
 
     #[inline]
@@ -746,7 +737,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.sla(x))
+        self.make_mut().sla(x)
     }
 
     #[inline]
@@ -754,7 +745,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.sla_store(x, y))
+        self.make_mut().sla_store(x, y)
     }
 
     #[inline]
@@ -762,7 +753,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.sll(x))
+        self.make_mut().sll(x)
     }
 
     #[inline]
@@ -770,7 +761,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.sll_store(x, y))
+        self.make_mut().sll_store(x, y)
     }
 
     #[inline]
@@ -778,7 +769,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.sra(x))
+        self.make_mut().sra(x)
     }
 
     #[inline]
@@ -786,7 +777,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.sra_store(x, y))
+        self.make_mut().sra_store(x, y)
     }
 
     #[inline]
@@ -794,7 +785,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.srl(x))
+        self.make_mut().srl(x)
     }
 
     #[inline]
@@ -802,7 +793,7 @@ where
     where
         T: Changeable<u8>,
     {
-        self.close_mut(|z| z.srl_store(x, y))
+        self.make_mut().srl_store(x, y)
     }
 
     #[inline]
@@ -810,7 +801,7 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.sub(x, y))
+        self.make_mut().sub(x, y)
     }
 
     #[inline]
@@ -818,28 +809,21 @@ where
     where
         T: Viewable<u8>,
     {
-        self.close_mut(|z| z.xor(x))
+        self.make_mut().xor(x)
     }
 }
 
-pub struct Z80MemImpler<T: ?Sized>(ConstOrMut<T>);
+pub struct Z80MemImpler<T: ?Sized>(Ref<T>);
 
-unsafe impl<T: ?Sized> ImplerImpl for Z80MemImpler<T> {
-    type T = T;
-
-    #[inline]
-    unsafe fn new(c: ConstOrMut<Self::T>) -> Self {
-        Z80MemImpler(c)
+impl<T: ?Sized> Z80MemImpler<T> {
+    #[inline(always)]
+    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
+        Cref::Own(Z80MemImpler(unsafe { Ref::new(t) }))
     }
 
-    #[inline]
-    fn get(&self) -> &ConstOrMut<Self::T> {
-        &self.0
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut ConstOrMut<Self::T> {
-        &mut self.0
+    #[inline(always)]
+    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
+        Mref::Own(Z80MemImpler(unsafe { Ref::new_mut(t) }))
     }
 }
 
@@ -851,32 +835,32 @@ where
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
+        let z = self.0.mut_0();
         let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-        let a = x.view(*z);
-        let y0 = y.view(*z);
-        let result = add_help(*z, a, y0, cf);
-        x.change(*z, result);
+        let a = x.view(z);
+        let y0 = y.view(z);
+        let result = add_help(z, a, y0, cf);
+        x.change(z, result);
     }
 
     fn add<T>(&mut self, x: Reg8, y: T)
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let x0 = x.view(*z);
-        let y0 = y.view(*z);
-        let result = add_help(*z, x0, y0, 0);
-        x.change(*z, result);
+        let z = self.0.mut_0();
+        let x0 = x.view(z);
+        let y0 = y.view(z);
+        let result = add_help(z, x0, y0, 0);
+        x.change(z, result);
     }
 
     fn and<T>(&mut self, x: T)
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let result = x.view(*z) & A.view(*z);
-        andor_help(*z, result);
+        let z = self.0.mut_0();
+        let result = x.view(z) & A.view(z);
+        andor_help(z, result);
         z.set_flag(HF);
     }
 
@@ -884,8 +868,8 @@ where
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let y0 = y.view(*z);
+        let z = self.0.mut_0();
+        let y0 = y.view(z);
         let bitflag = 1 << x;
         let y_contains = y0 & bitflag != 0;
 
@@ -896,22 +880,22 @@ where
     }
 
     fn call(&mut self, x: u16) {
-        let z = &mut self.mut_0();
-        let pch = PCH.view(*z);
-        let pcl = PCL.view(*z);
-        let sp = SP.view(*z);
-        Address(sp.wrapping_sub(1)).change(*z, pch);
-        Address(sp.wrapping_sub(2)).change(*z, pcl);
-        SP.change(*z, sp.wrapping_sub(2));
-        PC.change(*z, x);
+        let z = self.0.mut_0();
+        let pch = PCH.view(z);
+        let pcl = PCL.view(z);
+        let sp = SP.view(z);
+        Address(sp.wrapping_sub(1)).change(z, pch);
+        Address(sp.wrapping_sub(2)).change(z, pcl);
+        SP.change(z, sp.wrapping_sub(2));
+        PC.change(z, x);
     }
 
     fn callcc(&mut self, x: ConditionCode, y: u16) {
-        if x.view(self.mut_0()) {
+        if x.view(self.0.mut_0()) {
             self.call(y);
-            self.mut_0().inc_cycles(17);
+            self.0.mut_0().inc_cycles(17);
         } else {
-            self.mut_0().inc_cycles(10);
+            self.0.mut_0().inc_cycles(10);
         }
     }
 
@@ -919,20 +903,20 @@ where
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let x0 = x.view(*z);
-        let a = A.view(*z);
+        let z = self.0.mut_0();
+        let x0 = x.view(z);
+        let a = A.view(z);
         // cp is like a subtraction whose result we ignore
-        sub_help(*z, a, x0, 0);
+        sub_help(z, a, x0, 0);
     }
 
     fn cpd(&mut self) {
-        cpid(self.mut_0(), 0xFFFF);
+        cpid(self.0.mut_0(), 0xFFFF);
     }
 
     fn cpdr(&mut self) {
         self.cpd();
-        let z = &mut self.mut_0();
+        let z = self.0.mut_0();
         if z.reg16(BC) != 0 && !z.is_set_flag(ZF) {
             let pc = z.reg16(PC);
             z.set_reg16(PC, pc.wrapping_sub(2));
@@ -940,12 +924,12 @@ where
     }
 
     fn cpi(&mut self) {
-        cpid(self.mut_0(), 1);
+        cpid(self.0.mut_0(), 1);
     }
 
     fn cpir(&mut self) {
         self.cpi();
-        let z = &mut self.mut_0();
+        let z = self.0.mut_0();
         if z.reg16(BC) != 0 && !z.is_set_flag(ZF) {
             let pc = z.reg16(PC);
             z.set_reg16(PC, pc.wrapping_sub(2));
@@ -956,10 +940,10 @@ where
     where
         T: Changeable<u8>,
     {
-        let z = &mut self.mut_0();
-        let x0 = x.view(*z);
+        let z = self.0.mut_0();
+        let x0 = x.view(z);
         let result = x0.wrapping_sub(1);
-        x.change(*z, result);
+        x.change(z, result);
         z.set_zero(result);
         z.set_sign(result);
         z.set_flag_by(HF, x0 & 0xF == 0);
@@ -971,21 +955,21 @@ where
     where
         T: Changeable<u16>,
     {
-        let z = &mut self.mut_0();
-        let val1 = x.view(*z);
-        let val2 = y.view(*z);
-        x.change(*z, val2);
-        y.change(*z, val1);
+        let z = self.0.mut_0();
+        let val1 = x.view(z);
+        let val2 = y.view(z);
+        x.change(z, val2);
+        y.change(z, val1);
     }
 
     fn inc<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        let z = &mut self.mut_0();
-        let x0 = x.view(*z);
+        let z = self.0.mut_0();
+        let x0 = x.view(z);
         let result = x0.wrapping_add(1);
-        x.change(*z, result);
+        x.change(z, result);
         z.set_zero(result);
         z.set_sign(result);
         z.set_flag_by(HF, x0 & 0xF == 0xF);
@@ -997,8 +981,8 @@ where
     where
         T: Viewable<u16>,
     {
-        let z = &mut self.mut_0();
-        let addr = x.view(*z);
+        let z = self.0.mut_0();
+        let addr = x.view(z);
         z.set_reg16(PC, addr);
     }
 
@@ -1007,9 +991,9 @@ where
         T1: Changeable<u8>,
         T2: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let val = y.view(*z);
-        x.change(*z, val);
+        let z = self.0.mut_0();
+        let val = y.view(z);
+        x.change(z, val);
     }
 
     fn ld16<T1, T2>(&mut self, x: T1, y: T2)
@@ -1017,18 +1001,18 @@ where
         T1: Changeable<u16>,
         T2: Viewable<u16>,
     {
-        let z = &mut self.mut_0();
-        let val = y.view(*z);
-        x.change(*z, val);
+        let z = self.0.mut_0();
+        let val = y.view(z);
+        x.change(z, val);
     }
 
     fn ldd(&mut self) {
-        ldid(self.mut_0(), 0xFFFF);
+        ldid(self.0.mut_0(), 0xFFFF);
     }
 
     fn lddr(&mut self) {
         self.ldd();
-        let z = &mut self.mut_0();
+        let z = self.0.mut_0();
         if z.reg16(BC) != 0 {
             let pc = z.reg16(PC);
             z.set_reg16(PC, pc.wrapping_sub(2));
@@ -1036,12 +1020,12 @@ where
     }
 
     fn ldi(&mut self) {
-        ldid(self.mut_0(), 1);
+        ldid(self.0.mut_0(), 1);
     }
 
     fn ldir(&mut self) {
         self.ldi();
-        let z = &mut self.mut_0();
+        let z = self.0.mut_0();
         if z.reg16(BC) != 0 {
             let pc = z.reg16(PC);
             z.set_reg16(PC, pc.wrapping_sub(2));
@@ -1052,37 +1036,37 @@ where
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let result = x.view(*z) | A.view(*z);
-        andor_help(*z, result);
+        let z = self.0.mut_0();
+        let result = x.view(z) | A.view(z);
+        andor_help(z, result);
     }
 
     fn pop(&mut self, x: Reg16) {
-        let z = &mut self.mut_0();
-        let sp = SP.view(*z);
-        let lo = Address(sp).view(*z);
-        let hi = Address(sp.wrapping_add(1)).view(*z);
-        x.change(*z, utilities::to16(lo, hi));
-        SP.change(*z, sp.wrapping_add(2));
+        let z = self.0.mut_0();
+        let sp = SP.view(z);
+        let lo = Address(sp).view(z);
+        let hi = Address(sp.wrapping_add(1)).view(z);
+        x.change(z, utilities::to16(lo, hi));
+        SP.change(z, sp.wrapping_add(2));
     }
 
     fn push(&mut self, x: Reg16) {
-        let z = &mut self.mut_0();
-        let (lo, hi) = utilities::to8(x.view(*z));
-        let sp = SP.view(*z);
-        Address(sp.wrapping_sub(1)).change(*z, hi);
-        Address(sp.wrapping_sub(2)).change(*z, lo);
-        SP.change(*z, sp.wrapping_sub(2));
+        let z = self.0.mut_0();
+        let (lo, hi) = utilities::to8(x.view(z));
+        let sp = SP.view(z);
+        Address(sp.wrapping_sub(1)).change(z, hi);
+        Address(sp.wrapping_sub(2)).change(z, lo);
+        SP.change(z, sp.wrapping_sub(2));
     }
 
     fn res<T>(&mut self, x: u8, y: T)
     where
         T: Changeable<u8>,
     {
-        let z = &mut self.mut_0();
-        let mut y0 = y.view(*z);
+        let z = self.0.mut_0();
+        let mut y0 = y.view(z);
         utilities::clear_bit(&mut y0, x);
-        y.change(*z, y0);
+        y.change(z, y0);
     }
 
     fn res_store<T>(&mut self, x: u8, y: T, w: Reg8)
@@ -1090,27 +1074,27 @@ where
         T: Changeable<u8>,
     {
         self.res(x, y);
-        let z = &mut self.mut_0();
-        let y0 = y.view(*z);
-        w.change(*z, y0);
+        let z = self.0.mut_0();
+        let y0 = y.view(z);
+        w.change(z, y0);
     }
 
     fn ret(&mut self) {
-        let z = &mut self.mut_0();
-        let sp = SP.view(*z);
-        let n1 = Address(sp).view(*z);
-        PCL.change(*z, n1);
-        let n2 = Address(sp.wrapping_add(1)).view(*z);
-        PCH.change(*z, n2);
-        SP.change(*z, sp.wrapping_add(2));
+        let z = self.0.mut_0();
+        let sp = SP.view(z);
+        let n1 = Address(sp).view(z);
+        PCL.change(z, n1);
+        let n2 = Address(sp.wrapping_add(1)).view(z);
+        PCH.change(z, n2);
+        SP.change(z, sp.wrapping_add(2));
     }
 
     fn retcc(&mut self, x: ConditionCode) {
-        if x.view(self.mut_0()) {
+        if x.view(self.0.mut_0()) {
             self.ret();
-            self.mut_0().inc_cycles(11);
+            self.0.mut_0().inc_cycles(11);
         } else {
-            self.mut_0().inc_cycles(5);
+            self.0.mut_0().inc_cycles(5);
         }
     }
 
@@ -1119,67 +1103,67 @@ where
     }
 
     fn retn(&mut self) {
-        let z = &mut self.mut_0();
+        let z = self.0.mut_0();
         let iff2 = z.iff2();
         z.set_iff1(iff2);
         if iff2 {
             z.set_interrupt_status(InterruptStatus::Check);
         }
 
-        let sp = SP.view(*z);
-        let pcl = Address(sp).view(*z);
-        let pch = Address(sp.wrapping_add(1)).view(*z);
-        PCL.change(*z, pcl);
-        PCH.change(*z, pch);
-        SP.change(*z, sp.wrapping_add(2));
+        let sp = SP.view(z);
+        let pcl = Address(sp).view(z);
+        let pch = Address(sp.wrapping_add(1)).view(z);
+        PCL.change(z, pcl);
+        PCH.change(z, pch);
+        SP.change(z, sp.wrapping_add(2));
     }
 
     fn rl<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        rl(self.mut_0(), x)
+        rl(self.0.mut_0(), x)
     }
 
     fn rl_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        rl_store(self.mut_0(), x, y)
+        rl_store(self.0.mut_0(), x, y)
     }
 
     fn rla(&mut self) {
-        rla(self.mut_0())
+        rla(self.0.mut_0())
     }
 
     fn rlc<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        rlc(self.mut_0(), x)
+        rlc(self.0.mut_0(), x)
     }
 
     fn rlc_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        rlc_store(self.mut_0(), x, y)
+        rlc_store(self.0.mut_0(), x, y)
     }
 
     fn rlca(&mut self) {
-        rlca(self.mut_0())
+        rlca(self.0.mut_0())
     }
 
     fn rld(&mut self) {
-        let z = &mut self.mut_0();
-        let hl: u8 = Address(HL).view(*z);
+        let z = self.0.mut_0();
+        let hl: u8 = Address(HL).view(z);
         let hl_lo: u8 = 0xF & hl;
         let hl_hi: u8 = 0xF0 & hl;
-        let a_lo = 0xF & A.view(*z);
-        let a_hi = 0xF0 & A.view(*z);
-        Address(HL).change(*z, hl_lo << 4 | a_lo);
-        A.change(*z, hl_hi >> 4 | a_hi);
-        let a = A.view(*z);
+        let a_lo = 0xF & A.view(z);
+        let a_hi = 0xF0 & A.view(z);
+        Address(HL).change(z, hl_lo << 4 | a_lo);
+        A.change(z, hl_hi >> 4 | a_hi);
+        let a = A.view(z);
 
         z.set_parity(a);
         z.set_sign(a);
@@ -1191,48 +1175,48 @@ where
     where
         T: Changeable<u8>,
     {
-        rr(self.mut_0(), x)
+        rr(self.0.mut_0(), x)
     }
 
     fn rr_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        rr_store(self.mut_0(), x, y)
+        rr_store(self.0.mut_0(), x, y)
     }
 
     fn rra(&mut self) {
-        rra(self.mut_0())
+        rra(self.0.mut_0())
     }
 
     fn rrc<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        rrc(self.mut_0(), x)
+        rrc(self.0.mut_0(), x)
     }
 
     fn rrc_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        rrc_store(self.mut_0(), x, y)
+        rrc_store(self.0.mut_0(), x, y)
     }
 
     fn rrca(&mut self) {
-        rrca(self.mut_0())
+        rrca(self.0.mut_0())
     }
 
     fn rrd(&mut self) {
-        let z = &mut self.mut_0();
-        let hl: u8 = Address(HL).view(*z);
+        let z = self.0.mut_0();
+        let hl: u8 = Address(HL).view(z);
         let hl_lo: u8 = 0xF & hl;
         let hl_hi: u8 = 0xF0 & hl;
-        let a_lo = 0xF & A.view(*z);
-        let a_hi = 0xF0 & A.view(*z);
-        Address(HL).change(*z, a_lo << 4 | hl_hi >> 4);
-        A.change(*z, hl_lo | a_hi);
-        let a = A.view(*z);
+        let a_lo = 0xF & A.view(z);
+        let a_hi = 0xF0 & A.view(z);
+        Address(HL).change(z, a_lo << 4 | hl_hi >> 4);
+        A.change(z, hl_lo | a_hi);
+        let a = A.view(z);
 
         z.set_parity(a);
         z.set_sign(a);
@@ -1241,36 +1225,36 @@ where
     }
 
     fn rst(&mut self, x: u16) {
-        let z = &mut self.mut_0();
-        let sp = SP.view(*z);
-        let pch = PCH.view(*z);
-        let pcl = PCL.view(*z);
-        Address(sp.wrapping_sub(1)).change(*z, pch);
-        Address(sp.wrapping_sub(2)).change(*z, pcl);
-        SP.change(*z, sp.wrapping_sub(2));
-        PC.change(*z, x);
+        let z = self.0.mut_0();
+        let sp = SP.view(z);
+        let pch = PCH.view(z);
+        let pcl = PCL.view(z);
+        Address(sp.wrapping_sub(1)).change(z, pch);
+        Address(sp.wrapping_sub(2)).change(z, pcl);
+        SP.change(z, sp.wrapping_sub(2));
+        PC.change(z, x);
     }
 
     fn sbc<T>(&mut self, x: Reg8, y: T)
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
+        let z = self.0.mut_0();
         let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-        let x0 = x.view(*z);
-        let y0 = y.view(*z);
-        let result = sub_help(*z, x0, y0, cf);
-        x.change(*z, result);
+        let x0 = x.view(z);
+        let y0 = y.view(z);
+        let result = sub_help(z, x0, y0, cf);
+        x.change(z, result);
     }
 
     fn set<T>(&mut self, x: u8, y: T)
     where
         T: Changeable<u8>,
     {
-        let z = &mut self.mut_0();
-        let mut y0 = y.view(*z);
+        let z = self.0.mut_0();
+        let mut y0 = y.view(z);
         utilities::set_bit(&mut y0, x);
-        y.change(*z, y0);
+        y.change(z, y0);
     }
 
     fn set_store<T>(&mut self, x: u8, y: T, w: Reg8)
@@ -1278,84 +1262,84 @@ where
         T: Changeable<u8>,
     {
         self.set(x, w);
-        let z = &mut self.mut_0();
-        let y0 = y.view(*z);
-        w.change(*z, y0);
+        let z = self.0.mut_0();
+        let y0 = y.view(z);
+        w.change(z, y0);
     }
 
     fn sla<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        sla(self.mut_0(), x)
+        sla(self.0.mut_0(), x)
     }
 
     fn sla_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        sla_store(self.mut_0(), x, y)
+        sla_store(self.0.mut_0(), x, y)
     }
 
     fn sll<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        sll(self.mut_0(), x)
+        sll(self.0.mut_0(), x)
     }
 
     fn sll_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        sll_store(self.mut_0(), x, y)
+        sll_store(self.0.mut_0(), x, y)
     }
 
     fn sra<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        sra(self.mut_0(), x)
+        sra(self.0.mut_0(), x)
     }
 
     fn sra_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        sra_store(self.mut_0(), x, y)
+        sra_store(self.0.mut_0(), x, y)
     }
 
     fn srl<T>(&mut self, x: T)
     where
         T: Changeable<u8>,
     {
-        srl(self.mut_0(), x)
+        srl(self.0.mut_0(), x)
     }
 
     fn srl_store<T>(&mut self, x: T, y: Reg8)
     where
         T: Changeable<u8>,
     {
-        srl_store(self.mut_0(), x, y)
+        srl_store(self.0.mut_0(), x, y)
     }
 
     fn sub<T>(&mut self, x: Reg8, y: T)
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let a = x.view(*z);
-        let y0 = y.view(*z);
-        let result = sub_help(*z, a, y0, 0);
-        x.change(*z, result);
+        let z = self.0.mut_0();
+        let a = x.view(z);
+        let y0 = y.view(z);
+        let result = sub_help(z, a, y0, 0);
+        x.change(z, result);
     }
 
     fn xor<T>(&mut self, x: T)
     where
         T: Viewable<u8>,
     {
-        let z = &mut self.mut_0();
-        let result = x.view(*z) ^ A.view(*z);
-        andor_help(*z, result);
+        let z = self.0.mut_0();
+        let result = x.view(z) ^ A.view(z);
+        andor_help(z, result);
     }
 }
