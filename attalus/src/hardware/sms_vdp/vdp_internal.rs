@@ -50,6 +50,12 @@ pub trait SmsVdpInternal {
     /// Set the line interrupt pending flag.
     fn set_line_interrupt_pending(&mut self, bool);
 
+    /// Has this interrupt been triggered since the last time an interrupt was
+    /// taken?
+    fn new_irq(&self) -> bool;
+
+    fn set_new_irq(&mut self, bool);
+
     /// Vertical scroll.
     ///
     /// Games set the `y_scroll` value by setting register 9, but the value used
@@ -699,16 +705,13 @@ pub trait SmsVdpInternal {
     }
 
     /// Hardware method: is the VDP requesting an interrupt?
-    fn requesting_mi(&self) -> Option<u8> {
+    #[inline]
+    fn requesting_mi(&self) -> bool {
         let frame_interrupt = self.status_flags() & FRAME_INTERRUPT_FLAG != 0;
         let line_interrupt = self.line_interrupt_pending();
-        if (frame_interrupt && self.frame_irq_enabled())
-            || (line_interrupt && self.line_irq_enabled())
-        {
-            Some(0xFF)
-        } else {
-            None
-        }
+        self.new_irq()
+            && ((frame_interrupt && self.frame_irq_enabled())
+                || (line_interrupt && self.line_irq_enabled()))
     }
 
     /// Set power-on register settings.
@@ -802,6 +805,16 @@ where
     #[inline]
     fn set_line_interrupt_pending(&mut self, x: bool) {
         self.make_mut().set_line_interrupt_pending(x)
+    }
+
+    #[inline]
+    fn new_irq(&self) -> bool {
+        self.make().new_irq()
+    }
+
+    #[inline]
+    fn set_new_irq(&mut self, x: bool) {
+        self.make_mut().set_new_irq(x)
     }
 
     #[inline]
@@ -910,23 +923,6 @@ where
     }
 }
 
-/// In `SmsVdpState`, this is the bit flag on `status_flags` indicating
-/// whether the control register was the last one written to.
-///
-/// Note that the VDP has such an internal flag, but it's not part of the status
-/// flags; we are just repurposing unused bits. In the implementation of
-/// `SmsVdpInternal` for `SmsVdpState`, `status_flags()`, `control_flag`,
-/// `line_interrupt_pending` and their setter counterparts are implemented using
-/// masks so that the control flag and line interrupt flag are seen separtely
-/// from the status flags.
-pub const CONTROL_FLAG: u8 = 0x1;
-
-/// In `SmsVdpState`, this is the bit flag on `status_flags` indicating whether
-/// the control register was the last one written to.
-///
-/// See also documentation for `CONTROL_FLAG`.
-pub const LINE_INTERRUPT_FLAG: u8 = 0x2;
-
 /// The state of the VDP.
 ///
 /// Suitable for serializing.
@@ -937,6 +933,9 @@ pub struct SmsVdpState {
     pub tv_system: TvSystem,
     pub cram_latch: u8,
     pub status_flags: u8,
+    /// Control flag is bit 0. Line interrupt flag is bit 1.
+    /// new_irq is bit 2.
+    pub other_flags: u8,
     pub h: u16,
     pub v: u16,
     pub address: u16,
@@ -959,6 +958,7 @@ mod _impl0 {
         tv_system: TvSystem,
         cram_latch: u8,
         status_flags: u8,
+        other_flags: u8,
         h: u16,
         v: u16,
         address: u16,
@@ -981,6 +981,7 @@ mod _impl0 {
                 tv_system: Default::default(),
                 cram_latch: 0,
                 status_flags: 0,
+                other_flags: 0,
                 h: 0,
                 v: 0,
                 address: 0,
@@ -1054,29 +1055,43 @@ impl SmsVdpInternal for SmsVdpState {
 
     #[inline]
     fn control_flag(&self) -> bool {
-        self.status_flags & CONTROL_FLAG != 0
+        self.other_flags & 1 != 0
     }
 
     #[inline]
     fn set_control_flag(&mut self, x: bool) {
         if x {
-            self.status_flags |= CONTROL_FLAG;
+            self.other_flags |= 1
         } else {
-            self.status_flags &= !CONTROL_FLAG;
+            self.other_flags &= 0xFE
         }
     }
 
     #[inline]
     fn line_interrupt_pending(&self) -> bool {
-        self.status_flags & LINE_INTERRUPT_FLAG != 0
+        self.other_flags & 2 != 0
     }
 
     #[inline]
     fn set_line_interrupt_pending(&mut self, x: bool) {
         if x {
-            self.status_flags |= LINE_INTERRUPT_FLAG;
+            self.other_flags |= 2
         } else {
-            self.status_flags &= !LINE_INTERRUPT_FLAG;
+            self.other_flags &= 0xFD
+        }
+    }
+
+    #[inline]
+    fn new_irq(&self) -> bool {
+        self.other_flags & 4 != 0
+    }
+
+    #[inline]
+    fn set_new_irq(&mut self, x: bool) {
+        if x {
+            self.other_flags |= 4
+        } else {
+            self.other_flags &= 0xFB
         }
     }
 
@@ -1183,12 +1198,5 @@ impl SmsVdpInternal for SmsVdpState {
     #[inline]
     unsafe fn set_register_unchecked(&mut self, index: u16, value: u8) {
         *self.reg.get_unchecked_mut(index as usize) = value;
-    }
-}
-
-impl SmsVdpIrq for SmsVdpState {
-    #[inline]
-    fn get(&self) -> Option<u8> {
-        self.requesting_mi()
     }
 }

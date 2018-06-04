@@ -43,7 +43,7 @@ impl<T: ?Sized> Z80RunInterpreterImpler<T> {
 
 impl<T> Z80Run for Z80RunInterpreterImpler<T>
 where
-    T: Z80Internal + Z80No + Z80Mem + Z80Io + Memory16 + Inbox + ?Sized,
+    T: Z80Internal + Z80Irq + Z80Interrupt + Z80No + Z80Mem + Z80Io + Memory16 + Inbox + ?Sized,
     T::Memo: From<Z80Memo>,
 {
     #[inline]
@@ -54,7 +54,7 @@ where
 
 fn run<Z>(z: &mut Z, cycles: u64)
 where
-    Z: Z80Internal + Z80No + Z80Mem + Z80Io + Memory16 + Inbox + ?Sized,
+    Z: Z80Internal + Z80Irq + Z80Interrupt + Z80No + Z80Mem + Z80Io + Memory16 + Inbox + ?Sized,
     Z::Memo: From<Z80Memo>,
 {
     use self::InterruptStatus::*;
@@ -70,25 +70,23 @@ where
         opcode
     }
 
+    z.set_interrupt_status(InterruptStatus::Check);
+
     while z.cycles() < cycles {
         match (z.prefix(), z.interrupt_status()) {
             (Halt, NoCheck) => {
                 use std::cmp::max;
                 let current_cycles = z.cycles();
                 z.set_cycles(max(current_cycles, cycles));
-                return;
             }
             (Halt, _) => {
-                // back out to check interrupts
-                return;
+                z.check_interrupts();
             }
             (NoPrefix, Check) => {
-                // back out to check interrupts
-                return;
+                z.check_interrupts();
             }
             (NoPrefix, Ei(ei_cycles)) if z.cycles() > ei_cycles => {
-                // back out to check interrupts
-                return;
+                z.check_interrupts();
             }
             (NoPrefix, _) => {
                 z.inc_r(1);

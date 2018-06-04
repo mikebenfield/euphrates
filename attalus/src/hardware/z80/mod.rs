@@ -20,7 +20,6 @@ mod macro_ddcb;
 #[macro_use]
 mod macro_fdcb;
 
-mod emulator;
 pub mod instructions;
 mod internal;
 mod interrupt;
@@ -31,7 +30,6 @@ mod memo;
 mod no;
 mod run;
 
-pub use self::emulator::*;
 pub use self::internal::*;
 pub use self::interrupt::*;
 pub use self::io::*;

@@ -4,7 +4,6 @@ mod graphics;
 mod line;
 mod vdp_interface;
 mod vdp_internal;
-mod vdp_irq;
 
 pub mod debug;
 pub mod replaceable;
@@ -13,7 +12,6 @@ pub use self::graphics::*;
 pub use self::line::*;
 pub use self::vdp_interface::*;
 pub use self::vdp_internal::*;
-pub use self::vdp_irq::*;
 
 /// NTSC (largely North American and Japan) or PAL (largely Europe and South
 /// America) TV system.

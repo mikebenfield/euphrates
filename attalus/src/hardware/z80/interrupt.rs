@@ -57,21 +57,18 @@ where
     <T as Inbox>::Memo: From<Z80Memo>,
 {
     fn check_interrupts(&mut self) {
+        self.0
+            .mut_0()
+            .set_interrupt_status(InterruptStatus::NoCheck);
+
         if self.0.mut_0().requesting_nmi() {
             self.0
                 .mut_0()
                 .receive(From::from(Z80Memo::NonmaskableInterrupt));
+            self.0.mut_0().take_nmi();
             self.nonmaskable_interrupt();
             return;
         }
-
-        if let InterruptStatus::Ei(_) = self.0.mut_0().interrupt_status() {
-            return;
-        }
-
-        self.0
-            .mut_0()
-            .set_interrupt_status(InterruptStatus::NoCheck);
 
         if let Some(x) = self.0.mut_0().requesting_mi() {
             let memo = From::from(Z80Memo::MaskableInterrupt {

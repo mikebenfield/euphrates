@@ -38,7 +38,7 @@ pub struct SmsState {
     pub mem: SmsMemoryState,
     pub player_input: SmsPlayerInputState,
     pub memory_mapper_type: MemoryMapperType,
-    pub irq_state: bool,
+    pub pause_irq: SmsPauseInterruptState,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -75,7 +75,7 @@ pub struct Sms<Sg, Sa, Sn76489, Mapper, Mem, Inx> {
 
     // just need this so we can produce an `SmsState`
     memory_mapper_type: MemoryMapperType,
-    irq_state: bool,
+    pause_irq: SmsPauseInterruptState,
     graphics: Sg,
     audio: Sa,
     sn76489: Sn76489,
@@ -169,7 +169,7 @@ where
                     mem,
                     player_input: state.player_input,
                     memory_mapper_type: state.memory_mapper_type,
-                    irq_state: state.irq_state,
+                    pause_irq: state.pause_irq,
                     time_status,
                     inbox: Default::default(),
                     graphics: sg,
@@ -258,7 +258,7 @@ where
             vdp: Default::default(),
             mem: SmsMemoryLoad::from_rom(rom)?,
             player_input: Default::default(),
-            irq_state: false,
+            pause_irq: Default::default(),
         };
 
         Self::from_state_help(state, sg, sa, options, true)
@@ -272,7 +272,7 @@ where
         + SimpleAudio
         + Debugger
         + Z80Internal
-        + Z80Emulator
+        + Z80Run
         + SmsVdpInternal
         + SmsVdpGraphics
         + AsRef<TimeStatus>,
@@ -289,7 +289,7 @@ where
             mem: self.mem.state(),
             player_input: self.player_input.clone(),
             memory_mapper_type: self.memory_mapper_type,
-            irq_state: self.irq_state.clone(),
+            pause_irq: self.pause_irq.clone(),
         }
     }
 
@@ -407,14 +407,6 @@ implement_impl! {
 }
 
 implement_impl! {
-    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsVdpIrqImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
-        []
-        SmsVdpState, self, f,
-    { Cref::Const(&self.vdp) },
-    { Mref::Mut(&mut self.vdp) }
-}
-
-implement_impl! {
     [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80InternalImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         []
         Z80State, self, f,
@@ -493,11 +485,11 @@ implement_impl! {
 }
 
 implement_impl! {
-    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsZ80IrqStateImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
+    [Sg, Sa, Sn76489, Mapper, Mem, Inx] SmsPauseInterruptImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
         []
-        bool, self, f,
-    { Cref::Const(&self.irq_state) },
-    { Mref::Mut(&mut self.irq_state) }
+        SmsPauseInterruptState, self, f,
+    { Cref::Const(&self.pause_irq) },
+    { Mref::Mut(&mut self.pause_irq) }
 }
 
 implement_impl! {
@@ -510,7 +502,7 @@ implement_impl! {
 
 implement_impl! {
     [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80IrqImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
-        [Self: SmsVdpIrq + SmsPlayerInput + SmsZ80IrqState]
+        [Self: SmsVdpInternal + SmsPauseInterrupt]
         SmsZ80IrqImpler<Self>, self, f,
     { SmsZ80IrqImpler::new(self) },
     { SmsZ80IrqImpler::new_mut(self) }
@@ -524,19 +516,11 @@ implement_impl! {
     { Z80InterruptImpler::new_mut(self) }
 }
 
-implement_impl! {
-    [Sg, Sa, Sn76489, Mapper, Mem, Inx] Z80EmulatorImpl for Sms[Sg, Sa, Sn76489, Mapper, Mem, Inx]
-        [Self: Z80Internal + Z80Run + Z80Interrupt]
-        Z80EmulatorImpler<Self>, self, f,
-    { Z80EmulatorImpler::new(self) },
-    { Z80EmulatorImpler::new_mut(self) }
-}
-
 pub fn run_frame<Sms>(sms: &mut Sms) -> Result<(), SmsEmulationError>
 where
     Sms: Sn76489Audio
         + Z80Internal
-        + Z80Emulator
+        + Z80Run
         + SmsVdpInternal
         + SmsVdpGraphics
         + AsRef<TimeStatus>,
@@ -548,7 +532,7 @@ where
         let z80_target_cycles = 2 * vdp_cycles / 3;
 
         while Z80Internal::cycles(sms) < z80_target_cycles {
-            sms.emulate(z80_target_cycles);
+            sms.run(z80_target_cycles);
             // XXX holding
         }
 

@@ -13,6 +13,7 @@ where
         // line on which to trigger a frame interrupt.
         let flags = vdp.status_flags();
         vdp.set_status_flags(flags | FRAME_INTERRUPT_FLAG);
+        vdp.set_new_irq(true);
         // XXX
         // manifests::SET_FRAME_INTERRUPT.send(vdp, Payload::U16([v, 0, 0, 0]));
     }
@@ -29,6 +30,7 @@ where
             let reg_line_counter = vdp.reg_line_counter();
             vdp.set_line_counter(reg_line_counter);
             vdp.set_line_interrupt_pending(true);
+            vdp.set_new_irq(true);
             // XXX
             // manifests::SET_LINE_INTERRUPT
             //     .send(vdp, Payload::U16([v, reg_line_counter as u16, 0, 0]));
