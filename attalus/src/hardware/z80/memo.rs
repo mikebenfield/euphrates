@@ -21,12 +21,13 @@ impl Display for Z80Memo {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use self::Z80Memo::*;
         match *self {
-            NonmaskableInterrupt => "Nonmaskable interrupt".fmt(f),
-            MaskableInterrupt { mode, byte } => {
-                format_args!("Maskable interrupt: mode {}, byte: {:0>2X}", mode, byte).fmt(f)
-            }
+            NonmaskableInterrupt => f.pad("Nonmaskable interrupt"),
+            MaskableInterrupt { mode, byte } => f.pad(&format!(
+                "Maskable interrupt: mode {}, byte: {:0>2X}",
+                mode, byte
+            )),
             Instruction { pc, opcode } => {
-                format_args!("Instruction {:0>4X}: {: <11}", pc, opcode).fmt(f)
+                f.pad(&format!("Instruction {:0>4X}: {: <11}", pc, opcode))
             }
         }
     }
@@ -43,14 +44,15 @@ pub enum Opcode {
 impl Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
-            &Opcode::OneByte(ref x) => format_args!("{:0>2X}", x[0]).fmt(f),
-            &Opcode::TwoBytes(ref x) => format_args!("{:0>2X} {:0>2X}", x[0], x[1]).fmt(f),
+            &Opcode::OneByte(ref x) => f.pad(format!("{:0>2X}", x[0])),
+            &Opcode::TwoBytes(ref x) => f.pad(format!("{:0>2X} {:0>2X}", x[0], x[1])),
             &Opcode::ThreeBytes(ref x) => {
-                format_args!("{:0>2X} {:0>2X} {:0>2X}", x[0], x[1], x[2]).fmt(f)
+                f.pad(&format!("{:0>2} {:0>2X} {:0>2X}", x[0], x[1], x[2]))
             }
-            &Opcode::FourBytes(ref x) => {
-                format_args!("{:0>2X} {:0>2X} {:0>2X} {:0>2X}", x[0], x[1], x[2], x[3]).fmt(f)
-            }
+            &Opcode::FourBytes(ref x) => f.pad(&format!(
+                "{:0>2X} {:0>2X} {:0>2X} {:0>2X}",
+                x[0], x[1], x[2], x[3]
+            )),
         }
     }
 }
@@ -79,7 +81,7 @@ impl Display for Parameter {
             Parameter::U8(x) => f.pad(&format!("{:>02X}", x)),
             Parameter::I8(x) => f.pad(&format!("{:>+03X}", x)),
             Parameter::U16(x) => f.pad(&format!("{:>04X}", x)),
-            Parameter::Cc(x) => x.fmt(f),
+            Parameter::Cc(x) => f.pad(&format!("{}", x)),
         }
     }
 }
@@ -229,14 +231,16 @@ impl<'a> Display for TargetMnemonic<'a> {
         use self::Parameter::*;
         let label = self.target_label;
         match self.full_mnemonic {
-            OneParameter(Jp, U16(nn)) => format!("jp {} [{:0>4X}]", label, nn).fmt(f),
-            TwoParameters(Jp, x, U16(nn)) => format!("jp {}, {} [{:0>4X}]", x, label, nn).fmt(f),
-            OneParameter(Jr, I8(e)) => format!("jr {} [{:0>+03X}]", label, e).fmt(f),
-            TwoParameters(Jr, x, I8(e)) => format!("jr {}, {} [{:0>+03X}]", x, label, e).fmt(f),
-            OneParameter(Djnz, I8(e)) => format!("djnz {} [{:0>+03X}]", label, e).fmt(f),
-            OneParameter(Call, U16(nn)) => format!("call {} [{:0>4X}]", label, nn).fmt(f),
-            TwoParameters(Call, x, U16(nn)) => format!("call {}, {}[{:0>4X}]", x, label, nn).fmt(f),
-            OneParameter(Rst, U16(p)) => format!("rst {} [{:0>4X}]", label, p).fmt(f),
+            OneParameter(Jp, U16(nn)) => f.pad(&format!("jp {} [{:0>4X}]", label, nn)),
+            TwoParameters(Jp, x, U16(nn)) => f.pad(&format!("jp {}, {} [{:0>4X}]", x, label, nn)),
+            OneParameter(Jr, I8(e)) => f.pad(&format!("jr {} [{:0>+03X}]", label, e)),
+            TwoParameters(Jr, x, I8(e)) => f.pad(&format!("jr {}, {} [{:0>+03X}]", x, label, e)),
+            OneParameter(Djnz, I8(e)) => f.pad(&format!("djnz {} [{:0>+03X}]", label, e)),
+            OneParameter(Call, U16(nn)) => f.pad(&format!("call {} [{:0>4X}]", label, nn)),
+            TwoParameters(Call, x, U16(nn)) => {
+                f.pad(&format!("call {}, {}[{:0>4X}]", x, label, nn))
+            }
+            OneParameter(Rst, U16(p)) => f.pad(&format!("rst {} [{:0>4X}]", label, p)),
             x => x.fmt(f),
         }
     }
