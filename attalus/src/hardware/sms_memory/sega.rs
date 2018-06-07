@@ -48,6 +48,7 @@ where
 
     fn default_mappings(memory: &mut M) {
         use self::MemoryPage::*;
+        memory.set_system_ram_kib(8);
         if memory.rom_len() >= 0xC000 {
             // at least 3 pages
             memory.map_page(0, Rom(0));

@@ -74,8 +74,10 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         &sdl,
         if memory_map == "sega" {
             MemoryMapperType::Sega
-        } else {
+        } else if memory_map == "codemasters" {
             MemoryMapperType::Codemasters
+        } else {
+            MemoryMapperType::Sg1000
         },
         options,
     )?;
@@ -171,8 +173,8 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
 fn run() -> Result<()> {
     let memory_map_arg = Arg::with_name("memorymap")
         .long("memorymap")
-        .value_name("(sega|codemasters)")
-        .help("Specify the sega or codemasters memory map")
+        .value_name("(sega|codemasters|sg1000)")
+        .help("Specify the sega, codemasters, or sg1000 memory map")
         .takes_value(true)
         .required(true)
         .default_value("sega");

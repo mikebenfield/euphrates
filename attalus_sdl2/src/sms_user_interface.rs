@@ -173,8 +173,8 @@ pub fn ui(
         .map_err(|s| format_err!("Error obtaining the SDL event pump {}", s))?;
     let tile_window = if use_tile_window {
         let mut graphics = Window::new(&sdl)?;
-        graphics.set_size(300, 300);
-        graphics.set_texture_size(300, 300);
+        graphics.set_size(768, 576);
+        graphics.set_texture_size(256, 192);
         graphics.set_title("Attalus tiles");
         Some(graphics)
     } else {

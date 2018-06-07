@@ -29,6 +29,7 @@ pub trait MasterSystem: Z80Internal + SmsVdpInternal + Debugger {
 pub enum MemoryMapperType {
     Sega,
     Codemasters,
+    Sg1000,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -152,6 +153,8 @@ where
         Sa: 'static,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, DebuggingInbox>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
@@ -193,6 +196,8 @@ where
         match (state.memory_mapper_type, options.debug) {
             (MemoryMapperType::Sega, false) => ret!(SegaMapper, NothingInbox<SmsMemo>),
             (MemoryMapperType::Sega, true) => ret!(SegaMapper, DebuggingInbox),
+            (MemoryMapperType::Sg1000, false) => ret!(Sg1000Mapper, NothingInbox<SmsMemo>),
+            (MemoryMapperType::Sg1000, true) => ret!(Sg1000Mapper, DebuggingInbox),
             (MemoryMapperType::Codemasters, false) => {
                 ret!(CodemastersMapper, NothingInbox<SmsMemo>)
             }
@@ -211,6 +216,8 @@ where
         Sa: 'static,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, DebuggingInbox>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
@@ -230,6 +237,8 @@ where
         Sa: 'static,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, DebuggingInbox>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
@@ -249,6 +258,8 @@ where
         Sa: 'static,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, SegaMapper, Mem, DebuggingInbox>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
+        Sms<Sg, Sa, Sn76489, Sg1000Mapper, Mem, DebuggingInbox>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, NothingInbox<SmsMemo>>: MasterSystem,
         Sms<Sg, Sa, Sn76489, CodemastersMapper, Mem, DebuggingInbox>: MasterSystem,
     {
@@ -518,12 +529,7 @@ implement_impl! {
 
 pub fn run_frame<Sms>(sms: &mut Sms) -> Result<(), SmsEmulationError>
 where
-    Sms: Sn76489Audio
-        + Z80Internal
-        + Z80Run
-        + SmsVdpInternal
-        + SmsVdpGraphics
-        + AsRef<TimeStatus>,
+    Sms: Sn76489Audio + Z80Internal + Z80Run + SmsVdpInternal + SmsVdpGraphics + AsRef<TimeStatus>,
 {
     loop {
         sms_vdp::line(sms)?;

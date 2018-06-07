@@ -44,8 +44,8 @@ pub enum Opcode {
 impl Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
-            &Opcode::OneByte(ref x) => f.pad(format!("{:0>2X}", x[0])),
-            &Opcode::TwoBytes(ref x) => f.pad(format!("{:0>2X} {:0>2X}", x[0], x[1])),
+            &Opcode::OneByte(ref x) => f.pad(&format!("{:0>2X}", x[0])),
+            &Opcode::TwoBytes(ref x) => f.pad(&format!("{:0>2X} {:0>2X}", x[0], x[1])),
             &Opcode::ThreeBytes(ref x) => {
                 f.pad(&format!("{:0>2} {:0>2X} {:0>2X}", x[0], x[1], x[2]))
             }

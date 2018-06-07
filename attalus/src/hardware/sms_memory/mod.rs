@@ -12,10 +12,12 @@ use super::memory16::*;
 mod codemasters;
 mod memo;
 mod sega;
+mod sg1000;
 
 pub use self::codemasters::*;
 pub use self::memo::*;
 pub use self::sega::*;
+pub use self::sg1000::*;
 
 /// A 16 KiB page of memory.
 ///
@@ -172,9 +174,12 @@ pub trait SmsMemory {
     /// Panics if `index` is greater than the length of the RAM.
     fn half_cartridge_ram_write(&mut self, index: usize, value: u8);
 
+    /// Set how many KiB of RAM the system has.
+    fn set_system_ram_kib(&mut self, kib: usize);
+
     /// How much system RAM, in bytes?
     ///
-    /// (This is always 0x2000.)
+    /// (This is always a multiple of 0x400.)
     fn system_ram_len(&self) -> usize;
 
     /// Read a byte of system RAM.
@@ -275,6 +280,11 @@ where
     }
 
     #[inline(always)]
+    fn set_system_ram_kib(&mut self, kib: usize) {
+        self.make_mut().set_system_ram_kib(kib)
+    }
+
+    #[inline(always)]
     fn system_ram_len(&self) -> usize {
         self.make().system_ram_len()
     }
@@ -320,7 +330,7 @@ where
 #[derive(Clone)]
 pub struct SmsMemoryState {
     pub rom: Arc<Box<[[u8; 0x4000]]>>,
-    pub system_ram: Box<[u8; 0x2000]>,
+    pub system_ram: Box<[[u8; 0x400]]>,
     pub main_cartridge_ram: MainCartridgeRam,
     pub half_cartridge_ram: Option<Box<[u8; 0x2000]>>,
     pub pages: [MemoryPage; 4],
@@ -332,7 +342,7 @@ mod _impl2 {
     #[derive(Hash, PartialEq, Serialize, Deserialize)]
     struct SmsMemoryStateDerive {
         pub rom: Arc<Box<[[[[u8; 0x20]; 0x20]; 0x10]]>>,
-        pub system_ram: Box<[[[u8; 0x20]; 0x10]; 0x10]>,
+        pub system_ram: Box<[[[u8; 0x20]; 0x20]]>,
         pub main_cartridge_ram: super::MainCartridgeRam,
         pub half_cartridge_ram: Option<Box<[[[u8; 0x20]; 0x10]; 0x10]>>,
         pub pages: [super::MemoryPage; 4],
@@ -422,7 +432,10 @@ impl Memory16 for SmsMemoryState {
         let slot = logical_address >> 14;
         let address = logical_address as usize & 0x3FFF;
         match self.pages[slot as usize] {
-            SystemRam => self.system_ram_read(address & 0x1FFF),
+            SystemRam => {
+                let len = self.system_ram_len();
+                self.system_ram_read(address % len)
+            }
             FirstCartridgeRam(_) => {
                 self.ensure_one_page();
                 self.main_cartridge_ram_read(address)
@@ -455,7 +468,10 @@ impl Memory16 for SmsMemoryState {
         let slot = logical_address >> 14;
         let address = logical_address as usize & 0x3FFF;
         match self.pages[slot as usize] {
-            SystemRam => self.system_ram_write(address & 0x1FFF, value),
+            SystemRam => {
+                let len = self.system_ram_len();
+                self.system_ram_write(address % len, value)
+            }
             FirstCartridgeRam(_) => {
                 self.ensure_one_page();
                 self.main_cartridge_ram_write(address, value)
@@ -560,19 +576,24 @@ impl SmsMemory for SmsMemoryState {
         }
     }
 
+    fn set_system_ram_kib(&mut self, kib: usize) {
+        let ram: Vec<[u8; 0x400]> = vec![[0u8; 0x400]; kib];
+        self.system_ram = ram.into_boxed_slice();
+    }
+
     #[inline(always)]
     fn system_ram_len(&self) -> usize {
-        0x2000
+        self.system_ram.len() * 0x400
     }
 
     #[inline(always)]
     fn system_ram_read(&self, index: usize) -> u8 {
-        self.system_ram[index]
+        self.system_ram[index >> 10][index & 0x3FF]
     }
 
     #[inline(always)]
     fn system_ram_write(&mut self, index: usize, value: u8) {
-        self.system_ram[index] = value
+        self.system_ram[index >> 10][index & 0x3FF] = value
     }
 
     #[inline(always)]
@@ -645,7 +666,7 @@ pub trait SmsMemoryLoad: Sized {
     fn from_rom(rom: Box<[[u8; 0x4000]]>) -> Result<Self, SmsMemoryLoadError> {
         let state = SmsMemoryState {
             rom: Arc::new(rom),
-            system_ram: Box::new([0; 0x2000]),
+            system_ram: Default::default(),
             main_cartridge_ram: Default::default(),
             half_cartridge_ram: Default::default(),
             pages: Default::default(),
@@ -867,13 +888,11 @@ impl PointerSmsMemory {
 
         match page {
             SystemRam => {
-                let ptr: *mut u8 = &mut state.system_ram[0];
-                for i in 0..8 {
-                    let p = unsafe { ptr.offset(i as isize * 0x400) };
-                    minislots[i] = p;
-                    minislots[i + 8] = p;
-                    write_minislots[i] = p;
-                    write_minislots[i + 8] = p;
+                let kib = state.system_ram.len();
+                for i in 0..16 {
+                    let ptr: *mut u8 = &mut state.system_ram[i % kib][0];
+                    minislots[i] = ptr;
+                    write_minislots[i] = ptr;
                 }
             }
             FirstCartridgeRam(_) => {
@@ -1030,6 +1049,11 @@ impl SmsMemory for PointerSmsMemory {
     #[inline]
     fn half_cartridge_ram_write(&mut self, index: usize, value: u8) {
         self.state_mut().half_cartridge_ram_write(index, value)
+    }
+
+    fn set_system_ram_kib(&mut self, kib: usize) {
+        self.state_mut().set_system_ram_kib(kib);
+        self.reset_pointers();
     }
 
     #[inline]
