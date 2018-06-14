@@ -72,10 +72,10 @@ pub trait SmsVdpInternal {
     fn set_tv_system(&mut self, TvSystem);
 
     /// Is this a Sms, Sms2, or Gg VDP?
-    ///
-    /// There is no setter for `kind` because a given implementation may not
-    /// support all 3.
     fn kind(&self) -> Kind;
+
+    /// Set this to be a Sms, Sms2, or Gg Vdp.
+    fn set_kind(&mut self, Kind);
 
     /// The horizontal counter.
     ///
@@ -843,6 +843,12 @@ where
     }
 
     #[inline]
+    fn set_kind(&mut self, kind: Kind) {
+        self.make_mut().set_kind(kind)
+    }
+
+
+    #[inline]
     fn h(&self) -> u16 {
         self.make().h()
     }
@@ -1118,6 +1124,11 @@ impl SmsVdpInternal for SmsVdpState {
     #[inline]
     fn kind(&self) -> Kind {
         self.kind
+    }
+
+    #[inline]
+    fn set_kind(&mut self, kind: Kind) {
+        self.kind = kind
     }
 
     #[inline]

@@ -4,7 +4,7 @@ use impler::{Cref, Mref, Ref};
 
 use super::io16::Io16;
 use super::sms_player_input::SmsPlayerInput;
-use super::sms_vdp::SmsVdpInterface;
+use super::sms_vdp::{SmsVdpInterface, SmsVdpInternal};
 use super::sn76489::Sn76489Interface;
 
 /// An Impler for `Io16`.
@@ -30,17 +30,23 @@ impl<T: ?Sized> SmsIo16Impler<T> {
 
 impl<T> Io16 for SmsIo16Impler<T>
 where
-    T: SmsPlayerInput + SmsVdpInterface + Sn76489Interface + ?Sized,
+    T: SmsPlayerInput + SmsVdpInterface + SmsVdpInternal + Sn76489Interface + ?Sized,
 {
     fn input(&mut self, address: u16) -> u8 {
+        use hardware::sms_vdp::Kind;
+
         let masked = (address & 0b11000001) as u8;
         let value = match masked {
             0b00000000 => {
-                // This is what the SMS 2 does. In the original SMS, reads
-                // give the last byte of the instruction which read the
-                // port. I'm not implementing that for now or hopefully
-                // ever.
-                0xFF
+                match (self.0._0().kind(), self.0._0().pause()) {
+                    (Kind::Gg, true) => 0,
+                    (Kind::Gg, false) => 0x80,
+                    // This is what the SMS 2 does. In the original SMS, reads
+                    // give the last byte of the instruction which read the
+                    // port. I'm not implementing that for now or hopefully
+                    // ever.
+                    _ => 0xFF,
+                }
             }
             0b00000001 => {
                 // ditto

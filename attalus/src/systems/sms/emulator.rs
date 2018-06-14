@@ -183,7 +183,7 @@ where
 
                 sms.vdp.set_tv_system(options.tv_system);
 
-                // sms.vdp.set_kind(options.kind);
+                sms.vdp.set_kind(options.vdp_kind);
 
                 // It seems most BIOSes leave SP as 0xDFEE
                 if default_mappings {

@@ -51,6 +51,18 @@ pub fn vdp_color_to_simple_color(color: u8) -> SimpleColor {
     SimpleColor { red, green, blue }
 }
 
+#[inline]
+pub fn gg_color_to_simple_color(color: u16) -> SimpleColor {
+    let blue = (0x0F00 & color) >> 4;
+    let green = 0x00F0 & color;
+    let red = (0x000F & color) << 4;
+    SimpleColor {
+        red: red as u8,
+        green: green as u8,
+        blue: blue as u8,
+    }
+}
+
 impl<T> SmsVdpGraphics for SimpleSmsVdpGraphicsImpler<T>
 where
     T: SimpleGraphics + SmsVdpInternal + ?Sized,
@@ -503,22 +515,35 @@ where
 
     let v = s.v();
 
-    if v >= s.active_lines() {
+    let (display_y_start, display_y_end, display_x_start, display_x_end) = if s.kind() == Kind::Gg {
+        (24, 168, 48, 208)
+    } else {
+        (0, s.active_lines(), 0, 256)
+    };
+    let height = display_y_end - display_y_start;
+    let width = display_x_end - display_x_start;
+
+    if v < display_y_start {
+        return Ok(());
+    }
+
+    if v >= display_y_end {
         if v + 1 == s.total_lines() {
             s.render().map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
         }
         return Ok(());
     }
 
-    let active_lines = s.active_lines() as u32;
-    s.set_resolution(256, active_lines)
+    s.set_resolution(width as u32, height as u32)
         .map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
 
+    let y = (v - display_y_start) as u32;
+
     if !s.display_visible() {
-        for x in 0..256 {
+        for x in 0..width {
             s.paint(
-                x,
-                v as u32,
+                x as u32,
+                y,
                 SimpleColor {
                     red: 0,
                     green: 0,
@@ -529,9 +554,19 @@ where
         return Ok(());
     }
 
-    let mut line_buffer = [0x80u8; 256];
+    let mut colors: [SimpleColor; 32] = Default::default();
 
-    let v = s.v();
+    if s.kind() == Kind::Gg {
+        for i in 0..32 {
+            colors[i] = gg_color_to_simple_color(s.cram(i as u16));
+        }
+    } else {
+        for i in 0..32 {
+            colors[i] = vdp_color_to_simple_color(s.cram(i as u16) as u8);
+        }
+    }
+
+    let mut line_buffer = [0x80u8; 256];
 
     // draw sprites
     let sprite_height = if s.tall_sprites() { 16 } else { 8 };
@@ -561,7 +596,7 @@ where
         for j in 0..8 {
             let index = if s.zoomed_sprites() { 2 * j } else { j };
             let render_x = sprite_x.wrapping_add(index).wrapping_sub(shift_x);
-            if render_x > 255 {
+            if render_x < display_x_start || render_x >= display_x_end {
                 break;
             }
             if line_buffer[render_x] != 0x80 {
@@ -569,11 +604,11 @@ where
                 continue;
             }
             if palette_indices[j] != 0 {
-                line_buffer[render_x] = s.cram(palette_indices[j] as u16 + 16) as u8;
+                line_buffer[render_x] = palette_indices[j] + 16;
             }
             if s.zoomed_sprites() {
                 let render_x2 = render_x + 1;
-                if render_x2 > 255 {
+                if render_x2 < display_x_start || render_x2 >= display_x_end {
                     break;
                 }
                 if line_buffer[render_x2] != 0x80 {
@@ -581,7 +616,7 @@ where
                     continue;
                 }
                 if palette_indices[j] != 0 {
-                    line_buffer[render_x2] = s.cram(palette_indices[j] as u16 + 16) as u8;
+                    line_buffer[render_x] = palette_indices[j] + 16;
                 }
             }
         }
@@ -596,7 +631,6 @@ where
         s.x_scroll()
     };
     let pixel_offset_x = scroll_x & 7;
-    // let tile_offset_x = (-((scroll_x >> 3) as i16)) as u16;
     let tile_offset_x = (-((scroll_x >> 3) as i16)) as u16;
 
     let vert_tile_count = if SmsVdpInternal::resolution(s) == Low {
@@ -619,7 +653,7 @@ where
             let vert_flip = 4 & high_byte != 0;
             let horiz_flip = 2 & high_byte != 0;
             let priority = 0x10 & high_byte != 0;
-            let palette = ((high_byte & 8) << 1) as u16;
+            let palette = (high_byte & 8) << 1;
             let pattern_index = utilities::to16(low_byte, high_byte & 1);
             let tile_line_really = if vert_flip { 7 - tile_line } else { tile_line };
             let palette_indices: [u8; 8] = unsafe {
@@ -628,24 +662,29 @@ where
             for j in 0..8usize {
                 let tile_col = if horiz_flip { (7 - j) } else { j };
                 let x = j + start_x;
-                if x >= 256 {
+                if x < display_x_start {
+                    continue;
+                }
+                if x >= display_x_end {
                     break;
                 }
                 if line_buffer[x] & 0x80 != 0
                     || (priority && palette_indices[tile_col] as usize > 0)
                 {
-                    line_buffer[x] = s.cram(palette_indices[tile_col] as u16 + palette) as u8;
+                    line_buffer[x] = palette_indices[tile_col] + palette;
                 }
             }
         };
 
         // first, draw region 3/4
-        for tile in 23..if vert_scroll_locked { 32 } else { 23 } {
-            write_tile(
-                32 * (v >> 3) + (tile_offset_x.wrapping_add(tile)) % 32,
-                v & 7,
-                tile as usize * 8 + pixel_offset_x as usize,
-            )
+        if s.kind() != Kind::Gg && vert_scroll_locked {
+            for tile in 23..32 {
+                write_tile(
+                    32 * (v >> 3) + (tile_offset_x.wrapping_add(tile)) % 32,
+                    v & 7,
+                    tile as usize * 8 + pixel_offset_x as usize,
+                )
+            }
         }
 
         // now draw region 1 or 2
@@ -659,15 +698,15 @@ where
     }
 
     if s.left_column_blank() {
-        let color = s.cram(16 + s.backdrop_color_index() as u16);
         for i in 0..8 {
-            line_buffer[i] = color as u8;
+            line_buffer[i] = 16 + s.backdrop_color_index();
         }
     }
 
-    for x in 0..256 {
-        let color = vdp_color_to_simple_color(line_buffer[x as usize]);
-        s.paint(x, v as u32, color);
+    for x in display_x_start..display_x_end {
+        let index = line_buffer[x as usize] as usize;
+        let color = colors[index % 32];
+        s.paint((x - display_x_start) as u32, y, color);
     }
 
     Ok(())

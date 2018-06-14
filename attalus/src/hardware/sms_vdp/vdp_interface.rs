@@ -134,7 +134,7 @@ where
                     z.set_cram_latch(x);
                 } else {
                     let latch = z.cram_latch();
-                    let val = latch as u16 & ((x as u16) << 8);
+                    let val = latch as u16 | ((x as u16) << 8);
                     let actual_address = (addr >> 1) % 32;
                     unsafe {
                         z.set_cram_unchecked(actual_address, val);

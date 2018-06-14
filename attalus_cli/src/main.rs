@@ -59,10 +59,15 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         "NTSC" => TvSystem::Ntsc,
         _ => TvSystem::Pal,
     };
+    let kind = match matches.value_of("kind").unwrap() {
+        "sms" => Kind::Sms,
+        "sms2" => Kind::Sms2,
+        _ => Kind::Gg,
+    };
 
     let options = SmsOptions {
         frequency: Some(sms::NTSC_Z80_FREQUENCY),
-        vdp_kind: Kind::Sms2,
+        vdp_kind: kind,
         tv_system,
         debug,
     };
@@ -177,12 +182,22 @@ fn run() -> Result<()> {
         .help("Specify the sega, codemasters, or sg1000 memory map")
         .takes_value(true)
         .required(true)
+        .possible_values(&["sega", "codemasters", "sg1000"])
         .default_value("sega");
     let save_directory_arg = Arg::with_name("savedirectory")
         .long("savedirectory")
         .value_name("DIRECTORY")
         .help("Specify the directory in which to save states")
         .takes_value(true);
+
+    let kind_arg = Arg::with_name("kind")
+        .long("kind")
+        .value_name("(sms|sms2|gg)")
+        .help("Use the SMS, SMS2, or Game Gear VDP")
+        .takes_value(true)
+        .required(true)
+        .possible_values(&["sms", "sms2", "gg"])
+        .default_value("sms2");
 
     let debug_arg = Arg::with_name("debug")
         .long("debug")
@@ -218,7 +233,8 @@ fn run() -> Result<()> {
                 .arg(tv_arg.clone())
                 .arg(debug_arg.clone())
                 .arg(memory_map_arg.clone())
-                .arg(save_directory_arg.clone()),
+                .arg(save_directory_arg.clone())
+                .arg(kind_arg.clone())
         )
         .subcommand(
             SubCommand::with_name("load")
