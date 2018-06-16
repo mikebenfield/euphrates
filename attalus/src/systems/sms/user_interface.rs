@@ -16,7 +16,7 @@ pub enum UserMessage {
 }
 
 pub struct UiStatus {
-    master_system: Box<MasterSystem>,
+    master_system: Box<Sms>,
     save_directory: Option<PathBuf>,
     recording_status: RecordingStatus<SmsState>,
     messages: Arc<RwLock<Vec<UserMessage>>>,
@@ -42,15 +42,15 @@ where
 }
 
 impl UiStatus {
-    pub fn master_system(&self) -> &MasterSystem {
+    pub fn master_system(&self) -> &Sms {
         self.master_system.deref()
     }
 
-    pub fn master_system_mut(&mut self) -> &mut MasterSystem {
+    pub fn master_system_mut(&mut self) -> &mut Sms {
         self.master_system.deref_mut()
     }
 
-    pub fn master_system_own(self) -> Box<MasterSystem> {
+    pub fn master_system_own(self) -> Box<Sms> {
         self.master_system
     }
 
@@ -70,7 +70,7 @@ impl UiStatus {
     pub fn save_state(&mut self, name: Option<&str>) {
         if let Some(mut path) = self.save_directory.clone() {
             let filename = generate_filename(name);
-            let state = MasterSystem::state(self.master_system.deref());
+            let state = Sms::state(self.master_system.deref());
             do_in_thread(self.messages.clone(), move || {
                 path.push(format!("{}.sms_state", filename));
                 if let Err(e) = save::serialize_at(&path, &state) {
@@ -95,7 +95,7 @@ impl UiStatus {
     }
 
     pub fn begin_recording(&mut self) {
-        let state = MasterSystem::state(self.master_system.deref());
+        let state = Sms::state(self.master_system.deref());
         self.recording_status.begin_recording(state);
         push_or_panic(
             &mut self.messages,
@@ -156,7 +156,7 @@ pub struct Ui {
 
 impl Ui {
     pub fn new(
-        master_system: Box<MasterSystem>,
+        master_system: Box<Sms>,
         helper: Box<UiHelper>,
         save_directory: Option<PathBuf>,
     ) -> Self {
@@ -171,15 +171,15 @@ impl Ui {
         }
     }
 
-    pub fn master_system(&self) -> &MasterSystem {
+    pub fn master_system(&self) -> &Sms {
         self.status.master_system.deref()
     }
 
-    pub fn master_system_mut(&mut self) -> &mut MasterSystem {
+    pub fn master_system_mut(&mut self) -> &mut Sms {
         self.status.master_system.deref_mut()
     }
 
-    pub fn master_system_own(self) -> Box<MasterSystem> {
+    pub fn master_system_own(self) -> Box<Sms> {
         self.status.master_system
     }
 

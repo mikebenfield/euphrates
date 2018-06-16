@@ -66,6 +66,40 @@ where
     }
 }
 
+#[derive(Clone, Default, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct FakeGraphics(u32, u32);
+
+impl SimpleGraphics for FakeGraphics {
+    #[inline]
+    fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
+        self.0 = width;
+        self.1 = height;
+        Ok(())
+    }
+
+    #[inline]
+    fn resolution(&self) -> (u32, u32) {
+        (self.0, self.1)
+    }
+
+    #[inline]
+    fn paint(&mut self, _x: u32, _y: u32, _color: SimpleColor) {}
+
+    #[inline]
+    fn get(&self, _x: u32, _y: u32) -> SimpleColor {
+        SimpleColor {
+            red: 0,
+            green: 0,
+            blue: 0,
+        }
+    }
+
+    #[inline]
+    fn render(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
 pub trait SimpleAudio {
     fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()>;
 

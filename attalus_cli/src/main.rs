@@ -7,15 +7,19 @@ extern crate failure;
 extern crate sdl2;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
 use failure::Error;
 use sdl2::Sdl;
 
-use attalus::hardware::sn76489::Sn76489State;
+use attalus::hardware::sms_roms;
+use attalus::hardware::sn76489::{FakeSn76489, Sn76489State};
+use attalus::host_multimedia::{FakeAudio, FakeGraphics};
+use attalus::memo::NothingInbox;
 use attalus::systems::sms::{
-    self, Kind, MasterSystem, MasterSystemCreate, MemoryMapperType, Recording, SmsMemoryState,
-    SmsOptions, TvSystem,
+    self, CodemastersMapper, DebuggingInbox, Kind, MemWrap, MemoryMapperType, PointerSmsMemory,
+    Recording, SegaMapper, Sg1000Mapper, Sms, SmsMemoryState, SmsState, TvSystem,
 };
 
 use attalus_sdl2::sms_user_interface;
@@ -23,38 +27,60 @@ use attalus_sdl2::{simple_audio::Audio, simple_graphics::Window};
 
 type Result<T> = std::result::Result<T, Error>;
 
-fn new_master_system(
-    filename: &str,
-    sdl: &Sdl,
-    memory_mapper_type: MemoryMapperType,
-    options: SmsOptions,
-) -> Result<Box<MasterSystem>> {
-    let audio = Audio::new(&sdl)?;
+fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<Sms>> {
+    let frequency = match matches.value_of("frequency").unwrap() {
+        "ntsc" => Some(sms::NTSC_Z80_FREQUENCY),
+        "pal" => Some(sms::PAL_Z80_FREQUENCY),
+        "unlimited" => None,
+        x => Some(x.parse::<u64>().unwrap()),
+    };
 
-    let mut graphics = Window::new(&sdl)?;
-    graphics.set_size(768, 576);
-    graphics.set_texture_size(256, 192);
-    graphics.set_title("Attalus");
+    macro_rules! eval_args {
+        ($memory:expr, $sn76489:expr, $audio:expr, $inbox:expr, $graphics:expr) => {
+            Ok(sms::new_sms(
+                frequency, state, $graphics, $audio, $sn76489, $inbox, $memory,
+            )?)
+        };
+        ($memory:expr, $sn76489:expr, $audio:expr, $inbox:expr) => {
+            match matches.value_of("graphics").unwrap() {
+                "true" => {
+                    let mut graphics = Window::new(&sdl)?;
+                    graphics.set_size(768, 576);
+                    graphics.set_texture_size(256, 192);
+                    graphics.set_title("Attalus");
+                    eval_args!($memory, $sn76489, $audio, $inbox, graphics)
+                }
+                _ => eval_args!($memory, $sn76489, $audio, $inbox, FakeGraphics::default()),
+            }
+        };
+        ($memory:expr, $sn76489:expr, $audio:expr) => {
+            match matches.value_of("debug").unwrap() {
+                "true" => eval_args!($memory, $sn76489, $audio, DebuggingInbox::default()),
+                _ => eval_args!($memory, $sn76489, $audio, NothingInbox::default()),
+            }
+        };
+        ($memory:expr) => {
+            match matches.value_of("sound").unwrap() {
+                "true" => eval_args!($memory, Sn76489State::default(), Audio::new(sdl)?),
+                _ => eval_args!($memory, FakeSn76489, FakeAudio),
+            }
+        };
+        () => {
+            match matches.value_of("memory_type").unwrap() {
+                "pointer" => eval_args!(MemWrap::<PointerSmsMemory>::default()),
+                _ => eval_args!(MemWrap::<SmsMemoryState>::default()),
+            }
+        };
+    }
 
-    Ok(
-        MasterSystemCreate::<Sn76489State, SmsMemoryState>::from_file(
-            filename,
-            graphics,
-            audio,
-            memory_mapper_type,
-            options,
-        )?,
-    )
+    eval_args!()
 }
 
 fn run_rom(matches: &ArgMatches) -> Result<()> {
-    let filename = matches.value_of("rom").unwrap();
-    let memory_map = matches.value_of("memorymap").unwrap();
-    let save_directory = match matches.value_of("savedirectory") {
-        None => None,
-        Some(s) => Some(PathBuf::from(s)),
+    let rom = {
+        let filename = matches.value_of("rom").unwrap();
+        sms_roms::from_file(&filename)?
     };
-    let debug = matches.value_of("debug").unwrap() == "true";
     let tv_system = match matches.value_of("tv").unwrap() {
         "NTSC" => TvSystem::Ntsc,
         _ => TvSystem::Pal,
@@ -64,31 +90,28 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         "sms2" => Kind::Sms2,
         _ => Kind::Gg,
     };
-
-    let options = SmsOptions {
-        frequency: Some(sms::NTSC_Z80_FREQUENCY),
-        vdp_kind: kind,
-        tv_system,
-        debug,
+    let memory_map_type = match matches.value_of("memory_map").unwrap() {
+        "sg1000_1" => MemoryMapperType::Sg1000(1),
+        "sg1000_2" => MemoryMapperType::Sg1000(2),
+        "sg1000_4" => MemoryMapperType::Sg1000(4),
+        "codemasters" => MemoryMapperType::Codemasters,
+        _ => MemoryMapperType::Sega,
     };
+
+    let state = SmsState::from_rom(Arc::new(rom), memory_map_type, tv_system, kind);
 
     let sdl = sdl2::init().unwrap();
 
-    let master_system = new_master_system(
-        filename,
-        &sdl,
-        if memory_map == "sega" {
-            MemoryMapperType::Sega
-        } else if memory_map == "codemasters" {
-            MemoryMapperType::Codemasters
-        } else {
-            MemoryMapperType::Sg1000
-        },
-        options,
-    )?;
+    let sms = new_sms(&sdl, state, matches)?;
 
-    let mut user_interface =
-        sms_user_interface::ui(master_system, &sdl, save_directory, &[], true)?;
+    let save_directory = match matches.value_of("savedirectory") {
+        None => None,
+        Some(s) => Some(PathBuf::from(s)),
+    };
+
+    // let sdl = sdl2::init().unwrap();
+
+    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[], true)?;
     user_interface.run()?;
 
     Ok(())
@@ -176,13 +199,12 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
 }
 
 fn run() -> Result<()> {
-    let memory_map_arg = Arg::with_name("memorymap")
-        .long("memorymap")
-        .value_name("(sega|codemasters|sg1000)")
-        .help("Specify the sega, codemasters, or sg1000 memory map")
+    let memory_map_arg = Arg::with_name("memory_map")
+        .long("memory_map")
+        .value_name("(sega|codemasters|sg1000_1|sg1000_2|sg1000_4)")
+        .help("Specify the sega, codemasters, or sg1000 memory map.")
         .takes_value(true)
-        .required(true)
-        .possible_values(&["sega", "codemasters", "sg1000"])
+        .possible_values(&["sega", "codemasters", "sg1000_1", "sg1000_2", "sg1000_4"])
         .default_value("sega");
     let save_directory_arg = Arg::with_name("savedirectory")
         .long("savedirectory")
@@ -215,6 +237,48 @@ fn run() -> Result<()> {
         .possible_values(&["NTSC", "PAL"])
         .default_value("NTSC");
 
+    let frequency_validator = |s: String| {
+        match s.as_ref() {
+            "ntsc" | "pal" | "unlimited" => return Ok(()),
+            _ => {}
+        }
+        if let Err(_) = s.parse::<u64>() {
+            return Err("frequency must be ntsc, pal, unlimited, or a positive integer".to_owned());
+        }
+        Ok(())
+    };
+    let frequency_arg = Arg::with_name("frequency")
+        .long("frequency")
+        .value_name("(unlimited|ntsc|pal|number)")
+        .takes_value(true)
+        .default_value("ntsc")
+        .validator(frequency_validator)
+        .help("Frequency of the Z80 processor");
+
+    let memory_type_arg = Arg::with_name("memory_type")
+        .long("memory_type")
+        .value_name("(pointer|state)")
+        .takes_value(true)
+        .default_value("pointer")
+        .possible_values(&["pointer", "state"])
+        .help("Which memory implementation to use");
+
+    let sound_arg = Arg::with_name("sound")
+        .long("sound")
+        .value_name("BOOL")
+        .takes_value(true)
+        .default_value("true")
+        .possible_values(&["true", "false"])
+        .help("Should sound be played?");
+
+    let graphics_arg = Arg::with_name("graphics")
+        .long("graphics")
+        .value_name("BOOL")
+        .takes_value(true)
+        .default_value("true")
+        .possible_values(&["true", "false"])
+        .help("Should graphics be displayed?");
+
     let app = App::new("Attalus")
         .version("0.1.0")
         .author("Michael Benfield")
@@ -235,6 +299,10 @@ fn run() -> Result<()> {
                 .arg(memory_map_arg.clone())
                 .arg(save_directory_arg.clone())
                 .arg(kind_arg.clone())
+                .arg(sound_arg.clone())
+                .arg(graphics_arg.clone())
+                .arg(frequency_arg.clone())
+                .arg(memory_type_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("load")
@@ -248,7 +316,11 @@ fn run() -> Result<()> {
                         .help("Specify the saved state file")
                         .takes_value(true)
                         .required(true),
-                ),
+                )
+                .arg(frequency_arg.clone())
+                .arg(sound_arg.clone())
+                .arg(graphics_arg.clone())
+                .arg(memory_type_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("loadrecord")
@@ -262,7 +334,11 @@ fn run() -> Result<()> {
                         .help("Specify the recorded gameplay file")
                         .takes_value(true)
                         .required(true),
-                ),
+                )
+                .arg(frequency_arg.clone())
+                .arg(sound_arg.clone())
+                .arg(graphics_arg.clone())
+                .arg(memory_type_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("playback")
@@ -274,7 +350,11 @@ fn run() -> Result<()> {
                         .help("Specify the recorded gameplay file")
                         .takes_value(true)
                         .required(true),
-                ),
+                )
+                .arg(frequency_arg.clone())
+                .arg(sound_arg.clone())
+                .arg(graphics_arg.clone())
+                .arg(memory_type_arg.clone()),
         );
     let matches = app.get_matches();
 

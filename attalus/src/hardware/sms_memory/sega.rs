@@ -9,7 +9,7 @@ where
     M: SmsMemory + ?Sized,
 {
     #[inline]
-    fn write_reg(memory: &mut M, address: u16, value: u8) {
+    fn write_reg(&mut self, memory: &mut M, address: u16, value: u8) {
         use self::MemoryPage::*;
         let rom_pages = memory.rom_len() / 0x4000;
         let page = value % rom_pages as u8;
@@ -46,7 +46,7 @@ where
         }
     }
 
-    fn default_mappings(memory: &mut M) {
+    fn default_mappings(&mut self, memory: &mut M) {
         use self::MemoryPage::*;
         memory.set_system_ram_kib(8);
         if memory.rom_len() >= 0xC000 {

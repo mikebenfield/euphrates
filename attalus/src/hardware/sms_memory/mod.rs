@@ -2,7 +2,6 @@
 
 use std;
 use std::cell::UnsafeCell;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use impler::{Cref, Impl, Mref, Ref};
@@ -25,7 +24,7 @@ pub use self::sg1000::*;
 /// what physical page of memory it's mapped to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum MemoryPage {
-    /// The 8 KiB of system RAM, mirrored across 16 KiB.
+    /// The system RAM, mirrored across 16 KiB.
     SystemRam,
 
     /// The first 16 KiB page of RAM on the cartridge.
@@ -685,28 +684,29 @@ pub trait SmsMemoryLoad: Sized {
 pub trait SmsMapper<M: ?Sized> {
     /// If `address` corresponds to a memory control register, change the memory
     /// mappings in `memory` as appropriate.
-    fn write_reg(memory: &mut M, address: u16, value: u8);
+    fn write_reg(&mut self, memory: &mut M, address: u16, value: u8);
 
     /// reset this memory to its default mapping state
-    fn default_mappings(memory: &mut M);
+    fn default_mappings(&mut self, memory: &mut M);
 }
 
 /// Use in conjunction with an `SmsMapper` and a `Memory` to get an
 /// implementation of `Memory16` using the `SmsMapper`.
-pub struct SmsMapMemory16Impler<Memory: ?Sized, Mapper: ?Sized>(Ref<Memory>, PhantomData<Mapper>);
+pub struct SmsMapMemory16Impler<Memory: ?Sized, Mapper: ?Sized>(Ref<Memory>, Ref<Mapper>);
 
 impl<T: ?Sized, U: ?Sized> SmsMapMemory16Impler<T, U> {
     #[inline(always)]
-    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
-        Cref::Own(SmsMapMemory16Impler(unsafe { Ref::new(t) }, PhantomData))
+    pub fn new<'a>(t: &'a T, u: &'a U) -> Cref<'a, Self> {
+        Cref::Own(SmsMapMemory16Impler(unsafe { Ref::new(t) }, unsafe {
+            Ref::new(u)
+        }))
     }
 
     #[inline(always)]
-    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
-        Mref::Own(SmsMapMemory16Impler(
-            unsafe { Ref::new_mut(t) },
-            PhantomData,
-        ))
+    pub fn new_mut<'a>(t: &'a mut T, u: &'a mut U) -> Mref<'a, Self> {
+        Mref::Own(SmsMapMemory16Impler(unsafe { Ref::new_mut(t) }, unsafe {
+            Ref::new_mut(u)
+        }))
     }
 }
 
@@ -722,7 +722,7 @@ where
 
     #[inline(always)]
     fn write(&mut self, logical_address: u16, value: u8) {
-        Mapper::write_reg(self.0.mut_0(), logical_address, value);
+        Mapper::write_reg(self.1.mut_0(), self.0.mut_0(), logical_address, value);
         self.0.mut_0().write(logical_address, value);
     }
 }

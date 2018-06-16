@@ -447,3 +447,17 @@ where
         z.set_prefix(Prefix::FdCb);
     }
 }
+
+impl Impl<Z80NoImpl> for Z80State {
+    type Impler = Z80NoImpler<Self>;
+
+    #[inline(always)]
+    fn make<'a>(&'a self) -> Cref<'a, Self::Impler> {
+        Z80NoImpler::new(self)
+    }
+
+    #[inline(always)]
+    fn make_mut<'a>(&'a mut self) -> Mref<'a, Self::Impler> {
+        Z80NoImpler::new_mut(self)
+    }
+}

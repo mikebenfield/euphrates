@@ -5,7 +5,7 @@ use failure::Error;
 use sdl2;
 
 use attalus::systems::sms::{
-    joypad_a_bits, joypad_b_bits, Command, CommandResult, MasterSystem, PlaybackStatus, Query,
+    joypad_a_bits, joypad_b_bits, Command, CommandResult, Sms, PlaybackStatus, Query,
     QueryResult, SmsEmulationError, SmsPlayerInputState, Ui, UiHelper, UiStatus, UserMessage,
 };
 
@@ -28,7 +28,7 @@ impl UiHelper for PlaybackHelper {
 }
 
 pub fn playback_ui(
-    master_system: Box<MasterSystem>,
+    master_system: Box<Sms>,
     player_statuses: &[SmsPlayerInputState],
 ) -> Ui {
     let helper = Box::new(PlaybackHelper(PlaybackStatus::from_recorded(
@@ -66,16 +66,18 @@ impl UiHelper for SdlUiHelper {
 
         #[allow(dead_code)]
         fn do_command(status: &mut UiStatus, command: Command) {
-            if CommandResult::Unsupported == status.master_system_mut().command(command) {
-                eprintln!("Unsupported command {:?}", command);
-            }
+            unimplemented!()
+            // if CommandResult::Unsupported == status.master_system_mut().command(command) {
+            //     eprintln!("Unsupported command {:?}", command);
+            // }
         }
 
         fn do_query(status: &mut UiStatus, query: Query) {
-            match status.master_system_mut().query(query) {
-                QueryResult::Ok(s) => println!("{}", s),
-                QueryResult::Unsupported => eprintln!("Unsupported query {:?}", query),
-            }
+            unimplemented!()
+            // match status.master_system_mut().query(query) {
+            //     QueryResult::Ok(s) => println!("{}", s),
+            //     QueryResult::Unsupported => eprintln!("Unsupported query {:?}", query),
+            // }
         }
 
         for event in self.event_pump.poll_iter() {
@@ -159,7 +161,7 @@ impl UiHelper for SdlUiHelper {
 
 /// May return an error if there are problems with SDL
 pub fn ui(
-    master_system: Box<MasterSystem>,
+    master_system: Box<Sms>,
     sdl: &sdl2::Sdl,
     save_directory: Option<PathBuf>,
     player_statuses: &[SmsPlayerInputState],

@@ -90,7 +90,7 @@ impl<T: ?Sized> Ref<T> {
     }
 }
 
-pub trait Impl<I> {
+pub trait Impl<I: ?Sized> {
     type Impler;
     fn make<'a>(&'a self) -> Cref<'a, Self::Impler>;
     fn make_mut<'a>(&'a mut self) -> Mref<'a, Self::Impler>;

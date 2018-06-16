@@ -12,6 +12,7 @@ use super::sn76489::Sn76489Interface;
 /// If `T` implements
 ///
 /// * `SmsPlayerInput`,
+/// * `SmsVdpInternal`,
 /// * `SmsVdpInterface`, and
 /// * `Sn74689Interface`,
 ///
