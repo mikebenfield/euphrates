@@ -1,3 +1,5 @@
+#![deny(bare_trait_objects, anonymous_parameters)]
+
 extern crate attalus;
 extern crate sdl2;
 #[macro_use]

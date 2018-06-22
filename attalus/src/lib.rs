@@ -1,3 +1,5 @@
+#![deny(bare_trait_objects, anonymous_parameters)]
+
 #[macro_use]
 extern crate failure;
 extern crate chrono;

@@ -8,7 +8,7 @@ use super::z80::Z80Irq;
 pub trait SmsPauseInterrupt {
     fn requesting_interrupt(&self) -> bool;
     fn take_interrupt(&mut self);
-    fn set_pause(&mut self, bool);
+    fn set_pause(&mut self, _: bool);
 }
 
 pub struct SmsPauseInterruptImpl;

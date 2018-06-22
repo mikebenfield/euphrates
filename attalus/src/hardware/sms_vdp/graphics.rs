@@ -6,11 +6,20 @@ use utilities;
 
 use super::*;
 
-#[derive(Debug, Fail)]
-pub enum SmsVdpGraphicsError {
-    #[fail(display = "graphics error {}", _0)]
-    Graphics(Error),
+// This superfluous module with the `allow` attribute is necessary until the
+// `fail` crate begins using `dyn trait` syntax
+#[allow(bare_trait_objects)]
+mod sms_vdp_graphics_error {
+    use super::*;
+
+    #[derive(Debug, Fail)]
+    pub enum SmsVdpGraphicsError {
+        #[fail(display = "graphics error {}", _0)]
+        Graphics(Error),
+    }
 }
+
+pub use self::sms_vdp_graphics_error::SmsVdpGraphicsError;
 
 pub trait SmsVdpGraphics {
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError>;

@@ -57,7 +57,7 @@ impl SmsState {
         state.vdp.set_kind(vdp_kind);
 
         // it seems many BIOSes leave SP at this value
-        sms.z80.set_reg16(Reg16::SP, 0xDFEE);
+        state.z80.set_reg16(Reg16::SP, 0xDFEE);
 
         match memory_mapper_type {
             MemoryMapperType::Sega => SegaMapper.default_mappings(&mut state.memory),
@@ -559,7 +559,7 @@ pub fn new_sms<Graphics: 'static, Audio: 'static, Sn76489: 'static, Memory: 'sta
     sn76489: Sn76489,
     inbox: Inx,
     _memory_type: MemWrap<Memory>,
-) -> Result<Box<Sms>, SmsCreationError>
+) -> Result<Box<dyn Sms>, SmsCreationError>
 where
     Memory: SmsMemory + Memory16 + SmsMemoryLoad,
     SmsVdpGraphicsI<Graphics>: SmsVdpGraphics,
@@ -596,16 +596,25 @@ where
     }
 }
 
-#[derive(Debug, Fail)]
-pub enum SmsEmulationError {
-    // XXX
-    #[fail(display = "SomeError")]
-    SomeError,
-    #[fail(display = "Audio Error {}", _0)]
-    AudioError(Error),
-    #[fail(display = "Graphics Error {}", _0)]
-    GraphicsError(#[cause] SmsVdpGraphicsError),
+// This superfluous module with the `allow` attribute is necessary until the
+// `fail` crate begins using `dyn trait` syntax
+#[allow(bare_trait_objects)]
+mod sms_emulation_error {
+    use super::*;
+
+    #[derive(Debug, Fail)]
+    pub enum SmsEmulationError {
+        // XXX
+        #[fail(display = "SomeError")]
+        SomeError,
+        #[fail(display = "Audio Error {}", _0)]
+        AudioError(Error),
+        #[fail(display = "Graphics Error {}", _0)]
+        GraphicsError(#[cause] SmsVdpGraphicsError),
+    }
 }
+
+pub use self::sms_emulation_error::SmsEmulationError;
 
 impl From<SmsVdpGraphicsError> for SmsEmulationError {
     fn from(x: SmsVdpGraphicsError) -> Self {
@@ -613,14 +622,23 @@ impl From<SmsVdpGraphicsError> for SmsEmulationError {
     }
 }
 
-#[derive(Debug, Fail)]
-pub enum SmsCreationError {
-    #[fail(display = "ROM error: {}", _0)]
-    RomError(#[cause] SmsRomError),
+// This superfluous module with the `allow` attribute is necessary until the
+// `fail` crate begins using `dyn trait` syntax
+#[allow(bare_trait_objects)]
+mod sms_creation_error {
+    use super::*;
 
-    #[fail(display = "memory load error: {}", _0)]
-    MemoryLoadError(#[cause] SmsMemoryLoadError),
+    #[derive(Debug, Fail)]
+    pub enum SmsCreationError {
+        #[fail(display = "ROM error: {}", _0)]
+        RomError(#[cause] SmsRomError),
+
+        #[fail(display = "memory load error: {}", _0)]
+        MemoryLoadError(#[cause] SmsMemoryLoadError),
+    }
 }
+
+pub use self::sms_creation_error::SmsCreationError;
 
 impl From<SmsRomError> for SmsCreationError {
     fn from(x: SmsRomError) -> Self {

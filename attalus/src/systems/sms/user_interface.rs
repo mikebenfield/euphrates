@@ -16,7 +16,7 @@ pub enum UserMessage {
 }
 
 pub struct UiStatus {
-    master_system: Box<Sms>,
+    master_system: Box<dyn Sms>,
     save_directory: Option<PathBuf>,
     recording_status: RecordingStatus<SmsState>,
     messages: Arc<RwLock<Vec<UserMessage>>>,
@@ -42,15 +42,15 @@ where
 }
 
 impl UiStatus {
-    pub fn master_system(&self) -> &Sms {
+    pub fn master_system(&self) -> &dyn Sms {
         self.master_system.deref()
     }
 
-    pub fn master_system_mut(&mut self) -> &mut Sms {
+    pub fn master_system_mut(&mut self) -> &mut dyn Sms {
         self.master_system.deref_mut()
     }
 
-    pub fn master_system_own(self) -> Box<Sms> {
+    pub fn master_system_own(self) -> Box<dyn Sms> {
         self.master_system
     }
 
@@ -151,13 +151,13 @@ pub trait UiHelper {
 
 pub struct Ui {
     status: UiStatus,
-    helper: Box<UiHelper>,
+    helper: Box<dyn UiHelper>,
 }
 
 impl Ui {
     pub fn new(
-        master_system: Box<Sms>,
-        helper: Box<UiHelper>,
+        master_system: Box<dyn Sms>,
+        helper: Box<dyn UiHelper>,
         save_directory: Option<PathBuf>,
     ) -> Self {
         Ui {
@@ -171,15 +171,15 @@ impl Ui {
         }
     }
 
-    pub fn master_system(&self) -> &Sms {
+    pub fn master_system(&self) -> &dyn Sms {
         self.status.master_system.deref()
     }
 
-    pub fn master_system_mut(&mut self) -> &mut Sms {
+    pub fn master_system_mut(&mut self) -> &mut dyn Sms {
         self.status.master_system.deref_mut()
     }
 
-    pub fn master_system_own(self) -> Box<Sms> {
+    pub fn master_system_own(self) -> Box<dyn Sms> {
         self.status.master_system
     }
 

@@ -5,17 +5,27 @@ use std::io::Error as IoError;
 use std::io::Read;
 use std::path::Path;
 
-/// Error generated when attempting to load an invalid ROM image.
-#[derive(Debug, Fail)]
-pub enum SmsRomError {
-    #[fail(
-        display = "ROM of bad length 0x{:X} (should be positive, less than 0x400000, and either no bigger than 0x2000 or a multiple of 0x4000",
-        _0
-    )]
-    BadLength(usize),
-    #[fail(display = "IO error {}", _0)]
-    Io(#[cause] IoError),
+
+// This superfluous module with the `allow` attribute is necessary until the
+// `fail` crate begins using `dyn trait` syntax
+#[allow(bare_trait_objects)]
+mod sms_rom_error {
+    use super::*;
+    
+    /// Error generated when attempting to load an invalid ROM image.
+    #[derive(Debug, Fail)]
+    pub enum SmsRomError {
+        #[fail(
+            display = "ROM of bad length 0x{:X} (should be positive, less than 0x400000, and either no bigger than 0x2000 or a multiple of 0x4000",
+            _0
+        )]
+        BadLength(usize),
+        #[fail(display = "IO error {}", _0)]
+        Io(#[cause] IoError),
+    }
 }
+
+pub use self::sms_rom_error::SmsRomError;
 
 impl From<IoError> for SmsRomError {
     fn from(x: IoError) -> Self {

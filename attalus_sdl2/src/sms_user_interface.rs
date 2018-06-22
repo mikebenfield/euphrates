@@ -28,7 +28,7 @@ impl UiHelper for PlaybackHelper {
 }
 
 pub fn playback_ui(
-    master_system: Box<Sms>,
+    master_system: Box<dyn Sms>,
     player_statuses: &[SmsPlayerInputState],
 ) -> Ui {
     let helper = Box::new(PlaybackHelper(PlaybackStatus::from_recorded(
@@ -161,7 +161,7 @@ impl UiHelper for SdlUiHelper {
 
 /// May return an error if there are problems with SDL
 pub fn ui(
-    master_system: Box<Sms>,
+    master_system: Box<dyn Sms>,
     sdl: &sdl2::Sdl,
     save_directory: Option<PathBuf>,
     player_statuses: &[SmsPlayerInputState],

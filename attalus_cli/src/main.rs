@@ -1,3 +1,5 @@
+#![deny(bare_trait_objects, anonymous_parameters)]
+
 extern crate attalus;
 extern crate attalus_sdl2;
 #[cfg(attalus_x64)]
@@ -27,7 +29,7 @@ use attalus_sdl2::{simple_audio::Audio, simple_graphics::Window};
 
 type Result<T> = std::result::Result<T, Error>;
 
-fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<Sms>> {
+fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn Sms>> {
     let frequency = match matches.value_of("frequency").unwrap() {
         "ntsc" => Some(sms::NTSC_Z80_FREQUENCY),
         "pal" => Some(sms::PAL_Z80_FREQUENCY),

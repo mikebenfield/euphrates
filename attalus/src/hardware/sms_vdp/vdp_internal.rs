@@ -24,37 +24,37 @@ pub trait SmsVdpInternal {
     /// Set the value of the CRAM latch register used by the GameGear VDP.
     ///
     /// See the documentation for the `cram_latch` method.
-    fn set_cram_latch(&mut self, u8);
+    fn set_cram_latch(&mut self, _: u8);
 
     /// Buffer for data port reads.
     fn data_buffer(&self) -> u8;
 
     /// Set the value of the buffer for data port reads.
-    fn set_data_buffer(&mut self, u8);
+    fn set_data_buffer(&mut self, _: u8);
 
     /// Byte indicating three status flags.
     fn status_flags(&self) -> u8;
 
     /// Set the status flags byte.
-    fn set_status_flags(&mut self, u8);
+    fn set_status_flags(&mut self, _: u8);
 
     /// Flag indicating whether the control port has been written to.
     fn control_flag(&self) -> bool;
 
     /// Set the flag indicating whether the control port has been written to.
-    fn set_control_flag(&mut self, bool);
+    fn set_control_flag(&mut self, _: bool);
 
     /// Has the line interrupt flag been triggered?
     fn line_interrupt_pending(&self) -> bool;
 
     /// Set the line interrupt pending flag.
-    fn set_line_interrupt_pending(&mut self, bool);
+    fn set_line_interrupt_pending(&mut self, _: bool);
 
     /// Has this interrupt been triggered since the last time an interrupt was
     /// taken?
     fn new_irq(&self) -> bool;
 
-    fn set_new_irq(&mut self, bool);
+    fn set_new_irq(&mut self, _: bool);
 
     /// Vertical scroll.
     ///
@@ -63,19 +63,19 @@ pub trait SmsVdpInternal {
     fn y_scroll(&self) -> u8;
 
     /// Set the vertical scroll.
-    fn set_y_scroll(&mut self, u8);
+    fn set_y_scroll(&mut self, _: u8);
 
     /// Get the TvSystem supported by this VDP.
     fn tv_system(&self) -> TvSystem;
 
     /// Set the TvSystem for this VDP.
-    fn set_tv_system(&mut self, TvSystem);
+    fn set_tv_system(&mut self, _: TvSystem);
 
     /// Is this a Sms, Sms2, or Gg VDP?
     fn kind(&self) -> Kind;
 
     /// Set this to be a Sms, Sms2, or Gg Vdp.
-    fn set_kind(&mut self, Kind);
+    fn set_kind(&mut self, _: Kind);
 
     /// The horizontal counter.
     ///
@@ -85,7 +85,7 @@ pub trait SmsVdpInternal {
     fn h(&self) -> u16;
 
     /// Set the value of the horizontal counter.
-    fn set_h(&mut self, u16);
+    fn set_h(&mut self, _: u16);
 
     /// The vertical counter.
     ///
@@ -96,7 +96,7 @@ pub trait SmsVdpInternal {
     fn v(&self) -> u16;
 
     /// Set the value of the vertical counter.
-    fn set_v(&mut self, u16);
+    fn set_v(&mut self, _: u16);
 
     /// The line counter.
     ///
@@ -107,7 +107,7 @@ pub trait SmsVdpInternal {
     fn line_counter(&self) -> u8;
 
     /// Set the value of the line counter.
-    fn set_line_counter(&mut self, u8);
+    fn set_line_counter(&mut self, _: u8);
 
     /// The code/address register.
     ///
@@ -118,7 +118,7 @@ pub trait SmsVdpInternal {
     fn code_address(&self) -> u16;
 
     /// Set the value of the code/address register.
-    fn set_code_address(&mut self, u16);
+    fn set_code_address(&mut self, _: u16);
 
     /// For how many cycles has this VDP been running?
     ///
@@ -128,7 +128,7 @@ pub trait SmsVdpInternal {
     fn cycles(&self) -> u64;
 
     /// Set the number of cycles this VDP has been running.
-    fn set_cycles(&mut self, u64);
+    fn set_cycles(&mut self, _: u64);
 
     /// Access the Video RAM.
     ///

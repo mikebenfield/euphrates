@@ -70,7 +70,7 @@ impl Default for InterruptStatus {
 /// let z: Z80State = Default::default();
 /// format!("{}", Z80Display(&z));
 /// ```
-pub struct Z80Display<'a>(pub &'a Z80Internal);
+pub struct Z80Display<'a>(pub &'a dyn Z80Internal);
 
 impl<'a> fmt::Display for Z80Display<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -94,19 +94,19 @@ impl<'a> fmt::Display for Z80Display<'a> {
 
 pub trait Z80Internal {
     fn cycles(&self) -> u64;
-    fn set_cycles(&mut self, u64);
+    fn set_cycles(&mut self, _: u64);
     fn reg8(&self, reg8: Reg8) -> u8;
     fn set_reg8(&mut self, reg8: Reg8, x: u8);
     fn reg16(&self, reg16: Reg16) -> u16;
     fn set_reg16(&mut self, reg16: Reg16, x: u16);
     fn halted(&self) -> bool;
-    fn set_halted(&mut self, bool);
+    fn set_halted(&mut self, _: bool);
     fn iff1(&self) -> bool;
-    fn set_iff1(&mut self, bool);
+    fn set_iff1(&mut self, _: bool);
     fn iff2(&self) -> bool;
-    fn set_iff2(&mut self, bool);
+    fn set_iff2(&mut self, _: bool);
     fn interrupt_mode(&self) -> InterruptMode;
-    fn set_interrupt_mode(&mut self, InterruptMode);
+    fn set_interrupt_mode(&mut self, _: InterruptMode);
 
     fn prefix(&self) -> Prefix;
     fn set_prefix(&mut self, prefix: Prefix);
