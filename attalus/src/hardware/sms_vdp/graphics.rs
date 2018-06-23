@@ -82,7 +82,16 @@ where
             (_, _, _, true) => draw_line_mode4(s),
             (false, false, false, _) => draw_line_graphics1(s),
             (false, true, false, _) => draw_line_graphics2(s),
-            _ => unimplemented!(),
+            _ => {
+                eprintln!(
+                    "Invalid or unimplemented graphics mode {}, {}, {}, {}",
+                    s.m1(),
+                    s.m2(),
+                    s.m3(),
+                    s.m4()
+                );
+                Ok(())
+            }
         }
     }
 }

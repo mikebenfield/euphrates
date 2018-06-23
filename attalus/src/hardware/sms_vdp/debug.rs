@@ -13,7 +13,7 @@ where
         (_, _, _, true) => draw_tiles_mode4(v, graphics),
         (false, false, false, _) => draw_tiles_graphics1(v, graphics),
         (false, true, false, _) => draw_tiles_graphics2(v, graphics),
-        _ => unimplemented!(),
+        _ => Ok(()),
     }
 }
 
