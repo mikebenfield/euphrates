@@ -11,7 +11,7 @@ use std::path::Path;
 #[allow(bare_trait_objects)]
 mod sms_rom_error {
     use super::*;
-    
+
     /// Error generated when attempting to load an invalid ROM image.
     #[derive(Debug, Fail)]
     pub enum SmsRomError {
