@@ -1,6 +1,6 @@
-# Attalus: A Sega Master System Emulator
+# Euphrates: A Sega Master System Emulator
 
-Attalus is an emulator for the Sega Master System. The goal is to produce an
+Euphrates is an emulator for the Sega Master System. The goal is to produce an
 emulator that is suitable for interactive use as well as for training AI
 video game players.
 
@@ -9,7 +9,7 @@ video game players.
 The emulator works and plays lots of games. But some other games don't work,
 including those from CodeMasters, and this is still a prerelease project.
 
-If you just want to play a game, see the `attalus_cli` subcrate.
+If you just want to play a game, see the `euphrates_cli` subcrate.
 
 ## Future
 
@@ -35,9 +35,9 @@ GameBoy Color are likely targets, since they use a CPU related to the Z80).
 
 ## License
 
-Attalus is Copyright 2018, Michael Benfield.
+Euphrates is Copyright 2018, Michael Benfield.
 
-You may copy, modify, and/or distribute Attalus under either the terms of the
+You may copy, modify, and/or distribute Euphrates under either the terms of the
 Apache License, version 2 (see the file LICENSE-APACHE or
 <http://www.apache.org/licenses/LICENSE-2.0>) or the MIT license (see the file
 LICENSE-MIT or <http://opensource.org/licenses/MIT>), at your option.

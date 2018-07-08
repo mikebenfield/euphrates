@@ -1,0 +1,13 @@
+[package]
+name = "euphrates_sdl2"
+version = "0.1.0"
+authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+
+[lib]
+name = "euphrates_sdl2"
+path = "src/lib.rs"
+
+[dependencies]
+euphrates = { path = "../euphrates" }
+sdl2 = "0.31"
+failure = "0.1.1"

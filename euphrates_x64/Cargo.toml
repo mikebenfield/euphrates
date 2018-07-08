@@ -1,0 +1,10 @@
+[package]
+name = "euphrates_x64"
+version = "0.1.0"
+authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+
+[dependencies]
+euphrates = { path = "../euphrates" }
+
+[build-dependencies]
+cc = "1.0"
