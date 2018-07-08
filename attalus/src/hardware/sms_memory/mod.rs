@@ -990,7 +990,7 @@ impl Memory16 for PointerSmsMemory {
     fn write(&mut self, logical_address: u16, value: u8) {
         use std::mem::transmute;
         unsafe {
-            let write_minislots: &mut [*mut u8; 64] = transmute(&mut self.minislots);
+            let write_minislots: &mut [*mut u8; 64] = transmute(&mut self.write_minislots);
             *write_minislots[logical_address as usize >> 10]
                 .offset(logical_address as isize & 0x3FF) = value
         }

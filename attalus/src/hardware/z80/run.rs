@@ -70,7 +70,9 @@ where
         opcode
     }
 
-    z.set_interrupt_status(InterruptStatus::Check);
+    if z.interrupt_status() == InterruptStatus::NoCheck {
+        z.set_interrupt_status(InterruptStatus::Check);
+    }
 
     while z.cycles() < cycles {
         match (z.prefix(), z.interrupt_status()) {
