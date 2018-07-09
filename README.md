@@ -1,37 +1,29 @@
 # Euphrates: A Sega Master System Emulator
 
-Euphrates is an emulator for the Sega Master System. The goal is to produce an
-emulator that is suitable for interactive use as well as for training AI
-video game players.
+Euphrates is an emulator for the Sega Master System, Sega Game Gear, and
+Sega SG-1000 Game consoles.
 
-## Status
+This repository consists of these crates:
 
-The emulator works and plays lots of games. But some other games don't work,
-including those from CodeMasters, and this is still a prerelease project.
+- `euphrates`, the main emulation library;
 
-If you just want to play a game, see the `euphrates_cli` subcrate.
+- `euphrates_sdl`, providing audio and video types for use with Euphrates;
 
-## Future
+- `euphrates_x64`, a small library that can make Euphrates a bit more
+performant on x86-64 systems with BMI2 instructions;
 
-In roughly chronological order, here are the tasks I'm planning on:
+- `euphrates_cli`, an application to run Euphrates from the command line
+using `euphrates_sdl` for audio and video.
 
-- [ ] get the emulate CodeMasters memory mapper working;
+If you just want to play some games, see the `euphrates_cli` crate. All
+officially released games that I've tested work. However, note that an excellent
+end user experience for playing games is not currently a high priority for
+Euphrates (for instance, you'll have to play with your keyboard, and you'll have
+to specify command line options for which memory map you want to use). Instead,
+Euphrates is intended to (eventually) be a platform for exploring artificial
+intelligence techniques.
 
-- [ ] emulate the YM2413 FM sound unit;
-
-- [ ] get a game controller working;
-
-- [ ] get Game Gear emulation working;
-
-- [ ] implement alternate emulations of the memory mappers using OS virtual
-memory via `mmap`;
-
-- [ ] implement an alternate emulation of the Z80 processor via binary
-translation to x86-64 machine code (the Z80 and the x86-64 are, in a sense,
-distant relatives; in particular, the condition flags are very similar);
-
-- [ ] (maybe) emulate other game consoles or computers (the GameBoy and
-GameBoy Color are likely targets, since they use a CPU related to the Z80).
+See the README in the `euphrates` crate for more on Euphrates and its goals.
 
 ## License
 

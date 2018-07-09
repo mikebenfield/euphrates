@@ -442,7 +442,7 @@ struct SmsS<Graphics, Audio, Sn76489, Mapper, Mem, Inx> {
     mapper: Mapper,
 }
 
-pub trait Sms: Z80Internal + Memory16 + SmsMemory + SmsVdpInternal {
+pub trait Sms: Debugger + Z80Internal + Memory16 + SmsMemory + SmsVdpInternal {
     fn run_frame(&mut self, player_input: SmsPlayerInputState) -> Result<(), SmsEmulationError>;
 
     fn state(&self) -> SmsState;
@@ -489,11 +489,21 @@ mod _impl_smst {
         { Cref::Const(& self.vdp) },
         { Mref::Mut(&mut self.vdp) }
     }
+
+    implement_impl! {
+        [Graphics, Audio, Sn76489, Mapper, Mem, Inx]
+        DebuggerImpl for SmsS
+        [Graphics, Audio, Sn76489, Mapper, Mem, Inx]
+        [Inx: Debugger] Inx, self, f,
+        { Cref::Const(& self.inbox) },
+        { Mref::Mut(&mut self.inbox) }
+    }
 }
 
 impl<Graphics, Audio, Sn76489, Mapper, Mem, Inx> Sms
     for SmsS<Graphics, Audio, Sn76489, Mapper, Mem, Inx>
 where
+    Inx: Debugger,
     Mem: SmsMemory + Memory16,
     Mapper: SmsMapper<Mem>,
     SmsVdpGraphicsI<Graphics>: SmsVdpGraphics,
@@ -561,6 +571,7 @@ pub fn new_sms<Graphics: 'static, Audio: 'static, Sn76489: 'static, Memory: 'sta
     _memory_type: MemWrap<Memory>,
 ) -> Result<Box<dyn Sms>, SmsCreationError>
 where
+    Inx: Debugger,
     Memory: SmsMemory + Memory16 + SmsMemoryLoad,
     SmsVdpGraphicsI<Graphics>: SmsVdpGraphics,
     SmsZ80RunI<Sn76489, SegaMapper, Memory, Inx>: Z80Run,

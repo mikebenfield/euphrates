@@ -1,10 +1,10 @@
-# Euphrates SDL2: Euphrates with the Simple DirectMedia Layer
+# Euphrates: A Sega Master System Emulator
 
 Euphrates is an emulator for the Sega Master System, Sega Game Gear, and
 Sega SG-1000 Game consoles.
 
-This crate provides types and functions to provide Euphrates's multimedia needs
-with SDL2.
+This crate, `euphrates_x64`, contains a bit of assembly code that will make
+Euphrates more performant on x86-64 platforms with BMI2 instructions.
 
 ## License
 

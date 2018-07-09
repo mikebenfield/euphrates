@@ -5,8 +5,8 @@ use failure::Error;
 use sdl2;
 
 use euphrates::systems::sms::{
-    joypad_a_bits, joypad_b_bits, Command, CommandResult, Sms, PlaybackStatus, Query,
-    QueryResult, SmsEmulationError, SmsPlayerInputState, Ui, UiHelper, UiStatus, UserMessage,
+    joypad_a_bits, joypad_b_bits, Command, CommandResult, PlaybackStatus, Query, QueryResult, Sms,
+    SmsEmulationError, SmsPlayerInputState, Ui, UiHelper, UiStatus, UserMessage,
 };
 
 use simple_graphics::Window;
@@ -27,10 +27,7 @@ impl UiHelper for PlaybackHelper {
     }
 }
 
-pub fn playback_ui(
-    master_system: Box<dyn Sms>,
-    player_statuses: &[SmsPlayerInputState],
-) -> Ui {
+pub fn playback_ui(master_system: Box<dyn Sms>, player_statuses: &[SmsPlayerInputState]) -> Ui {
     let helper = Box::new(PlaybackHelper(PlaybackStatus::from_recorded(
         player_statuses,
     )));
@@ -66,18 +63,16 @@ impl UiHelper for SdlUiHelper {
 
         #[allow(dead_code)]
         fn do_command(status: &mut UiStatus, command: Command) {
-            unimplemented!()
-            // if CommandResult::Unsupported == status.master_system_mut().command(command) {
-            //     eprintln!("Unsupported command {:?}", command);
-            // }
+            if CommandResult::Unsupported == status.master_system_mut().command(command) {
+                eprintln!("Unsupported command {:?}", command);
+            }
         }
 
         fn do_query(status: &mut UiStatus, query: Query) {
-            unimplemented!()
-            // match status.master_system_mut().query(query) {
-            //     QueryResult::Ok(s) => println!("{}", s),
-            //     QueryResult::Unsupported => eprintln!("Unsupported query {:?}", query),
-            // }
+            match status.master_system_mut().query(query) {
+                QueryResult::Ok(s) => println!("{}", s),
+                QueryResult::Unsupported => eprintln!("Unsupported query {:?}", query),
+            }
         }
 
         for event in self.event_pump.poll_iter() {
@@ -121,8 +116,8 @@ impl UiHelper for SdlUiHelper {
             (D, joypad_a_bits::JOYPAD1_RIGHT),
             (F, joypad_a_bits::JOYPAD1_A),
             (G, joypad_a_bits::JOYPAD1_B),
-            (I, joypad_a_bits::JOYPAD1_UP),
-            (K, joypad_a_bits::JOYPAD1_DOWN),
+            (I, joypad_a_bits::JOYPAD2_UP),
+            (K, joypad_a_bits::JOYPAD2_DOWN),
         ];
         array_a
             .iter()
