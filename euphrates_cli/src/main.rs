@@ -21,8 +21,8 @@ use euphrates::host_multimedia::{FakeAudio, FakeGraphics};
 use euphrates::memo::NothingInbox;
 use euphrates::save;
 use euphrates::systems::sms::{
-    self, CodemastersMapper, DebuggingInbox, Kind, MemWrap, MemoryMapperType, PointerSmsMemory,
-    Recording, SegaMapper, Sg1000Mapper, Sms, SmsMemoryState, SmsState, TvSystem,
+    self, DebuggingInbox, Kind, MemWrap, MemoryMapperType, PointerSmsMemory,
+    Recording, Sms, SmsMemoryState, SmsState, TvSystem, Z80Internal,
 };
 
 use euphrates_sdl2::sms_user_interface;
@@ -31,7 +31,7 @@ use euphrates_sdl2::{simple_audio::Audio, simple_graphics::Window};
 type Result<T> = std::result::Result<T, Error>;
 
 fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn Sms>> {
-    let frequency = match matches.value_of("frequency").unwrap() {
+    let frequency = match matches.value_of("frequency").expect("unwrapping frequency") {
         "ntsc" => Some(sms::NTSC_Z80_FREQUENCY),
         "pal" => Some(sms::PAL_Z80_FREQUENCY),
         "unlimited" => None,
@@ -45,7 +45,7 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
             )?)
         };
         ($memory:expr, $sn76489:expr, $audio:expr, $inbox:expr) => {
-            match matches.value_of("graphics").unwrap() {
+            match matches.value_of("graphics").expect("unwrapping graphics") {
                 "true" => {
                     let mut graphics = Window::new(&sdl)?;
                     graphics.set_size(768, 576);
@@ -57,19 +57,19 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
             }
         };
         ($memory:expr, $sn76489:expr, $audio:expr) => {
-            match matches.value_of("debug").unwrap() {
+            match matches.value_of("debug").expect("unwrapping debug") {
                 "true" => eval_args!($memory, $sn76489, $audio, DebuggingInbox::default()),
                 _ => eval_args!($memory, $sn76489, $audio, NothingInbox::default()),
             }
         };
         ($memory:expr) => {
-            match matches.value_of("sound").unwrap() {
+            match matches.value_of("sound").expect("unwrapping sound") {
                 "true" => eval_args!($memory, Sn76489State::default(), Audio::new(sdl)?),
                 _ => eval_args!($memory, FakeSn76489, FakeAudio),
             }
         };
         () => {
-            match matches.value_of("memory_type").unwrap() {
+            match matches.value_of("memory_type").expect("unwrapping memory type") {
                 "pointer" => eval_args!(MemWrap::<PointerSmsMemory>::default()),
                 _ => eval_args!(MemWrap::<SmsMemoryState>::default()),
             }
@@ -119,62 +119,58 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
 }
 
 fn run_playback(matches: &ArgMatches) -> Result<()> {
-    unimplemented!()
-    // use std::time::Instant;
+    use std::time::Instant;
 
-    // let load_filename = matches.value_of("loadfile").unwrap();
+    let load_filename = matches.value_of("loadfile").unwrap();
 
-    // let sdl = sdl2::init().unwrap();
+    let sdl = sdl2::init().unwrap();
 
-    // let recording: Recording<SmsState> = save::deserialize_at(&load_filename)?;
+    let recording: Recording<SmsState> = save::deserialize_at(&load_filename)?;
 
-    // let master_system = new_master_system(recording.state, &sdl, None, false)?;
+    let sms = new_sms(&sdl, recording.state, matches)?;
 
-    // let mut user_interface =
-    //     euphrates_sdl2::sms_user_interface::playback_ui(master_system, &recording.player_statuses)?;
+    let mut user_interface =
+        euphrates_sdl2::sms_user_interface::playback_ui(sms, &recording.player_statuses);
 
-    // let start_cycles = Z80Internal::cycles(user_interface.master_system());
-    // let start_time = Instant::now();
+    let start_cycles = Z80Internal::cycles(user_interface.master_system());
+    let start_time = Instant::now();
 
-    // user_interface.run()?;
+    user_interface.run()?;
 
-    // let end_cycles = Z80Internal::cycles(user_interface.master_system());
-    // let end_time = Instant::now();
+    let end_cycles = Z80Internal::cycles(user_interface.master_system());
+    let end_time = Instant::now();
 
-    // let time = end_time.duration_since(start_time);
+    let time = end_time.duration_since(start_time);
 
-    // let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
-    // println!("Total cycles: {}", end_cycles - start_cycles);
-    // println!("Time: {} secs", sec_time);
-    // println!(
-    //     "Frequency: {} Hz",
-    //     (end_cycles - start_cycles) as f64 / sec_time
-    // );
+    let sec_time = time.as_secs() as f64 + time.subsec_nanos() as f64 * 1e-9;
+    println!("Total cycles: {}", end_cycles - start_cycles);
+    println!("Time: {} secs", sec_time);
+    println!(
+        "Frequency: {} Hz",
+        (end_cycles - start_cycles) as f64 / sec_time
+    );
 
-    // Ok(())
+    Ok(())
 }
 
 fn run_load(matches: &ArgMatches) -> Result<()> {
-    unimplemented!()
+    let load_filename = matches.value_of("loadfile").unwrap();
+    let save_directory = match matches.value_of("save_directory") {
+        None => None,
+        Some(s) => Some(PathBuf::from(s)),
+    };
 
-    // let load_filename = matches.value_of("loadfile").unwrap();
-    // let save_directory = match matches.value_of("save_directory") {
-    //     None => None,
-    //     Some(s) => Some(PathBuf::from(s)),
-    // };
-    // let debug = matches.value_of("debug").unwrap() == "true";
+    let sdl = sdl2::init().unwrap();
 
-    // let sdl = sdl2::init().unwrap();
+    let state: SmsState = save::deserialize_at(&load_filename)?;
 
-    // let state: SmsState = save::deserialize_at(&load_filename)?;
+    let sms = new_sms(&sdl, state, matches)?;
 
-    // let master_system = new_master_system(state, &sdl, sms::NTSC_Z80_FREQUENCY, debug)?;
+    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[], false)?;
 
-    // let mut user_interface = sms_user_interface::ui(master_system, &sdl, save_directory, &[])?;
+    user_interface.run()?;
 
-    // user_interface.run()?;
-
-    // Ok(())
+    Ok(())
 }
 
 fn run_record(matches: &ArgMatches) -> Result<()> {
@@ -183,7 +179,6 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
         None => None,
         Some(s) => Some(PathBuf::from(s)),
     };
-    let debug = matches.value_of("debug").unwrap() == "true";
 
     let sdl = sdl2::init().unwrap();
 
@@ -343,6 +338,7 @@ fn run() -> Result<()> {
         .subcommand(
             SubCommand::with_name("playback")
                 .about("Play back and time recorded gameplay")
+                .arg(debug_arg.clone())
                 .arg(
                     Arg::with_name("loadfile")
                         .long("loadfile")
