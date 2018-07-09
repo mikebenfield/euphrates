@@ -1,10 +1,10 @@
 #![deny(bare_trait_objects, anonymous_parameters)]
 
+extern crate clap;
 extern crate euphrates;
 extern crate euphrates_sdl2;
 #[cfg(euphrates_x64)]
 extern crate euphrates_x64;
-extern crate clap;
 extern crate failure;
 extern crate sdl2;
 
@@ -19,6 +19,7 @@ use euphrates::hardware::sms_roms;
 use euphrates::hardware::sn76489::{FakeSn76489, Sn76489State};
 use euphrates::host_multimedia::{FakeAudio, FakeGraphics};
 use euphrates::memo::NothingInbox;
+use euphrates::save;
 use euphrates::systems::sms::{
     self, CodemastersMapper, DebuggingInbox, Kind, MemWrap, MemoryMapperType, PointerSmsMemory,
     Recording, SegaMapper, Sg1000Mapper, Sms, SmsMemoryState, SmsState, TvSystem,
@@ -106,14 +107,12 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
 
     let sms = new_sms(&sdl, state, matches)?;
 
-    let save_directory = match matches.value_of("savedirectory") {
+    let save_directory = match matches.value_of("save_directory") {
         None => None,
         Some(s) => Some(PathBuf::from(s)),
     };
 
-    // let sdl = sdl2::init().unwrap();
-
-    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[], true)?;
+    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[], false)?;
     user_interface.run()?;
 
     Ok(())
@@ -159,7 +158,7 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
     unimplemented!()
 
     // let load_filename = matches.value_of("loadfile").unwrap();
-    // let save_directory = match matches.value_of("savedirectory") {
+    // let save_directory = match matches.value_of("save_directory") {
     //     None => None,
     //     Some(s) => Some(PathBuf::from(s)),
     // };
@@ -179,25 +178,24 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
 }
 
 fn run_record(matches: &ArgMatches) -> Result<()> {
-    unimplemented!()
+    let load_filename = matches.value_of("loadfile").unwrap();
+    let save_directory = match matches.value_of("save_directory") {
+        None => None,
+        Some(s) => Some(PathBuf::from(s)),
+    };
+    let debug = matches.value_of("debug").unwrap() == "true";
 
-    // let load_filename = matches.value_of("loadfile").unwrap();
-    // let save_directory = match matches.value_of("savedirectory") {
-    //     None => None,
-    //     Some(s) => Some(PathBuf::from(s)),
-    // };
-    // let debug = matches.value_of("debug").unwrap() == "true";
+    let sdl = sdl2::init().unwrap();
 
-    // let sdl = sdl2::init().unwrap();
+    let recording: Recording<SmsState> = save::deserialize_at(&load_filename)?;
+    let sms = new_sms(&sdl, recording.state, matches)?;
 
-    // let recording: Recording<SmsState> = save::deserialize_at(&load_filename)?;
-    // let master_system = new_master_system(recording.state, &sdl, sms::NTSC_Z80_FREQUENCY, debug)?;
+    let mut user_interface =
+        sms_user_interface::ui(sms, &sdl, save_directory, &recording.player_statuses, false)?;
 
-    // let mut user_interface = sms_user_interface::ui(master_system, &sdl, save_directory, &[])?;
+    user_interface.run()?;
 
-    // user_interface.run()?;
-
-    // Ok(())
+    Ok(())
 }
 
 fn run() -> Result<()> {
@@ -208,8 +206,8 @@ fn run() -> Result<()> {
         .takes_value(true)
         .possible_values(&["sega", "codemasters", "sg1000_1", "sg1000_2", "sg1000_4"])
         .default_value("sega");
-    let save_directory_arg = Arg::with_name("savedirectory")
-        .long("savedirectory")
+    let save_directory_arg = Arg::with_name("save_directory")
+        .long("save_directory")
         .value_name("DIRECTORY")
         .help("Specify the directory in which to save states")
         .takes_value(true);

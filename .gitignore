@@ -3,9 +3,5 @@ target/
 .vscode
 .DS_Store
 tmp/
-attalus/Cargo.lock
-attalus_cli/Cargo.lock
-attalus_derive/Cargo.lock
-attalus_sdl2/Cargo.lock
-attalus_x64/Cargo.lock
+Cargo.lock
 .projectile

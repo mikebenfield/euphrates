@@ -129,7 +129,7 @@ impl UiStatus {
         }
         push_or_panic(
             &mut self.messages,
-            UserMessage::Error("Cannot save state: No save directory specified".to_owned()),
+            UserMessage::Error("Cannot save recording: No save directory specified".to_owned()),
         )
     }
 
