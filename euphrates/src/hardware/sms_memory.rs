@@ -4,19 +4,21 @@ use std;
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 
-use impler::{Cref, Impl, Mref, Ref};
-
 use super::memory16::*;
 
-mod codemasters;
-mod memo;
-mod sega;
-mod sg1000;
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum SmsMemoryMapper {
+    Sega,
+    Codemasters,
+    Sg1000(usize),
+}
 
-pub use self::codemasters::*;
-pub use self::memo::*;
-pub use self::sega::*;
-pub use self::sg1000::*;
+impl Default for SmsMemoryMapper {
+    #[inline(always)]
+    fn default() -> Self {
+        SmsMemoryMapper::Sega
+    }
+}
 
 /// A 16 KiB page of memory.
 ///
@@ -110,19 +112,98 @@ mod _impl1 {
     impl Eq for super::MainCartridgeRam {}
 }
 
+fn reg_sega<T>(memory: &mut T, address: u16, value: u8)
+where
+    T: SmsMemory + ?Sized,
+{
+    use self::MemoryPage::*;
+    let rom_pages = memory.rom_len() / 0x4000;
+    let page = value % rom_pages as u8;
+    match address {
+        0xFFFD => memory.map_page(0, RomButFirstKiB(page)),
+        0xFFFE => memory.map_page(1, Rom(page)),
+        0xFFFF => match memory.page(2) {
+            FirstCartridgeRam(_) => memory.map_page(2, FirstCartridgeRam(page)),
+            SecondCartridgeRam(_) => memory.map_page(2, SecondCartridgeRam(page)),
+            _ => memory.map_page(2, Rom(page)),
+        },
+        0xFFFC => {
+            let ram_slot2 = value & 0x8 != 0;
+            let cartridge_ram_slot3 = value & 0x10 != 0;
+            let second_ram_page_slot2 = value & 0x4 != 0;
+            let slot2_rom_page = match memory.page(2) {
+                Rom(x) => x,
+                FirstCartridgeRam(x) => x,
+                SecondCartridgeRam(x) => x,
+                _ => 0,
+            };
+            match (ram_slot2, second_ram_page_slot2) {
+                (false, _) => memory.map_page(2, Rom(slot2_rom_page)),
+                (true, false) => memory.map_page(2, FirstCartridgeRam(slot2_rom_page)),
+                (true, true) => memory.map_page(2, SecondCartridgeRam(slot2_rom_page)),
+            }
+            if cartridge_ram_slot3 {
+                memory.map_page(3, FirstCartridgeRam(0));
+            } else {
+                memory.map_page(3, SystemRam);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn reg_codemasters<T>(memory: &mut T, address: u16, value: u8)
+where
+    T: SmsMemory + ?Sized,
+{
+    use self::MemoryPage::*;
+    let rom_pages = memory.rom_len() / 0x4000;
+    let page = value % rom_pages as u8;
+    match address {
+        0x0000 => memory.map_page(0, Rom(page)),
+        0x4000 => memory.map_page(1, Rom(page)),
+        0x8000 => memory.map_page(2, Rom(page)),
+        _ => {}
+    }
+}
+
+pub fn default_mappings<M>(memory: &mut M)
+where
+    M: SmsMemory,
+{
+    use self::MemoryPage::*;
+    match memory.mapper() {
+        SmsMemoryMapper::Sega => {
+            memory.set_system_ram_kib(8);
+            memory.map_page(0, Rom(0));
+            memory.map_page(1, Rom(1));
+            memory.map_page(2, Rom(2));
+            memory.map_page(3, SystemRam);
+        }
+        SmsMemoryMapper::Codemasters => {
+            memory.map_page(0, Rom(0));
+            memory.map_page(1, Rom(1));
+            memory.map_page(0, Rom(0));
+            memory.map_page(3, SystemRam);
+        }
+        SmsMemoryMapper::Sg1000(x) => {
+            use self::MemoryPage::*;
+            use std::cmp::max;
+            let kib = max(1, x);
+            memory.set_system_ram_kib(kib);
+            memory.map_page(0, Rom(0));
+            memory.map_page(1, Rom(1));
+            memory.map_page(2, Rom(2));
+            memory.map_page(3, SystemRam);
+        }
+    }
+}
+
 /// The memory inside a Sega Master System.
 ///
 /// Includes the cartridge ROM, 8 KiB of system RAM, 0, 16, or 32 KiB of "main"
 /// cartridge RAM, and 0 or 8 KiB of "half" cartridge RAM.
-pub trait SmsMemory {
-    /// What memory page is `slot` mapped to?
-    ///
-    /// Panics if `slot > 3`.
-    fn page(&self, slot: u8) -> MemoryPage;
-
-    /// How much ROM on the cartridge, in bytes?
-    fn rom_len(&self) -> usize;
-
+pub trait SmsMemory: Memory16 {
     /// Read a byte of ROM.
     ///
     /// Panics if `index` is greater than the length of the ROM.
@@ -138,6 +219,9 @@ pub trait SmsMemory {
     /// when cloned. If that's the case, this method must
     /// XXX
     fn rom_write(&mut self, index: usize, value: u8);
+
+    /// How much ROM on the cartridge, in bytes?
+    fn rom_len(&self) -> usize;
 
     /// How much RAM is on the cartridge, in bytes?
     ///
@@ -173,9 +257,6 @@ pub trait SmsMemory {
     /// Panics if `index` is greater than the length of the RAM.
     fn half_cartridge_ram_write(&mut self, index: usize, value: u8);
 
-    /// Set how many KiB of RAM the system has.
-    fn set_system_ram_kib(&mut self, kib: usize);
-
     /// How much system RAM, in bytes?
     ///
     /// (This is always a multiple of 0x400.)
@@ -192,6 +273,18 @@ pub trait SmsMemory {
     fn system_ram_write(&mut self, index: usize, value: u8);
 
     fn state(&self) -> SmsMemoryState;
+
+    /// Set how many KiB of RAM the system has.
+    fn set_system_ram_kib(&mut self, kib: usize);
+
+    fn mapper(&self) -> SmsMemoryMapper;
+
+    fn set_mapper(&mut self, mapper: SmsMemoryMapper);
+
+    /// What memory page is `slot` mapped to?
+    ///
+    /// Panics if `slot > 3`.
+    fn page(&self, slot: u8) -> MemoryPage;
 
     /// Map `slot` to `page`.
     ///
@@ -221,99 +314,6 @@ pub trait SmsMemory {
     fn map_page_impl(&mut self, slot: u8, page: MemoryPage);
 }
 
-pub struct SmsMemoryImpl;
-
-impl<T> SmsMemory for T
-where
-    T: Impl<SmsMemoryImpl>,
-    T::Impler: SmsMemory,
-{
-    #[inline(always)]
-    fn page(&self, slot: u8) -> MemoryPage {
-        self.make().page(slot)
-    }
-
-    #[inline(always)]
-    fn rom_len(&self) -> usize {
-        self.make().rom_len()
-    }
-
-    #[inline(always)]
-    fn rom_read(&self, index: usize) -> u8 {
-        self.make().rom_read(index)
-    }
-
-    #[inline(always)]
-    fn rom_write(&mut self, index: usize, value: u8) {
-        self.make_mut().rom_write(index, value)
-    }
-
-    #[inline(always)]
-    fn main_cartridge_ram_len(&self) -> usize {
-        self.make().main_cartridge_ram_len()
-    }
-
-    #[inline(always)]
-    fn main_cartridge_ram_read(&self, index: usize) -> u8 {
-        self.make().main_cartridge_ram_read(index)
-    }
-
-    #[inline(always)]
-    fn main_cartridge_ram_write(&mut self, index: usize, value: u8) {
-        self.make_mut().main_cartridge_ram_write(index, value)
-    }
-
-    #[inline(always)]
-    fn half_cartridge_ram_len(&self) -> usize {
-        self.make().half_cartridge_ram_len()
-    }
-
-    #[inline(always)]
-    fn half_cartridge_ram_read(&self, index: usize) -> u8 {
-        self.make().half_cartridge_ram_read(index)
-    }
-
-    #[inline(always)]
-    fn half_cartridge_ram_write(&mut self, index: usize, value: u8) {
-        self.make_mut().half_cartridge_ram_write(index, value)
-    }
-
-    #[inline(always)]
-    fn set_system_ram_kib(&mut self, kib: usize) {
-        self.make_mut().set_system_ram_kib(kib)
-    }
-
-    #[inline(always)]
-    fn system_ram_len(&self) -> usize {
-        self.make().system_ram_len()
-    }
-
-    #[inline(always)]
-    fn system_ram_read(&self, index: usize) -> u8 {
-        self.make().system_ram_read(index)
-    }
-
-    #[inline(always)]
-    fn system_ram_write(&mut self, index: usize, value: u8) {
-        self.make_mut().system_ram_write(index, value)
-    }
-
-    #[inline(always)]
-    fn state(&self) -> SmsMemoryState {
-        self.make().state()
-    }
-
-    #[inline(always)]
-    fn map_page(&mut self, slot: u8, page: MemoryPage) {
-        self.make_mut().map_page(slot, page)
-    }
-
-    #[inline(always)]
-    fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
-        self.make_mut().map_page_impl(slot, page)
-    }
-}
-
 /// Captures the state of the memory in the Master System.
 ///
 /// In particular, it captures the ROM, system RAM, the main cartridge RAM, the
@@ -333,9 +333,11 @@ pub struct SmsMemoryState {
     pub main_cartridge_ram: MainCartridgeRam,
     pub half_cartridge_ram: Option<Box<[u8; 0x2000]>>,
     pub pages: [MemoryPage; 4],
+    pub mapper: SmsMemoryMapper,
 }
 
 mod _impl2 {
+    use super::*;
     use std::sync::Arc;
 
     #[derive(Hash, PartialEq, Serialize, Deserialize)]
@@ -345,6 +347,7 @@ mod _impl2 {
         pub main_cartridge_ram: super::MainCartridgeRam,
         pub half_cartridge_ram: Option<Box<[[[u8; 0x20]; 0x10]; 0x10]>>,
         pub pages: [super::MemoryPage; 4],
+        pub mapper: SmsMemoryMapper,
     }
 
     impl_serde_via!{super::SmsMemoryState, SmsMemoryStateDerive}
@@ -464,6 +467,7 @@ impl Memory16 for SmsMemoryState {
 
     fn write(&mut self, logical_address: u16, value: u8) {
         use self::MemoryPage::*;
+        memory_register_check(self, logical_address, value);
         let slot = logical_address >> 14;
         let address = logical_address as usize & 0x3FFF;
         match self.pages[slot as usize] {
@@ -490,7 +494,34 @@ impl Memory16 for SmsMemoryState {
     }
 }
 
+/// Check if writing to a register and update slots/pages as necessary.
+pub fn memory_register_check<M>(memory: &mut M, logical_address: u16, value: u8)
+where
+    M: SmsMemory + ?Sized,
+{
+    match memory.mapper() {
+        SmsMemoryMapper::Sega => reg_sega(memory, logical_address, value),
+        SmsMemoryMapper::Codemasters => reg_codemasters(memory, logical_address, value),
+        SmsMemoryMapper::Sg1000(_) => {}
+    }
+}
+
 impl SmsMemory for SmsMemoryState {
+    fn set_system_ram_kib(&mut self, kib: usize) {
+        let ram: Vec<[u8; 0x400]> = vec![[0u8; 0x400]; kib];
+        self.system_ram = ram.into_boxed_slice();
+    }
+
+    #[inline(always)]
+    fn mapper(&self) -> SmsMemoryMapper {
+        self.mapper
+    }
+
+    #[inline(always)]
+    fn set_mapper(&mut self, mapper: SmsMemoryMapper) {
+        self.mapper = mapper;
+    }
+
     #[inline(always)]
     fn page(&self, slot: u8) -> MemoryPage {
         self.pages[slot as usize]
@@ -501,6 +532,10 @@ impl SmsMemory for SmsMemoryState {
         self.rom.len() * 0x4000
     }
 
+    #[inline(always)]
+    fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
+        self.pages[slot as usize] = page;
+    }
     #[inline(always)]
     fn rom_read(&self, index: usize) -> u8 {
         self.rom[index >> 14][index & 0x3FFF]
@@ -575,11 +610,6 @@ impl SmsMemory for SmsMemoryState {
         }
     }
 
-    fn set_system_ram_kib(&mut self, kib: usize) {
-        let ram: Vec<[u8; 0x400]> = vec![[0u8; 0x400]; kib];
-        self.system_ram = ram.into_boxed_slice();
-    }
-
     #[inline(always)]
     fn system_ram_len(&self) -> usize {
         self.system_ram.len() * 0x400
@@ -598,11 +628,6 @@ impl SmsMemory for SmsMemoryState {
     #[inline(always)]
     fn state(&self) -> SmsMemoryState {
         self.clone()
-    }
-
-    #[inline(always)]
-    fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
-        self.pages[slot as usize] = page;
     }
 }
 
@@ -678,61 +703,9 @@ pub trait SmsMemoryLoad: Sized {
             main_cartridge_ram: Default::default(),
             half_cartridge_ram: Default::default(),
             pages: Default::default(),
+            mapper: Default::default(),
         };
         return Self::load(state);
-    }
-}
-
-/// A memory mapper for the Sega Master System.
-///
-/// The memory mappers for the SMS control which logical memory slot is mapped
-/// to which physical memory page via writes to certain memory locations.
-///
-/// An `SmsMapper` implements this scheme; each time an address is written to,
-/// `write_reg` should be called before actually writing to memory.
-pub trait SmsMapper<M: ?Sized> {
-    /// If `address` corresponds to a memory control register, change the memory
-    /// mappings in `memory` as appropriate.
-    fn write_reg(&mut self, memory: &mut M, address: u16, value: u8);
-
-    /// reset this memory to its default mapping state
-    fn default_mappings(&mut self, memory: &mut M);
-}
-
-/// Use in conjunction with an `SmsMapper` and a `Memory` to get an
-/// implementation of `Memory16` using the `SmsMapper`.
-pub struct SmsMapMemory16Impler<Memory: ?Sized, Mapper: ?Sized>(Ref<Memory>, Ref<Mapper>);
-
-impl<T: ?Sized, U: ?Sized> SmsMapMemory16Impler<T, U> {
-    #[inline(always)]
-    pub fn new<'a>(t: &'a T, u: &'a U) -> Cref<'a, Self> {
-        Cref::Own(SmsMapMemory16Impler(unsafe { Ref::new(t) }, unsafe {
-            Ref::new(u)
-        }))
-    }
-
-    #[inline(always)]
-    pub fn new_mut<'a>(t: &'a mut T, u: &'a mut U) -> Mref<'a, Self> {
-        Mref::Own(SmsMapMemory16Impler(unsafe { Ref::new_mut(t) }, unsafe {
-            Ref::new_mut(u)
-        }))
-    }
-}
-
-impl<Memory, Mapper> Memory16 for SmsMapMemory16Impler<Memory, Mapper>
-where
-    Memory: SmsMemory + Memory16 + ?Sized,
-    Mapper: SmsMapper<Memory> + ?Sized,
-{
-    #[inline(always)]
-    fn read(&mut self, logical_address: u16) -> u8 {
-        self.0.mut_0().read(logical_address)
-    }
-
-    #[inline(always)]
-    fn write(&mut self, logical_address: u16, value: u8) {
-        Mapper::write_reg(self.1.mut_0(), self.0.mut_0(), logical_address, value);
-        self.0.mut_0().write(logical_address, value);
     }
 }
 
@@ -791,7 +764,7 @@ mod _impl3 {
     }
 
     impl Clone for PointerSmsMemory {
-        #[inline(always)]
+        #[inline]
         fn clone(&self) -> Self {
             use std::ptr::null;
             use std::ptr::null_mut;
@@ -820,7 +793,6 @@ mod _impl3 {
     }
 
     impl<'de> Deserialize<'de> for PointerSmsMemory {
-        #[inline(always)]
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
@@ -859,7 +831,6 @@ mod _impl3 {
     }
 
     impl SmsMemoryLoad for PointerSmsMemory {
-        #[inline(always)]
         fn load(state: SmsMemoryState) -> Result<Self, SmsMemoryLoadError> {
             use std::ptr::null;
             use std::ptr::null_mut;
@@ -989,6 +960,7 @@ impl Memory16 for PointerSmsMemory {
     #[inline]
     fn write(&mut self, logical_address: u16, value: u8) {
         use std::mem::transmute;
+        memory_register_check(self, logical_address, value);
         unsafe {
             let write_minislots: &mut [*mut u8; 64] = transmute(&mut self.write_minislots);
             *write_minislots[logical_address as usize >> 10]
@@ -998,6 +970,21 @@ impl Memory16 for PointerSmsMemory {
 }
 
 impl SmsMemory for PointerSmsMemory {
+    fn set_system_ram_kib(&mut self, kib: usize) {
+        self.state_mut().set_system_ram_kib(kib);
+        self.reset_pointers();
+    }
+
+    #[inline(always)]
+    fn mapper(&self) -> SmsMemoryMapper {
+        self.state().mapper()
+    }
+
+    #[inline(always)]
+    fn set_mapper(&mut self, mapper: SmsMemoryMapper) {
+        self.state_mut().set_mapper(mapper)
+    }
+
     #[inline]
     fn page(&self, slot: u8) -> MemoryPage {
         self.state().page(slot)
@@ -1008,6 +995,14 @@ impl SmsMemory for PointerSmsMemory {
         self.state().rom_len()
     }
 
+    #[inline]
+    fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
+        // let's not go through a bunch of moving around pointers unless we
+        // really have to
+        if self.page(slot) != page {
+            self.force_map_page(slot, page)
+        }
+    }
     #[inline]
     fn rom_read(&self, index: usize) -> u8 {
         self.state().rom_read(index)
@@ -1060,11 +1055,6 @@ impl SmsMemory for PointerSmsMemory {
         self.state_mut().half_cartridge_ram_write(index, value)
     }
 
-    fn set_system_ram_kib(&mut self, kib: usize) {
-        self.state_mut().set_system_ram_kib(kib);
-        self.reset_pointers();
-    }
-
     #[inline]
     fn system_ram_len(&self) -> usize {
         self.state().system_ram_len()
@@ -1083,14 +1073,5 @@ impl SmsMemory for PointerSmsMemory {
     #[inline]
     fn state(&self) -> SmsMemoryState {
         self.state().state()
-    }
-
-    #[inline]
-    fn map_page_impl(&mut self, slot: u8, page: MemoryPage) {
-        // let's not go through a bunch of moving around pointers unless we
-        // really have to
-        if self.page(slot) != page {
-            self.force_map_page(slot, page)
-        }
     }
 }

@@ -6,7 +6,7 @@ pub use hardware::io16::*;
 pub use hardware::memory16::*;
 pub use hardware::sms_io::*;
 pub use hardware::sms_irq::*;
-pub use hardware::sms_memory::*;
+pub use hardware::sms_memory::{self, *};
 pub use hardware::sms_player_input::*;
 pub use hardware::sms_roms::{self, *};
 pub use hardware::sms_vdp::{self, *};

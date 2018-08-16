@@ -146,7 +146,7 @@ pub trait UiHelper {
     fn frame_update(
         &mut self,
         ui: &mut UiStatus,
-    ) -> Result<Option<SmsPlayerInputState>, SmsEmulationError>;
+    ) -> Result<Option<SmsPlayerInput>, SmsEmulationError>;
 }
 
 pub struct Ui {

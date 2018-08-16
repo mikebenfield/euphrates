@@ -10,7 +10,7 @@ use self::Reg8::*;
 
 pub fn outid_help<Z>(z: &mut Z, inc: u16)
 where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
+    Z: Z80IoT + ?Sized,
 {
     let b = B.view(z);
     let new_b = b.wrapping_sub(1);
@@ -18,36 +18,36 @@ where
     let addr = BC.view(z);
     let hl = HL.view(z);
     let x = Address(hl).view(z);
-    z.output(addr, x);
+    z.io().output(addr, x);
     HL.change(z, hl.wrapping_add(inc));
 }
 
 pub fn in_help<Z, T1>(z: &mut Z, arg: T1) -> u8
 where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
+    Z: Z80IoT + ?Sized,
     T1: Viewable<u8>,
 {
     let address_lo = arg.view(z);
     let address_hi = B.view(z);
     let address = utilities::to16(address_lo, address_hi);
-    let x = z.input(address);
+    let x = z.io().input(address);
 
-    z.set_parity(x);
-    z.set_sign(x);
-    z.set_zero(x);
-    z.clear_flag(HF | NF);
+    z.z80().set_parity(x);
+    z.z80().set_sign(x);
+    z.z80().set_zero(x);
+    z.z80().clear_flag(HF | NF);
 
     x
 }
 
 pub fn inid_help<Z>(z: &mut Z, inc: u16) -> u8
 where
-    Z: Z80Internal + Memory16 + Io16 + ?Sized,
+    Z: Z80IoT + ?Sized,
 {
     let b = B.view(z);
     let hl = HL.view(z);
     let addr = BC.view(z);
-    let x = z.input(addr);
+    let x = z.io().input(addr);
     Address(hl).change(z, x);
     B.change(z, b.wrapping_sub(1));
     HL.change(z, hl.wrapping_add(inc));
@@ -154,7 +154,7 @@ where
 
 pub fn cpid<Z>(z: &mut Z, inc: u16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80MemT + ?Sized,
 {
     let bc = BC.view(z);
     let a = A.view(z);
@@ -166,30 +166,30 @@ where
     HL.change(z, hl.wrapping_add(inc));
     BC.change(z, bc.wrapping_sub(1));
 
-    z.set_sign(result);
-    z.set_zero(result);
-    z.set_flag_by(HF, phl & 0xF > a & 0xF);
-    z.set_flag_by(PF, bc != 1);
-    z.set_flag(NF);
+    z.z80().set_sign(result);
+    z.z80().set_zero(result);
+    z.z80().set_flag_by(HF, phl & 0xF > a & 0xF);
+    z.z80().set_flag_by(PF, bc != 1);
+    z.z80().set_flag(NF);
 }
 
 pub fn ldid<Z>(z: &mut Z, inc: u16)
 where
-    Z: Z80Internal + Memory16 + ?Sized,
+    Z: Z80MemT + ?Sized,
 {
     let hl = HL.view(z);
     let de = DE.view(z);
     let bc = BC.view(z);
 
-    let phl = z.read(hl);
+    let phl = z.memory().read(hl);
     Address(de).change(z, phl);
 
     HL.change(z, hl.wrapping_add(inc));
     DE.change(z, de.wrapping_add(inc));
     BC.change(z, bc.wrapping_sub(1));
 
-    z.clear_flag(HF | NF);
-    z.set_flag_by(PF, bc != 1);
+    z.z80().clear_flag(HF | NF);
+    z.z80().set_flag_by(PF, bc != 1);
 }
 
 /// Most of the functions in the rotate and shift group have similar addressing modes,
@@ -199,36 +199,36 @@ macro_rules! rotate_shift_functions_noa_help {
     ($fn_help:ident $fn_help2:ident $fn_general:ident $fn_store:ident) => {
         fn $fn_help2<Z, T1>(z: &mut Z, arg: T1) -> u8
         where
-            Z: Z80Internal + Memory16 + ?Sized,
+            Z: Z80MemT + ?Sized,
             T1: Changeable<u8>,
         {
             let a = arg.view(z);
-            let result = $fn_help(z, a);
+            let result = $fn_help(z.z80(), a);
             arg.change(z, result);
-            z.clear_flag(HF | NF);
+            z.z80().clear_flag(HF | NF);
             result
         }
 
         pub fn $fn_general<Z, T1>(z: &mut Z, arg: T1)
         where
-            Z: Z80Internal + Memory16 + ?Sized,
+            Z: Z80MemT + ?Sized,
             T1: Changeable<u8>,
         {
             let result = $fn_help2(z, arg);
-            z.set_parity(result);
-            z.set_sign(result);
-            z.set_zero(result);
+            z.z80().set_parity(result);
+            z.z80().set_sign(result);
+            z.z80().set_zero(result);
         }
 
         pub fn $fn_store<Z, T1>(z: &mut Z, arg: T1, store: Reg8)
         where
-            Z: Z80Internal + Memory16 + ?Sized,
+            Z: Z80MemT + ?Sized,
             T1: Changeable<u8>,
         {
             let result = $fn_help2(z, arg);
-            z.set_parity(result);
-            z.set_sign(result);
-            z.set_zero(result);
+            z.z80().set_parity(result);
+            z.z80().set_sign(result);
+            z.z80().set_zero(result);
             store.change(z, result);
         }
     };
@@ -238,7 +238,7 @@ macro_rules! rotate_shift_functions_help {
     ($fn_help:ident $fn_help2:ident $fn_general:ident $fn_store:ident $fn_a:ident) => {
         pub fn $fn_a<Z>(z: &mut Z)
         where
-            Z: Z80Internal + Memory16 + ?Sized,
+            Z: Z80MemT + ?Sized,
         {
             $fn_help2(z, A);
         }

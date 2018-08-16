@@ -1,37 +1,20 @@
 //! The IO system of the Sega Master System.
 
-use impler::{Cref, Mref, Ref};
-
 use super::io16::Io16;
 use super::sms_player_input::SmsPlayerInput;
 use super::sms_vdp::{SmsVdpInterface, SmsVdpInternal};
 use super::sn76489::Sn76489Interface;
 
-/// An Impler for `Io16`.
-///
-/// If `T` implements
-///
-/// * `SmsPlayerInput`,
-/// * `SmsVdpInternal`,
-/// * `SmsVdpInterface`, and
-/// * `Sn74689Interface`,
-///
-/// then `SmsIo16Impler<T>` implements `Io16`.
-pub struct SmsIo16Impler<T: ?Sized>(Ref<T>);
-
-impl<T: ?Sized> SmsIo16Impler<T> {
-    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
-        Cref::Own(SmsIo16Impler(unsafe { Ref::new(t) }))
-    }
-
-    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
-        Mref::Own(SmsIo16Impler(unsafe { Ref::new_mut(t) }))
-    }
+pub struct SmsIo16Impler<'a, V: 'a + ?Sized, S: 'a + ?Sized> {
+    pub vdp: &'a mut V,
+    pub sn76489: &'a mut S,
+    pub player_input: SmsPlayerInput,
 }
 
-impl<T> Io16 for SmsIo16Impler<T>
+impl<'a, V: 'a, S: 'a> Io16 for SmsIo16Impler<'a, V, S>
 where
-    T: SmsPlayerInput + SmsVdpInterface + SmsVdpInternal + Sn76489Interface + ?Sized,
+    V: SmsVdpInterface + SmsVdpInternal + ?Sized,
+    S: Sn76489Interface + ?Sized,
 {
     fn input(&mut self, address: u16) -> u8 {
         use hardware::sms_vdp::Kind;
@@ -39,7 +22,7 @@ where
         let masked = (address & 0b11000001) as u8;
         let value = match masked {
             0b00000000 => {
-                match (self.0._0().kind(), self.0._0().pause()) {
+                match (self.vdp.kind(), self.player_input.pause()) {
                     (Kind::Gg, true) => 0,
                     (Kind::Gg, false) => 0x80,
                     // This is what the SMS 2 does. In the original SMS, reads
@@ -55,27 +38,27 @@ where
             }
             0b01000000 => {
                 // V counter
-                self.0.mut_0().read_v()
+                self.vdp.read_v()
             }
             0b01000001 => {
                 // H counter
-                self.0.mut_0().read_h()
+                self.vdp.read_h()
             }
             0b10000000 => {
                 // VDP data
-                self.0.mut_0().read_data()
+                self.vdp.read_data()
             }
             0b10000001 => {
                 // VDP control
-                self.0.mut_0().read_control()
+                self.vdp.read_control()
             }
             0b11000000 => {
                 // IO port A/B register
-                self.0._0().joypad_a()
+                self.player_input.joypad_a()
             }
             0b11000001 => {
                 // IO port B register
-                self.0._0().joypad_b()
+                self.player_input.joypad_b()
             }
             _ => {
                 unreachable!("Missing IO address in input");
@@ -99,16 +82,16 @@ where
             }
             0b01000000 =>
                 // SN76489 write
-                 self.0.mut_0().write(value),
+                self.sn76489.write(value),
             0b01000001 =>
                 // SN76489 write
-                 self.0.mut_0().write(value),
+                self.sn76489.write(value),
             0b10000000 =>
                 // VDP data port write
-                 self.0.mut_0().write_data(value),
+                self.vdp.write_data(value),
             0b10000001 =>
                 // VDP control port write
-                 self.0.mut_0().write_control(value),
+                self.vdp.write_control(value),
             _ => {}
         }
     }

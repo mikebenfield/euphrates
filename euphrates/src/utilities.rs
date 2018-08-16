@@ -19,55 +19,6 @@ pub fn clear_bit(dest: &mut u8, bit: u8) {
     *dest &= !(1 << bit);
 }
 
-macro_rules! type_to_format_string {
-    (u8) => {
-        "{:>02X}"
-    };
-    (u16) => {
-        "{:>04X}"
-    };
-    (u32) => {
-        "{:>08X}"
-    };
-    (u64) => {
-        "{:>016X}"
-    };
-    (usize) => {
-        "{:>016X}"
-    };
-    ($t:ty) => {
-        "{}"
-    };
-}
-
-macro_rules! display_branch {
-    ($x: ident, $formatter: ident, $variant: ident) => {
-        if let $variant = $x {
-            return stringify!($variant).fmt($formatter);
-        }
-    };
-    ($x: ident, $formatter: ident, $variant: ident {
-        $($member_name: ident: $typ: ty),*
-    }) => {
-        if let $variant {
-            $($member_name),*
-        } = $x {
-            return
-                format_args!(
-                    concat!(
-                        stringify!($variant_name),
-                        " {{ ",
-                        $(
-                            stringify!($member_name:), " ", type_to_format_string!($typ), ",",
-                        )*
-                        " }}"
-                    ),
-                    $($member_name),*
-                ).fmt($formatter);
-        }
-    }
-}
-
 use serde::de::{Deserialize, Deserializer, Error as DeError, SeqAccess, Visitor};
 
 //// Deriving help

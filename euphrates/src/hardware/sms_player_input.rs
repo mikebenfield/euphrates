@@ -1,7 +1,5 @@
 //! The status of player input on the Sega Master System.
 
-use impler::Impl;
-
 /// Bit flags for Joypad Port A.
 ///
 /// Note that a button press is indicated by a flag *not* being set.
@@ -35,22 +33,22 @@ pub mod joypad_b_bits {
 /// Since button presses are indicated by flags *not* being set,
 /// `Default::default()` will set `joypad_a` and `joypad_b` to `0xFF`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct SmsPlayerInputState {
+pub struct SmsPlayerInput {
     /// Joypad Port A (which doesn't completely correspond to Joypad 1; see
     /// `joypad_a_bits`).
-    pub joypad_a: u8,
+    joypad_a: u8,
     /// Joypad Port B (which doesn't completely correspond to Joypad 2; see
     /// `joypad_b_bits`).
-    pub joypad_b: u8,
+    joypad_b: u8,
 
     /// The pause button.
-    pub pause: bool,
+    pause: bool,
 }
 
-impl Default for SmsPlayerInputState {
+impl Default for SmsPlayerInput {
     #[inline]
     fn default() -> Self {
-        SmsPlayerInputState {
+        SmsPlayerInput {
             joypad_a: 0xFF,
             joypad_b: 0xFF,
             pause: false,
@@ -58,104 +56,34 @@ impl Default for SmsPlayerInputState {
     }
 }
 
-impl SmsPlayerInput for SmsPlayerInputState {
+impl SmsPlayerInput {
     #[inline]
-    fn joypad_a(&self) -> u8 {
+    pub fn joypad_a(&self) -> u8 {
         self.joypad_a
     }
 
     #[inline]
-    fn set_joypad_a(&mut self, x: u8) {
+    pub fn set_joypad_a(&mut self, x: u8) {
         self.joypad_a = x
     }
 
     #[inline]
-    fn joypad_b(&self) -> u8 {
+    pub fn joypad_b(&self) -> u8 {
         self.joypad_b
     }
 
     #[inline]
-    fn set_joypad_b(&mut self, x: u8) {
+    pub fn set_joypad_b(&mut self, x: u8) {
         self.joypad_b = x
     }
 
     #[inline]
-    fn pause(&self) -> bool {
+    pub fn pause(&self) -> bool {
         self.pause
     }
 
     #[inline]
-    fn set_pause(&mut self, x: bool) {
+    pub fn set_pause(&mut self, x: bool) {
         self.pause = x
-    }
-
-    #[inline]
-    fn state(&self) -> SmsPlayerInputState {
-        *self
-    }
-
-    #[inline]
-    fn set_state(&mut self, x: SmsPlayerInputState) {
-        *self = x
-    }
-}
-
-/// What buttons are being pressed this frame?
-pub trait SmsPlayerInput {
-    fn joypad_a(&self) -> u8;
-    fn set_joypad_a(&mut self, x: u8);
-    fn joypad_b(&self) -> u8;
-    fn set_joypad_b(&mut self, x: u8);
-    fn pause(&self) -> bool;
-    fn set_pause(&mut self, x: bool);
-    fn state(&self) -> SmsPlayerInputState;
-    fn set_state(&mut self, x: SmsPlayerInputState);
-}
-
-pub struct SmsPlayerInputImpl;
-
-impl<T> SmsPlayerInput for T
-where
-    T: Impl<SmsPlayerInputImpl> + ?Sized,
-    T::Impler: SmsPlayerInput,
-{
-    #[inline]
-    fn joypad_a(&self) -> u8 {
-        self.make().joypad_a()
-    }
-
-    #[inline]
-    fn set_joypad_a(&mut self, x: u8) {
-        self.make_mut().set_joypad_a(x)
-    }
-
-    #[inline]
-    fn joypad_b(&self) -> u8 {
-        self.make().joypad_b()
-    }
-
-    #[inline]
-    fn set_joypad_b(&mut self, x: u8) {
-        self.make_mut().set_joypad_b(x)
-    }
-
-    #[inline]
-    fn pause(&self) -> bool {
-        self.make().pause()
-    }
-
-    #[inline]
-    fn set_pause(&mut self, x: bool) {
-        self.make_mut().set_pause(x)
-    }
-
-    #[inline]
-    fn state(&self) -> SmsPlayerInputState {
-        self.make().state()
-    }
-
-    #[inline]
-    fn set_state(&mut self, x: SmsPlayerInputState) {
-        self.make_mut().set_state(x)
     }
 }

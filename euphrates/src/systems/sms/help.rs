@@ -5,7 +5,7 @@ use super::*;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Recording<H> {
     pub state: H,
-    pub player_statuses: Vec<SmsPlayerInputState>,
+    pub player_statuses: Vec<SmsPlayerInput>,
 }
 
 /// Internal type for UserInterface to record gameplay
@@ -21,7 +21,7 @@ impl<S> Default for RecordingStatus<S> {
 impl<S> RecordingStatus<S> {
     /// Call this every frame, after reading player's status but before
     /// emulating the frame
-    pub fn update(&mut self, player_status: SmsPlayerInputState) {
+    pub fn update(&mut self, player_status: SmsPlayerInput) {
         if let Some(ref mut recording) = self.0 {
             recording.player_statuses.push(player_status)
         }
@@ -47,16 +47,16 @@ impl<S> RecordingStatus<S> {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct PlaybackStatus(Vec<SmsPlayerInputState>);
+pub struct PlaybackStatus(Vec<SmsPlayerInput>);
 
 impl PlaybackStatus {
-    pub fn from_recorded(player_statuses: &[SmsPlayerInputState]) -> PlaybackStatus {
+    pub fn from_recorded(player_statuses: &[SmsPlayerInput]) -> PlaybackStatus {
         let mut v = player_statuses.to_vec();
         v.reverse();
         PlaybackStatus(v)
     }
 
-    pub fn pop(&mut self) -> Option<SmsPlayerInputState> {
+    pub fn pop(&mut self) -> Option<SmsPlayerInput> {
         self.0.pop()
     }
 

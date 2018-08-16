@@ -5,11 +5,9 @@ use failure::Error;
 use sdl2;
 
 use euphrates::systems::sms::{
-    joypad_a_bits, joypad_b_bits, Command, CommandResult, PlaybackStatus, Query, QueryResult, Sms,
-    SmsEmulationError, SmsPlayerInputState, Ui, UiHelper, UiStatus, UserMessage,
+    joypad_a_bits, joypad_b_bits, Command, PlaybackStatus, Query, Sms, SmsEmulationError,
+    SmsPlayerInput, Ui, UiHelper, UiStatus, UserMessage,
 };
-
-use simple_graphics::Window;
 
 struct PlaybackHelper(PlaybackStatus);
 
@@ -17,7 +15,7 @@ impl UiHelper for PlaybackHelper {
     fn frame_update(
         &mut self,
         _status: &mut UiStatus,
-    ) -> Result<Option<SmsPlayerInputState>, SmsEmulationError> {
+    ) -> Result<Option<SmsPlayerInput>, SmsEmulationError> {
         let option_player_status = self.0.pop();
         if option_player_status.is_some() {
             Ok(option_player_status)
@@ -27,7 +25,7 @@ impl UiHelper for PlaybackHelper {
     }
 }
 
-pub fn playback_ui(master_system: Box<dyn Sms>, player_statuses: &[SmsPlayerInputState]) -> Ui {
+pub fn playback_ui(master_system: Box<dyn Sms>, player_statuses: &[SmsPlayerInput]) -> Ui {
     let helper = Box::new(PlaybackHelper(PlaybackStatus::from_recorded(
         player_statuses,
     )));
@@ -38,14 +36,13 @@ pub fn playback_ui(master_system: Box<dyn Sms>, player_statuses: &[SmsPlayerInpu
 struct SdlUiHelper {
     event_pump: sdl2::EventPump,
     playback_status: PlaybackStatus,
-    tile_window: Option<Window>,
 }
 
 impl UiHelper for SdlUiHelper {
     fn frame_update(
         &mut self,
         status: &mut UiStatus,
-    ) -> Result<Option<SmsPlayerInputState>, SmsEmulationError> {
+    ) -> Result<Option<SmsPlayerInput>, SmsEmulationError> {
         use sdl2::keyboard::Scancode::*;
 
         for message in status.messages() {
@@ -59,19 +56,22 @@ impl UiHelper for SdlUiHelper {
             }
         }
 
-        let mut player_status = SmsPlayerInputState::default();
+        let mut player_status = SmsPlayerInput::default();
 
         #[allow(dead_code)]
         fn do_command(status: &mut UiStatus, command: Command) {
-            if CommandResult::Unsupported == status.master_system_mut().command(command) {
+            if let Some(d) = status.master_system_mut().debugger() {
+                d.command(command)
+            } else {
                 eprintln!("Unsupported command {:?}", command);
             }
         }
 
         fn do_query(status: &mut UiStatus, query: Query) {
-            match status.master_system_mut().query(query) {
-                QueryResult::Ok(s) => println!("{}", s),
-                QueryResult::Unsupported => eprintln!("Unsupported query {:?}", query),
+            if let Some(d) = status.master_system_mut().debugger() {
+                println!("{}", d.query(query));
+            } else {
+                eprintln!("Unsupported query {:?}", query);
             }
         }
 
@@ -87,14 +87,14 @@ impl UiHelper for SdlUiHelper {
                     keymod.contains(sdl2::keyboard::LSHIFTMOD)
                         || keymod.contains(sdl2::keyboard::RSHIFTMOD),
                 ) {
-                    (P, _) => player_status.pause = true,
+                    (P, _) => player_status.set_pause(true),
                     (R, false) => status.begin_recording(),
                     (R, true) => status.save_recording(None),
                     (Z, _) => status.save_state(None),
                     (M, false) => do_query(status, Query::RecentMemos),
                     (N, false) => {
                         use euphrates::hardware::z80::Reg16::PC;
-                        let pc = status.master_system().reg16(PC);
+                        let pc = status.master_system().z80().reg16(PC);
                         do_query(status, Query::DisassemblyAt(pc));
                     }
                     (N, true) => do_query(status, Query::Disassembly),
@@ -123,7 +123,7 @@ impl UiHelper for SdlUiHelper {
             .iter()
             .filter(|(scancode, _)| keyboard_state.is_scancode_pressed(*scancode))
             .for_each(|(_, bit)| joypad_a &= !*bit);
-        player_status.joypad_a = joypad_a;
+        player_status.set_joypad_a(joypad_a);
 
         let mut joypad_b = 0xFF;
         let array_b = [
@@ -137,17 +137,12 @@ impl UiHelper for SdlUiHelper {
             .iter()
             .filter(|(scancode, _)| keyboard_state.is_scancode_pressed(*scancode))
             .for_each(|(_, bit)| joypad_b &= !*bit);
-        player_status.joypad_b = joypad_b;
+        player_status.set_joypad_b(joypad_b);
 
         if player_status != Default::default() {
             self.playback_status.end_playback();
         } else if let Some(ps) = self.playback_status.pop() {
             player_status = ps;
-        }
-
-        if let Some(ref mut window) = self.tile_window {
-            use euphrates::hardware::sms_vdp::debug::draw_tiles;
-            draw_tiles(status.master_system(), window)?;
         }
 
         Ok(Some(player_status))
@@ -159,8 +154,7 @@ pub fn ui(
     master_system: Box<dyn Sms>,
     sdl: &sdl2::Sdl,
     save_directory: Option<PathBuf>,
-    player_statuses: &[SmsPlayerInputState],
-    use_tile_window: bool,
+    player_statuses: &[SmsPlayerInput],
 ) -> Result<Ui, Error> {
     sdl.event()
         .map_err(|s| format_err!("Error initializing the SDL event subsystem {}", s))?;
@@ -168,20 +162,10 @@ pub fn ui(
     let event_pump = sdl
         .event_pump()
         .map_err(|s| format_err!("Error obtaining the SDL event pump {}", s))?;
-    let tile_window = if use_tile_window {
-        let mut graphics = Window::new(&sdl)?;
-        graphics.set_size(768, 576);
-        graphics.set_texture_size(256, 192);
-        graphics.set_title("Euphrates tiles");
-        Some(graphics)
-    } else {
-        None
-    };
 
     let helper = Box::new(SdlUiHelper {
         event_pump,
         playback_status: PlaybackStatus::from_recorded(player_statuses),
-        tile_window,
     });
 
     Ok(Ui::new(master_system, helper, save_directory))

@@ -1,42 +1,10 @@
 use std::collections::VecDeque;
-use std::fmt::{self, Write};
+use std::fmt::Write;
 
 use hardware::z80::{Opcode, TargetMnemonic};
-use impler::Impl;
 use memo::{Inbox, NothingInbox};
 
 use super::*;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum SmsMemo {
-    Memory(SmsMemoryMemo),
-    Z80(Z80Memo),
-}
-
-impl fmt::Display for SmsMemo {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        use self::SmsMemo::*;
-
-        match *self {
-            Memory(x) => format_args!("Memory : {}", x).fmt(f),
-            Z80(x) => format_args!("Z80    : {}", x).fmt(f),
-        }
-    }
-}
-
-impl From<SmsMemoryMemo> for SmsMemo {
-    #[inline]
-    fn from(x: SmsMemoryMemo) -> Self {
-        SmsMemo::Memory(x)
-    }
-}
-
-impl From<Z80Memo> for SmsMemo {
-    #[inline]
-    fn from(x: Z80Memo) -> Self {
-        SmsMemo::Z80(x)
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Query {
@@ -48,12 +16,6 @@ pub enum Query {
     RecentMemos,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum QueryResult {
-    Ok(String),
-    Unsupported,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Command {
     Step,
@@ -63,34 +25,12 @@ pub enum Command {
     // RemoveBreakMemos,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
-pub enum CommandResult {
-    Ok,
-    Unsupported,
-}
-
 pub trait Debugger {
-    fn command(&mut self, command: Command) -> CommandResult;
-    fn query(&self, query: Query) -> QueryResult;
+    fn command(&mut self, command: Command);
+    fn query(&self, query: Query) -> String;
 }
 
 pub struct DebuggerImpl;
-
-impl<T> Debugger for T
-where
-    T: Impl<DebuggerImpl> + ?Sized,
-    T::Impler: Debugger,
-{
-    #[inline]
-    fn command(&mut self, command: Command) -> CommandResult {
-        self.make_mut().command(command)
-    }
-
-    #[inline]
-    fn query(&self, query: Query) -> QueryResult {
-        self.make().query(query)
-    }
-}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 enum DebugStatus {
@@ -122,7 +62,7 @@ pub struct DebuggingInbox {
     status: DebugStatus,
     pc_breakpoints: Vec<u16>,
     // memo_patterns: Vec<MemoPattern>,
-    recent_memos: VecDeque<SmsMemo>,
+    recent_memos: VecDeque<Z80Memo>,
 }
 
 impl DebuggingInbox {
@@ -247,14 +187,14 @@ impl Default for DebuggingInbox {
 }
 
 impl Inbox for DebuggingInbox {
-    type Memo = SmsMemo;
+    type Memo = Z80Memo;
 
-    fn receive_impl(&mut self, memo: SmsMemo) {
+    fn receive_impl(&mut self, memo: Z80Memo) {
         if self.recent_memos.len() >= MAX_MEMOS {
             self.recent_memos.pop_front();
         }
 
-        if let SmsMemo::Z80(Z80Memo::Instruction { pc, opcode }) = memo {
+        if let Z80Memo::Instruction { pc, opcode } = memo {
             let current_info = self.instructions[pc as usize];
             self.instructions[pc as usize] = MemoryLocation {
                 opcode: Some(opcode),
@@ -281,7 +221,7 @@ impl Inbox for DebuggingInbox {
 }
 
 impl Debugger for DebuggingInbox {
-    fn query(&self, query: Query) -> QueryResult {
+    fn query(&self, query: Query) -> String {
         use self::Query::*;
 
         let result = match query {
@@ -295,10 +235,10 @@ impl Debugger for DebuggingInbox {
             DisassemblyAt(pc) => self.disassembly_around(pc),
             Disassembly => self.disassembly(None, 0, 0xFFFF),
         };
-        QueryResult::Ok(result)
+        result
     }
 
-    fn command(&mut self, command: Command) -> CommandResult {
+    fn command(&mut self, command: Command) {
         use self::Command::*;
 
         match command {
@@ -308,19 +248,21 @@ impl Debugger for DebuggingInbox {
             // BreakAtMemo(pattern) => self.memo_patterns.push(pattern),
             // RemoveBreakMemos => self.memo_patterns = Vec::new(),
         }
-
-        CommandResult::Ok
     }
 }
 
-impl Debugger for NothingInbox<SmsMemo> {
-    #[inline]
-    fn query(&self, _query: Query) -> QueryResult {
-        QueryResult::Unsupported
-    }
+pub trait GetDebugger {
+    fn debugger(&mut self) -> Option<&mut dyn Debugger>;
+}
 
-    #[inline]
-    fn command(&mut self, _command: Command) -> CommandResult {
-        CommandResult::Unsupported
+impl GetDebugger for DebuggingInbox {
+    fn debugger(&mut self) -> Option<&mut dyn Debugger> {
+        Some(self)
+    }
+}
+
+impl GetDebugger for NothingInbox<Z80Memo> {
+    fn debugger(&mut self) -> Option<&mut dyn Debugger> {
+        None
     }
 }

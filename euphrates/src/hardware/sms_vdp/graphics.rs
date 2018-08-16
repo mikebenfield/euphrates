@@ -1,7 +1,6 @@
 use failure::Error;
 
 use host_multimedia::{SimpleColor, SimpleGraphics};
-use impler::{Cref, Impl, Mref, Ref};
 use utilities;
 
 use super::*;
@@ -25,31 +24,9 @@ pub trait SmsVdpGraphics {
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError>;
 }
 
-pub struct SmsVdpGraphicsImpl;
-
-impl<T: ?Sized> SmsVdpGraphics for T
-where
-    T: Impl<SmsVdpGraphicsImpl>,
-    T::Impler: SmsVdpGraphics,
-{
-    #[inline]
-    fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError> {
-        self.make_mut().draw_line()
-    }
-}
-
-pub struct SimpleSmsVdpGraphicsImpler<T: ?Sized>(Ref<T>);
-
-impl<T: ?Sized> SimpleSmsVdpGraphicsImpler<T> {
-    #[inline(always)]
-    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
-        Cref::Own(SimpleSmsVdpGraphicsImpler(unsafe { Ref::new(t) }))
-    }
-
-    #[inline(always)]
-    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
-        Mref::Own(SimpleSmsVdpGraphicsImpler(unsafe { Ref::new_mut(t) }))
-    }
+pub struct SmsVdpGraphicsImpler<'a, V: 'a, G: 'a> {
+    pub graphics: &'a mut G,
+    pub vdp: &'a mut V,
 }
 
 #[inline]
@@ -72,23 +49,23 @@ pub fn gg_color_to_simple_color(color: u16) -> SimpleColor {
     }
 }
 
-impl<T> SmsVdpGraphics for SimpleSmsVdpGraphicsImpler<T>
+impl<'a, V: 'a, G: 'a> SmsVdpGraphics for SmsVdpGraphicsImpler<'a, V, G>
 where
-    T: SimpleGraphics + SmsVdpInternal + ?Sized,
+    V: SmsVdpInternal,
+    G: SimpleGraphics,
 {
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError> {
-        let s = self.0.mut_0();
-        match (s.m1(), s.m2(), s.m3(), s.m4()) {
-            (_, _, _, true) => draw_line_mode4(s),
-            (false, false, false, _) => draw_line_graphics1(s),
-            (false, true, false, _) => draw_line_graphics2(s),
+        match (self.vdp.m1(), self.vdp.m2(), self.vdp.m3(), self.vdp.m4()) {
+            (_, _, _, true) => draw_line_mode4(self),
+            (false, false, false, _) => draw_line_graphics1(self),
+            (false, true, false, _) => draw_line_graphics2(self),
             _ => {
                 eprintln!(
                     "Invalid or unimplemented graphics mode {}, {}, {}, {}",
-                    s.m1(),
-                    s.m2(),
-                    s.m3(),
-                    s.m4()
+                    self.vdp.m1(),
+                    self.vdp.m2(),
+                    self.vdp.m3(),
+                    self.vdp.m4()
                 );
                 Ok(())
             }
@@ -298,33 +275,36 @@ pub static TMS9918_PALETTE_SMS: [SimpleColor; 16] = [
     },
 ];
 
-pub fn draw_sprites_tms<T>(s: &mut T) -> Result<(), SmsVdpGraphicsError>
+pub fn draw_sprites_tms<'a, V: 'a, G: 'a>(
+    s: &mut SmsVdpGraphicsImpler<'a, V, G>,
+) -> Result<(), SmsVdpGraphicsError>
 where
-    T: SimpleGraphics + SmsVdpInternal + ?Sized,
+    V: SmsVdpInternal,
+    G: SimpleGraphics,
 {
-    let sprites_large = s.register(1) & 2 != 0;
-    let sprites_zoom = s.register(1) & 1 != 0;
+    let sprites_large = s.vdp.register(1) & 2 != 0;
+    let sprites_zoom = s.vdp.register(1) & 1 != 0;
     let sprite_size = match (sprites_large, sprites_zoom) {
         (true, true) => 32,
         (false, false) => 8,
         _ => 16,
     };
 
-    let v = s.v();
+    let v = s.vdp.v();
 
-    let sprite_pattern_table = ((s.register(6) & 0x7) as u16) << 11;
-    let sprite_attribute_table = ((s.register(5) & 0x7F) as u16) << 7;
+    let sprite_pattern_table = ((s.vdp.register(6) & 0x7) as u16) << 11;
+    let sprite_attribute_table = ((s.vdp.register(5) & 0x7F) as u16) << 7;
 
     let mut sprites_on_line = 0;
 
     let mut line = [false; 256];
 
     for i in 0..32 {
-        let y = s.vram(sprite_attribute_table + 4 * i).wrapping_add(1) as u16;
+        let y = s.vdp.vram(sprite_attribute_table + 4 * i).wrapping_add(1) as u16;
         if y == 0xD1 {
             break;
         }
-        let x = s.vram(sprite_attribute_table + 4 * i + 1) as u16;
+        let x = s.vdp.vram(sprite_attribute_table + 4 * i + 1) as u16;
         let sprite_line = v.wrapping_sub(y);
         if sprite_line >= sprite_size {
             continue;
@@ -332,10 +312,10 @@ where
 
         sprites_on_line += 1;
         if sprites_on_line > 4 {
-            let mut status = s.status_flags() & 0xE0;
+            let mut status = s.vdp.status_flags() & 0xE0;
             status |= i as u8;
             status |= SPRITE_OVERFLOW_FLAG;
-            s.set_status_flags(status);
+            s.vdp.set_status_flags(status);
             return Ok(());
         }
 
@@ -344,19 +324,19 @@ where
         } else {
             sprite_line
         };
-        let name = s.vram(sprite_attribute_table + 4 * i + 2) as u16
+        let name = s.vdp.vram(sprite_attribute_table + 4 * i + 2) as u16
             & if sprites_large { 0xFC } else { 0xFF };
 
-        let last_byte = s.vram(sprite_attribute_table + 4 * i + 3);
+        let last_byte = s.vdp.vram(sprite_attribute_table + 4 * i + 3);
         let early_clock = last_byte & 0x80 != 0;
         let color = last_byte & 0xF;
         let color1 = TMS9918_PALETTE[color as usize];
 
         let line_pattern_index = sprite_pattern_table + name * 8 + sprite_y;
 
-        let pattern = s.vram(line_pattern_index);
+        let pattern = s.vdp.vram(line_pattern_index);
         let pattern2 = if sprites_large {
-            Some(s.vram(line_pattern_index + 16))
+            Some(s.vdp.vram(line_pattern_index + 16))
         } else {
             None
         };
@@ -364,11 +344,11 @@ where
         let mut render_pattern = |mut pattern: u8, mut screen_x: u16| {
             let mut draw = |x| {
                 if line[x as usize] {
-                    s.trigger_sprite_collision();
+                    s.vdp.trigger_sprite_collision();
                     return;
                 }
                 line[x as usize] = true;
-                s.paint(x as u32, v as u32, color1);
+                s.graphics.paint(x as u32, v as u32, color1);
             };
             if sprites_zoom {
                 for _ in 0..8 {
@@ -407,29 +387,35 @@ where
     Ok(())
 }
 
-pub fn draw_line_graphics1<T>(s: &mut T) -> Result<(), SmsVdpGraphicsError>
+pub fn draw_line_graphics1<'a, V: 'a, G: 'a>(
+    s: &mut SmsVdpGraphicsImpler<'a, V, G>,
+) -> Result<(), SmsVdpGraphicsError>
 where
-    T: SimpleGraphics + SmsVdpInternal + ?Sized,
+    V: SmsVdpInternal,
+    G: SimpleGraphics,
 {
-    let pattern_table = ((s.register(4) & 0x7) as u16) << 11;
-    let name_table = ((s.register(2) & 0xF) as u16) << 10;
-    let color_table = (s.register(3) as u16) << 6;
+    let pattern_table = ((s.vdp.register(4) & 0x7) as u16) << 11;
+    let name_table = ((s.vdp.register(2) & 0xF) as u16) << 10;
+    let color_table = (s.vdp.register(3) as u16) << 6;
 
-    let v = s.v();
+    let v = s.vdp.v();
 
     if v >= 192 {
-        if v + 1 == s.total_lines() {
-            s.render().map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
+        if v + 1 == s.vdp.total_lines() {
+            s.graphics
+                .render()
+                .map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
         }
         return Ok(());
     }
 
-    s.set_resolution(256, 192)
+    s.graphics
+        .set_resolution(256, 192)
         .map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
 
-    if !s.display_visible() {
+    if !s.vdp.display_visible() {
         for x in 0..256 {
-            s.paint(
+            s.graphics.paint(
                 x,
                 v as u32,
                 SimpleColor {
@@ -445,14 +431,14 @@ where
     let tile_y = v / 8;
     let tile_line = v % 8;
     for tile_x in 0..32 {
-        let name = s.vram(name_table + tile_y * 32 + tile_x) as u16;
+        let name = s.vdp.vram(name_table + tile_y * 32 + tile_x) as u16;
         let color_entry = name / 8;
-        let color = s.vram(color_table + color_entry as u16);
+        let color = s.vdp.vram(color_table + color_entry as u16);
         let color0 = TMS9918_PALETTE[color as usize & 0xF];
         let color1 = TMS9918_PALETTE[color as usize >> 4];
-        let mut pattern = s.vram(pattern_table + name + tile_line);
+        let mut pattern = s.vdp.vram(pattern_table + name + tile_line);
         for i in 0..8 {
-            s.paint(
+            s.graphics.paint(
                 tile_x as u32 * 8 + i,
                 v as u32,
                 if pattern & 0x80 == 0 { color0 } else { color1 },
@@ -464,29 +450,35 @@ where
     draw_sprites_tms(s)
 }
 
-pub fn draw_line_graphics2<T>(s: &mut T) -> Result<(), SmsVdpGraphicsError>
+pub fn draw_line_graphics2<'a, V: 'a, G: 'a>(
+    s: &mut SmsVdpGraphicsImpler<'a, V, G>,
+) -> Result<(), SmsVdpGraphicsError>
 where
-    T: SimpleGraphics + SmsVdpInternal + ?Sized,
+    V: SmsVdpInternal,
+    G: SimpleGraphics,
 {
-    let pattern_table = ((s.register(4) & 4) as u16) << 11;
-    let name_table = ((s.register(2) & 0xF) as u16) << 10;
-    let color_table = ((s.register(3) & 0x80) as u16) << 6;
+    let pattern_table = ((s.vdp.register(4) & 4) as u16) << 11;
+    let name_table = ((s.vdp.register(2) & 0xF) as u16) << 10;
+    let color_table = ((s.vdp.register(3) & 0x80) as u16) << 6;
 
-    let v = s.v();
+    let v = s.vdp.v();
 
     if v >= 192 {
-        if v + 1 == s.total_lines() {
-            s.render().map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
+        if v + 1 == s.vdp.total_lines() {
+            s.graphics
+                .render()
+                .map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
         }
         return Ok(());
     }
 
-    s.set_resolution(256, 192)
+    s.graphics
+        .set_resolution(256, 192)
         .map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
 
-    if !s.display_visible() {
+    if !s.vdp.display_visible() {
         for x in 0..256 {
-            s.paint(
+            s.graphics.paint(
                 x,
                 v as u32,
                 SimpleColor {
@@ -507,13 +499,13 @@ where
     let color_address = color_table + 2048 * third;
 
     for tile_x in 0..32 {
-        let name = s.vram(name_table + tile_y * 32 + tile_x) as u16;
-        let color = s.vram(color_address + name * 8 + tile_line);
+        let name = s.vdp.vram(name_table + tile_y * 32 + tile_x) as u16;
+        let color = s.vdp.vram(color_address + name * 8 + tile_line);
         let color0 = TMS9918_PALETTE[color as usize & 0xF];
         let color1 = TMS9918_PALETTE[color as usize >> 4];
-        let mut pattern = s.vram(pattern_address + name * 8 + tile_line);
+        let mut pattern = s.vdp.vram(pattern_address + name * 8 + tile_line);
         for i in 0..8 {
-            s.paint(
+            s.graphics.paint(
                 tile_x as u32 * 8 + i,
                 v as u32,
                 if pattern & 0x80 == 0 { color0 } else { color1 },
@@ -525,19 +517,23 @@ where
     draw_sprites_tms(s)
 }
 
-pub fn draw_line_mode4<T>(s: &mut T) -> Result<(), SmsVdpGraphicsError>
+pub fn draw_line_mode4<'a, V: 'a, G: 'a>(
+    s: &mut SmsVdpGraphicsImpler<'a, V, G>,
+) -> Result<(), SmsVdpGraphicsError>
 where
-    T: SimpleGraphics + SmsVdpInternal + ?Sized,
+    V: SmsVdpInternal,
+    G: SimpleGraphics,
 {
     use self::Resolution::*;
 
-    let v = s.v();
+    let v = s.vdp.v();
 
-    let (display_y_start, display_y_end, display_x_start, display_x_end) = if s.kind() == Kind::Gg {
-        (24, 168, 48, 208)
-    } else {
-        (0, s.active_lines(), 0, 256)
-    };
+    let (display_y_start, display_y_end, display_x_start, display_x_end) =
+        if s.vdp.kind() == Kind::Gg {
+            (24, 168, 48, 208)
+        } else {
+            (0, s.vdp.active_lines(), 0, 256)
+        };
     let height = display_y_end - display_y_start;
     let width = display_x_end - display_x_start;
 
@@ -546,20 +542,23 @@ where
     }
 
     if v >= display_y_end {
-        if v + 1 == s.total_lines() {
-            s.render().map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
+        if v + 1 == s.vdp.total_lines() {
+            s.graphics
+                .render()
+                .map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
         }
         return Ok(());
     }
 
-    s.set_resolution(width as u32, height as u32)
+    s.graphics
+        .set_resolution(width as u32, height as u32)
         .map_err(|e| SmsVdpGraphicsError::Graphics(e))?;
 
     let y = (v - display_y_start) as u32;
 
-    if !s.display_visible() {
+    if !s.vdp.display_visible() {
         for x in 0..width {
-            s.paint(
+            s.graphics.paint(
                 x as u32,
                 y,
                 SimpleColor {
@@ -574,63 +573,65 @@ where
 
     let mut colors: [SimpleColor; 32] = Default::default();
 
-    if s.kind() == Kind::Gg {
+    if s.vdp.kind() == Kind::Gg {
         for i in 0..32 {
-            colors[i] = gg_color_to_simple_color(s.cram(i as u16));
+            colors[i] = gg_color_to_simple_color(s.vdp.cram(i as u16));
         }
     } else {
         for i in 0..32 {
-            colors[i] = vdp_color_to_simple_color(s.cram(i as u16) as u8);
+            colors[i] = vdp_color_to_simple_color(s.vdp.cram(i as u16) as u8);
         }
     }
 
     let mut line_buffer = [0x80u8; 256];
 
     // draw sprites
-    let sprite_height = if s.tall_sprites() { 16 } else { 8 };
+    let sprite_height = if s.vdp.tall_sprites() { 16 } else { 8 };
     let sprites_rendered = 0u8;
     for i in 0..64 {
-        let sprite_y = unsafe { s.sprite_y(i) } as u16;
-        if sprite_y == 0xD1 && SmsVdpInternal::resolution(s) == Low {
+        let sprite_y = unsafe { s.vdp.sprite_y(i) } as u16;
+        if sprite_y == 0xD1 && s.vdp.resolution() == Low {
             break;
         }
 
         // which line of the sprite are we rendering?
-        let sprite_line = v.wrapping_sub(sprite_y) / if s.zoomed_sprites() { 2 } else { 1 };
+        let sprite_line = v.wrapping_sub(sprite_y) / if s.vdp.zoomed_sprites() { 2 } else { 1 };
         if sprite_line >= sprite_height {
             continue;
         }
         if sprites_rendered == 8 {
-            s.trigger_sprite_overflow();
+            s.vdp.trigger_sprite_overflow();
             break;
         }
 
-        let pattern_addr = unsafe { s.sprite_pattern_address(i) };
+        let pattern_addr = unsafe { s.vdp.sprite_pattern_address(i) };
 
-        let palette_indices: [u8; 8] =
-            unsafe { s.pattern_address_to_palette_indices(pattern_addr, sprite_line) };
-        let sprite_x = unsafe { s.sprite_x(i) } as usize;
-        let shift_x = if s.shift_sprites() { 8 } else { 0 };
+        let palette_indices: [u8; 8] = unsafe {
+            s.vdp
+                .pattern_address_to_palette_indices(pattern_addr, sprite_line)
+        };
+        let sprite_x = unsafe { s.vdp.sprite_x(i) } as usize;
+        let shift_x = if s.vdp.shift_sprites() { 8 } else { 0 };
         for j in 0..8 {
-            let index = if s.zoomed_sprites() { 2 * j } else { j };
+            let index = if s.vdp.zoomed_sprites() { 2 * j } else { j };
             let render_x = sprite_x.wrapping_add(index).wrapping_sub(shift_x);
             if render_x < display_x_start || render_x >= display_x_end {
                 break;
             }
             if line_buffer[render_x] != 0x80 {
-                s.trigger_sprite_collision();
+                s.vdp.trigger_sprite_collision();
                 continue;
             }
             if palette_indices[j] != 0 {
                 line_buffer[render_x] = palette_indices[j] + 16;
             }
-            if s.zoomed_sprites() {
+            if s.vdp.zoomed_sprites() {
                 let render_x2 = render_x + 1;
                 if render_x2 < display_x_start || render_x2 >= display_x_end {
                     break;
                 }
                 if line_buffer[render_x2] != 0x80 {
-                    s.trigger_sprite_collision();
+                    s.vdp.trigger_sprite_collision();
                     continue;
                 }
                 if palette_indices[j] != 0 {
@@ -641,33 +642,34 @@ where
     }
 
     // draw tiles
-    let vert_scroll_locked = s.vert_scroll_locked();
+    let vert_scroll_locked = s.vdp.vert_scroll_locked();
 
-    let scroll_x = if s.horiz_scroll_locked() && v < 16 {
+    let scroll_x = if s.vdp.horiz_scroll_locked() && v < 16 {
         0
     } else {
-        s.x_scroll()
+        s.vdp.x_scroll()
     };
     let pixel_offset_x = scroll_x & 7;
     let tile_offset_x = (-((scroll_x >> 3) as i16)) as u16;
 
-    let vert_tile_count = if SmsVdpInternal::resolution(s) == Low {
+    let vert_tile_count = if s.vdp.resolution() == Low {
         28u16
     } else {
         32u16
     };
     let vert_tile_height = 8 * vert_tile_count;
 
-    let scroll_y = s.y_scroll() as u16;
+    let scroll_y = s.vdp.y_scroll() as u16;
     let logical_y = (v + scroll_y as u16) % vert_tile_height;
     let pixel_offset_y = logical_y & 7;
     let tile_offset_y = logical_y >> 3;
+    let kind = s.vdp.kind();
 
     {
         let mut write_tile = |tile, tile_line, start_x| {
-            let current_tile_address = s.name_table_address() + 2 * tile;
-            let low_byte = s.vram(current_tile_address);
-            let high_byte = s.vram(current_tile_address.wrapping_add(1));
+            let current_tile_address = s.vdp.name_table_address() + 2 * tile;
+            let low_byte = s.vdp.vram(current_tile_address);
+            let high_byte = s.vdp.vram(current_tile_address.wrapping_add(1));
             let vert_flip = 4 & high_byte != 0;
             let horiz_flip = 2 & high_byte != 0;
             let priority = 0x10 & high_byte != 0;
@@ -675,7 +677,8 @@ where
             let pattern_index = utilities::to16(low_byte, high_byte & 1);
             let tile_line_really = if vert_flip { 7 - tile_line } else { tile_line };
             let palette_indices: [u8; 8] = unsafe {
-                s.pattern_address_to_palette_indices(pattern_index * 32, tile_line_really)
+                s.vdp
+                    .pattern_address_to_palette_indices(pattern_index * 32, tile_line_really)
             };
             for j in 0..8usize {
                 let tile_col = if horiz_flip { (7 - j) } else { j };
@@ -695,7 +698,7 @@ where
         };
 
         // first, draw region 3/4
-        if s.kind() != Kind::Gg && vert_scroll_locked {
+        if kind != Kind::Gg && vert_scroll_locked {
             for tile in 23..32 {
                 write_tile(
                     32 * (v >> 3) + (tile_offset_x.wrapping_add(tile)) % 32,
@@ -715,16 +718,16 @@ where
         }
     }
 
-    if s.left_column_blank() {
+    if s.vdp.left_column_blank() {
         for i in 0..8 {
-            line_buffer[i] = 16 + s.backdrop_color_index();
+            line_buffer[i] = 16 + s.vdp.backdrop_color_index();
         }
     }
 
     for x in display_x_start..display_x_end {
         let index = line_buffer[x as usize] as usize;
         let color = colors[index % 32];
-        s.paint((x - display_x_start) as u32, y, color);
+        s.graphics.paint((x - display_x_start) as u32, y, color);
     }
 
     Ok(())

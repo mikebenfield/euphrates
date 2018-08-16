@@ -1,7 +1,5 @@
 //! Z80 instructions that don't depend on memory or IO.
 
-use impler::{Cref, Impl, Mref, Ref};
-
 use super::*;
 
 use self::Reg16::*;
@@ -57,206 +55,44 @@ pub trait Z80No {
     fn fdcb(&mut self);
 }
 
-pub struct Z80NoImpl;
-
 impl<T> Z80No for T
-where
-    T: Impl<Z80NoImpl> + ?Sized,
-    T::Impler: Z80No,
-{
-    #[inline(always)]
-    fn adc16(&mut self, x: Reg16, y: Reg16) {
-        self.make_mut().adc16(x, y)
-    }
-
-    #[inline(always)]
-    fn add16(&mut self, x: Reg16, y: Reg16) {
-        self.make_mut().add16(x, y)
-    }
-
-    #[inline(always)]
-    fn ccf(&mut self) {
-        self.make_mut().ccf()
-    }
-
-    #[inline(always)]
-    fn cpl(&mut self) {
-        self.make_mut().cpl()
-    }
-
-    #[inline(always)]
-    fn daa(&mut self) {
-        self.make_mut().daa()
-    }
-
-    #[inline(always)]
-    fn dec16(&mut self, x: Reg16) {
-        self.make_mut().dec16(x)
-    }
-
-    #[inline(always)]
-    fn di(&mut self) {
-        self.make_mut().di()
-    }
-
-    #[inline(always)]
-    fn djnz(&mut self, e: i8) {
-        self.make_mut().djnz(e)
-    }
-
-    #[inline(always)]
-    fn ei(&mut self) {
-        self.make_mut().ei()
-    }
-
-    #[inline(always)]
-    fn exx(&mut self) {
-        self.make_mut().exx()
-    }
-
-    #[inline(always)]
-    fn halt(&mut self) {
-        self.make_mut().halt()
-    }
-
-    #[inline(always)]
-    fn im(&mut self, x: u8) {
-        self.make_mut().im(x)
-    }
-
-    #[inline(always)]
-    fn inc16(&mut self, x: Reg16) {
-        self.make_mut().inc16(x)
-    }
-
-    #[inline(always)]
-    fn jpcc(&mut self, cc: ConditionCode, nn: u16) {
-        self.make_mut().jpcc(cc, nn)
-    }
-
-    #[inline(always)]
-    fn jr(&mut self, e: i8) {
-        self.make_mut().jr(e)
-    }
-
-    #[inline(always)]
-    fn jrcc(&mut self, cc: ConditionCode, e: i8) {
-        self.make_mut().jrcc(cc, e)
-    }
-
-    #[inline(always)]
-    fn ld_ir(&mut self, x: Reg8, y: Reg8) {
-        self.make_mut().ld_ir(x, y)
-    }
-
-    #[inline(always)]
-    fn neg(&mut self) {
-        self.make_mut().neg()
-    }
-
-    #[inline(always)]
-    fn nop(&mut self) {
-        self.make_mut().nop()
-    }
-
-    #[inline(always)]
-    fn sbc16(&mut self, x: Reg16, y: Reg16) {
-        self.make_mut().sbc16(x, y)
-    }
-
-    #[inline(always)]
-    fn scf(&mut self) {
-        self.make_mut().scf()
-    }
-
-    #[inline(always)]
-    fn dd(&mut self) {
-        self.make_mut().dd()
-    }
-
-    #[inline(always)]
-    fn fd(&mut self) {
-        self.make_mut().fd()
-    }
-
-    #[inline(always)]
-    fn cb(&mut self) {
-        self.make_mut().cb()
-    }
-
-    #[inline(always)]
-    fn ed(&mut self) {
-        self.make_mut().ed()
-    }
-
-    #[inline(always)]
-    fn ddcb(&mut self) {
-        self.make_mut().ddcb()
-    }
-
-    #[inline(always)]
-    fn fdcb(&mut self) {
-        self.make_mut().fdcb()
-    }
-}
-
-pub struct Z80NoImpler<T: ?Sized>(Ref<T>);
-
-impl<T: ?Sized> Z80NoImpler<T> {
-    #[inline(always)]
-    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
-        Cref::Own(Z80NoImpler(unsafe { Ref::new(t) }))
-    }
-
-    #[inline(always)]
-    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
-        Mref::Own(Z80NoImpler(unsafe { Ref::new_mut(t) }))
-    }
-}
-
-impl<T> Z80No for Z80NoImpler<T>
 where
     T: Z80Internal + ?Sized,
 {
     fn adc16(&mut self, x: Reg16, y: Reg16) {
-        let z = self.0.mut_0();
-        let x0 = z.reg16(x);
-        let y0 = z.reg16(y);
-        let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-        let result = adc16_help(z, x0, y0, cf as u16);
-        z.set_reg16(x, result);
+        let x0 = self.reg16(x);
+        let y0 = self.reg16(y);
+        let cf = if self.is_set_flag(CF) { 1u8 } else { 0u8 };
+        let result = adc16_help(self, x0, y0, cf as u16);
+        self.set_reg16(x, result);
     }
 
     fn add16(&mut self, x: Reg16, y: Reg16) {
-        let z = self.0.mut_0();
-        let x0 = z.reg16(x);
-        let y0 = z.reg16(y);
-        let result = add16_help(z, x0, y0, 0);
-        z.set_reg16(x, result);
+        let x0 = self.reg16(x);
+        let y0 = self.reg16(y);
+        let result = add16_help(self, x0, y0, 0);
+        self.set_reg16(x, result);
     }
 
     fn ccf(&mut self) {
-        let z = self.0.mut_0();
-        let cf = z.is_set_flag(CF);
-        z.set_flag_by(HF, cf);
-        z.set_flag_by(CF, !cf);
-        z.clear_flag(NF);
+        let cf = self.is_set_flag(CF);
+        self.set_flag_by(HF, cf);
+        self.set_flag_by(CF, !cf);
+        self.clear_flag(NF);
     }
 
     fn cpl(&mut self) {
-        let z = self.0.mut_0();
-        let a = z.reg8(A);
-        z.set_reg8(A, !a);
-        z.set_flag(HF | NF);
+        let a = self.reg8(A);
+        self.set_reg8(A, !a);
+        self.set_flag(HF | NF);
     }
 
     fn daa(&mut self) {
-        let z = self.0.mut_0();
         // see the table in Young
-        let a = z.reg8(A);
-        let cf = z.is_set_flag(CF);
-        let hf = z.is_set_flag(HF);
-        let nf = z.is_set_flag(NF);
+        let a = self.reg8(A);
+        let cf = self.is_set_flag(CF);
+        let hf = self.is_set_flag(HF);
+        let nf = self.is_set_flag(NF);
         let diff = match (cf, a >> 4, hf, a & 0xF) {
             (false, 0...9, false, 0...9) => 0,
             (false, 0...9, true, 0...9) => 0x6,
@@ -283,181 +119,147 @@ where
         } else {
             a.wrapping_add(diff)
         };
-        z.set_reg8(A, new_a);
+        self.set_reg8(A, new_a);
 
-        z.set_parity(new_a);
-        z.set_zero(new_a);
-        z.set_sign(new_a);
-        z.set_flag_by(CF, new_cf != 0);
-        z.set_flag_by(HF, new_hf != 0);
+        self.set_parity(new_a);
+        self.set_zero(new_a);
+        self.set_sign(new_a);
+        self.set_flag_by(CF, new_cf != 0);
+        self.set_flag_by(HF, new_hf != 0);
     }
 
     fn dec16(&mut self, x: Reg16) {
-        let z = self.0.mut_0();
-        let val = z.reg16(x);
-        z.set_reg16(x, val.wrapping_sub(1));
+        let val = self.reg16(x);
+        self.set_reg16(x, val.wrapping_sub(1));
     }
 
     fn di(&mut self) {
-        let z = self.0.mut_0();
-        z.set_iff1(false);
-        z.set_iff2(false);
-        z.set_interrupt_status(InterruptStatus::NoCheck);
+        self.set_iff1(false);
+        self.set_iff2(false);
+        self.set_interrupt_status(InterruptStatus::NoCheck);
     }
 
     fn djnz(&mut self, e: i8) {
-        let b = self.0.mut_0().reg8(B);
+        let b = self.reg8(B);
         let new_b = b.wrapping_sub(1);
-        self.0.mut_0().set_reg8(B, new_b);
+        self.set_reg8(B, new_b);
         if new_b != 0 {
             self.jr(e);
         }
     }
 
     fn ei(&mut self) {
-        let z = self.0.mut_0();
-        z.set_iff1(true);
-        z.set_iff2(true);
-        let cycles = z.cycles().wrapping_add(4);
-        z.set_interrupt_status(InterruptStatus::Ei(cycles));
+        self.set_iff1(true);
+        self.set_iff2(true);
+        let cycles = self.cycles().wrapping_add(4);
+        self.set_interrupt_status(InterruptStatus::Ei(cycles));
     }
 
     fn exx(&mut self) {
-        let z = self.0.mut_0();
         for &(reg1, reg2) in [(BC, BC0), (DE, DE0), (HL, HL0)].iter() {
-            let val1 = z.reg16(reg1);
-            let val2 = z.reg16(reg2);
-            z.set_reg16(reg1, val2);
-            z.set_reg16(reg2, val1);
+            let val1 = self.reg16(reg1);
+            let val2 = self.reg16(reg2);
+            self.set_reg16(reg1, val2);
+            self.set_reg16(reg2, val1);
         }
     }
 
     fn halt(&mut self) {
-        let z = self.0.mut_0();
-        z.set_prefix(Prefix::Halt);
+        self.set_prefix(Prefix::Halt);
     }
 
     fn im(&mut self, x: u8) {
-        let z = self.0.mut_0();
-
         match x {
-            0 => z.set_interrupt_mode(InterruptMode::Im0),
-            1 => z.set_interrupt_mode(InterruptMode::Im1),
-            2 => z.set_interrupt_mode(InterruptMode::Im2),
+            0 => self.set_interrupt_mode(InterruptMode::Im0),
+            1 => self.set_interrupt_mode(InterruptMode::Im1),
+            2 => self.set_interrupt_mode(InterruptMode::Im2),
             _ => panic!("Z80: Invalid interrupt mode"),
         }
     }
 
     fn inc16(&mut self, x: Reg16) {
-        let z = self.0.mut_0();
-        let x0 = z.reg16(x);
-        z.set_reg16(x, x0.wrapping_add(1));
+        let x0 = self.reg16(x);
+        self.set_reg16(x, x0.wrapping_add(1));
     }
 
     fn jpcc(&mut self, cc: ConditionCode, nn: u16) {
-        let z = self.0.mut_0();
-        let flags = z.reg8(F);
+        let flags = self.reg8(F);
         if cc.check(flags) {
-            z.set_reg16(PC, nn);
+            self.set_reg16(PC, nn);
         }
     }
 
     fn jr(&mut self, e: i8) {
-        let z = self.0.mut_0();
-        let pc = z.reg16(PC);
-        z.set_reg16(PC, pc.wrapping_add(e as i16 as u16));
+        let pc = self.reg16(PC);
+        self.set_reg16(PC, pc.wrapping_add(e as i16 as u16));
     }
 
     fn jrcc(&mut self, cc: ConditionCode, e: i8) {
-        let flags = self.0.mut_0().reg8(F);
+        let flags = self.reg8(F);
         if cc.check(flags) {
             self.jr(e);
         }
     }
 
     fn ld_ir(&mut self, x: Reg8, y: Reg8) {
-        let z = self.0.mut_0();
-        let y0 = z.reg8(y);
-        z.set_reg8(x, y0);
-        let iff2 = z.iff2();
-        z.set_sign(y0);
-        z.set_zero(y0);
-        z.clear_flag(NF | HF);
-        z.set_flag_by(PF, iff2);
+        let y0 = self.reg8(y);
+        self.set_reg8(x, y0);
+        let iff2 = self.iff2();
+        self.set_sign(y0);
+        self.set_zero(y0);
+        self.clear_flag(NF | HF);
+        self.set_flag_by(PF, iff2);
     }
 
     fn neg(&mut self) {
-        let z = self.0.mut_0();
-        let a = z.reg8(A);
-        let result = sub_help(z, 0, a, 0);
-        z.set_reg8(A, result);
-        z.set_flag_by(PF, a == 0x80);
-        z.set_flag_by(CF, a != 0);
+        let a = self.reg8(A);
+        let result = sub_help(self, 0, a, 0);
+        self.set_reg8(A, result);
+        self.set_flag_by(PF, a == 0x80);
+        self.set_flag_by(CF, a != 0);
     }
 
     fn nop(&mut self) {}
 
     fn sbc16(&mut self, x: Reg16, y: Reg16) {
-        let z = self.0.mut_0();
-        let x0 = z.reg16(x);
-        let y0 = z.reg16(y);
-        let cf = if z.is_set_flag(CF) { 1u8 } else { 0u8 };
-        let result = adc16_help(z, x0, !y0, (1 ^ cf) as u16);
-        z.set_reg16(x, result);
-        let cf = z.is_set_flag(CF);
-        let hf = z.is_set_flag(HF);
-        z.set_flag_by(CF, !cf);
-        z.set_flag_by(HF, !hf);
-        z.set_flag(NF);
+        let x0 = self.reg16(x);
+        let y0 = self.reg16(y);
+        let cf = if self.is_set_flag(CF) { 1u8 } else { 0u8 };
+        let result = adc16_help(self, x0, !y0, (1 ^ cf) as u16);
+        self.set_reg16(x, result);
+        let cf = self.is_set_flag(CF);
+        let hf = self.is_set_flag(HF);
+        self.set_flag_by(CF, !cf);
+        self.set_flag_by(HF, !hf);
+        self.set_flag(NF);
     }
 
     fn scf(&mut self) {
-        let z = self.0.mut_0();
-        z.clear_flag(HF | NF);
-        z.set_flag(CF);
+        self.clear_flag(HF | NF);
+        self.set_flag(CF);
     }
 
     fn dd(&mut self) {
-        let z = self.0.mut_0();
-        z.set_prefix(Prefix::Dd);
+        self.set_prefix(Prefix::Dd);
     }
 
     fn fd(&mut self) {
-        let z = self.0.mut_0();
-        z.set_prefix(Prefix::Fd);
+        self.set_prefix(Prefix::Fd);
     }
 
     fn cb(&mut self) {
-        let z = self.0.mut_0();
-        z.set_prefix(Prefix::Cb);
+        self.set_prefix(Prefix::Cb);
     }
 
     fn ed(&mut self) {
-        let z = self.0.mut_0();
-        z.set_prefix(Prefix::Ed);
+        self.set_prefix(Prefix::Ed);
     }
 
     fn ddcb(&mut self) {
-        let z = self.0.mut_0();
-        z.set_prefix(Prefix::DdCb);
+        self.set_prefix(Prefix::DdCb);
     }
 
     fn fdcb(&mut self) {
-        let z = self.0.mut_0();
-        z.set_prefix(Prefix::FdCb);
-    }
-}
-
-impl Impl<Z80NoImpl> for Z80State {
-    type Impler = Z80NoImpler<Self>;
-
-    #[inline(always)]
-    fn make<'a>(&'a self) -> Cref<'a, Self::Impler> {
-        Z80NoImpler::new(self)
-    }
-
-    #[inline(always)]
-    fn make_mut<'a>(&'a mut self) -> Mref<'a, Self::Impler> {
-        Z80NoImpler::new_mut(self)
+        self.set_prefix(Prefix::FdCb);
     }
 }

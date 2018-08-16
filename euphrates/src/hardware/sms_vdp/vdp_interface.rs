@@ -1,5 +1,3 @@
-use impler::{Cref, Impl, Mref, Ref};
-
 use super::*;
 
 /// The hardware intereface of the VDP.
@@ -66,139 +64,83 @@ pub trait SmsVdpInterface {
     fn read_h(&mut self) -> u8;
 }
 
-pub struct SmsVdpInterfaceImpl;
-
-impl<T> SmsVdpInterface for T
-where
-    T: Impl<SmsVdpInterfaceImpl> + ?Sized,
-    T::Impler: SmsVdpInterface,
-{
-    #[inline]
-    fn write_data(&mut self, x: u8) {
-        self.make_mut().write_data(x)
-    }
-
-    #[inline]
-    fn read_data(&mut self) -> u8 {
-        self.make_mut().read_data()
-    }
-
-    #[inline]
-    fn write_control(&mut self, x: u8) {
-        self.make_mut().write_control(x)
-    }
-
-    #[inline]
-    fn read_control(&mut self) -> u8 {
-        self.make_mut().read_control()
-    }
-
-    #[inline]
-    fn read_v(&mut self) -> u8 {
-        self.make_mut().read_v()
-    }
-
-    #[inline]
-    fn read_h(&mut self) -> u8 {
-        self.make_mut().read_h()
-    }
-}
-
-pub struct SmsVdpInterfaceImpler<T: ?Sized>(Ref<T>);
-
-impl<T: ?Sized> SmsVdpInterfaceImpler<T> {
-    #[inline(always)]
-    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
-        Cref::Own(SmsVdpInterfaceImpler(unsafe { Ref::new(t) }))
-    }
-
-    #[inline(always)]
-    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
-        Mref::Own(SmsVdpInterfaceImpler(unsafe { Ref::new_mut(t) }))
-    }
-}
-
-impl<T: ?Sized> SmsVdpInterface for SmsVdpInterfaceImpler<T>
+impl<T: ?Sized> SmsVdpInterface for T
 where
     T: SmsVdpInternal,
 {
     fn write_data(&mut self, x: u8) {
-        let z = self.0.mut_0();
-        let code = z.code();
-        let addr = z.address();
-        z.set_data_buffer(x);
+        let code = self.code();
+        let addr = self.address();
+        self.set_data_buffer(x);
 
-        match (code, z.kind()) {
+        match (code, self.kind()) {
             (3, Kind::Gg) => {
                 if addr & 1 == 0 {
-                    z.set_cram_latch(x);
+                    self.set_cram_latch(x);
                 } else {
-                    let latch = z.cram_latch();
+                    let latch = self.cram_latch();
                     let val = latch as u16 | ((x as u16) << 8);
                     let actual_address = (addr >> 1) % 32;
                     unsafe {
-                        z.set_cram_unchecked(actual_address, val);
+                        self.set_cram_unchecked(actual_address, val);
                     }
                 }
             }
             (3, _) => unsafe {
-                z.set_cram_unchecked(addr % 32, x as u16);
+                self.set_cram_unchecked(addr % 32, x as u16);
             },
             _ => unsafe {
-                z.set_vram_unchecked(addr, x);
+                self.set_vram_unchecked(addr, x);
             },
         }
 
-        z.set_address(addr + 1);
-        z.set_control_flag(false);
+        self.set_address(addr + 1);
+        self.set_control_flag(false);
     }
 
     fn read_data(&mut self) -> u8 {
-        let z = self.0.mut_0();
-        let current_buffer = z.data_buffer();
-        let code_addr = z.code_address();
+        let current_buffer = self.data_buffer();
+        let code_addr = self.code_address();
         let addr = code_addr & 0x3FFF;
-        let new_value = unsafe { z.vram_unchecked(addr) };
-        z.set_address(addr + 1);
-        z.set_data_buffer(new_value);
-        z.set_control_flag(false);
+        let new_value = unsafe { self.vram_unchecked(addr) };
+        self.set_address(addr + 1);
+        self.set_data_buffer(new_value);
+        self.set_control_flag(false);
         current_buffer
     }
 
     fn write_control(&mut self, x: u8) {
-        let z = self.0.mut_0();
-        if z.control_flag() {
-            z.set_control_flag(false);
-            let low_byte = z.code_address() & 0xFF;
+        if self.control_flag() {
+            self.set_control_flag(false);
+            let low_byte = self.code_address() & 0xFF;
             let code_addr = low_byte | (x as u16) << 8;
-            z.set_code_address(code_addr);
-            let code = z.code();
-            let addr = z.address();
+            self.set_code_address(code_addr);
+            let code = self.code();
+            let addr = self.address();
             if code == 0 {
-                let val = unsafe { z.vram_unchecked(addr) };
-                z.set_data_buffer(val);
-                z.set_address(addr + 1);
+                let val = unsafe { self.vram_unchecked(addr) };
+                self.set_data_buffer(val);
+                self.set_address(addr + 1);
             } else if code == 2 {
                 let which_reg = x & 0xF;
                 if which_reg < 11 {
                     unsafe {
-                        z.set_register_unchecked(which_reg as u16, low_byte as u8);
+                        self.set_register_unchecked(which_reg as u16, low_byte as u8);
                     }
                 }
             }
         } else {
-            z.set_control_flag(true);
-            let high_byte = z.code_address() & 0xFF00;
-            z.set_code_address(high_byte | x as u16);
+            self.set_control_flag(true);
+            let high_byte = self.code_address() & 0xFF00;
+            self.set_code_address(high_byte | x as u16);
         }
     }
 
     fn read_control(&mut self) -> u8 {
-        let z = self.0.mut_0();
-        let current_status = z.status_flags();
-        z.set_status_flags(0);
-        z.set_control_flag(false);
-        z.set_line_interrupt_pending(false);
+        let current_status = self.status_flags();
+        self.set_status_flags(0);
+        self.set_control_flag(false);
+        self.set_line_interrupt_pending(false);
         current_status
     }
 
@@ -206,9 +148,8 @@ where
         use self::Resolution::*;
         use self::TvSystem::*;
 
-        let z = self.0.mut_0();
-        let v = z.v();
-        let result = match (z.tv_system(), z.resolution(), v) {
+        let v = self.v();
+        let result = match (self.tv_system(), self.resolution(), v) {
             (Ntsc, Low, 0...0xDA) => v,
             (Ntsc, Low, _) => v - 6,
             (Ntsc, Medium, 0...0xEA) => v,
@@ -228,7 +169,7 @@ where
     }
 
     fn read_h(&mut self) -> u8 {
-        let h = self.0.mut_0().h();
+        let h = self.h();
         let result = (h >> 1) as u8;
         result as u8
     }

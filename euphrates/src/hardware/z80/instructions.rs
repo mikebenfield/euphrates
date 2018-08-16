@@ -1,5 +1,6 @@
 use memo::Inbox;
 
+use hardware::io16::Io16;
 use hardware::memory16::Memory16;
 
 use super::*;
@@ -7,6 +8,73 @@ use super::*;
 use self::ConditionCode::*;
 use self::Reg16::*;
 use self::Reg8::*;
+
+pub struct Z80InstructionsImpler<
+    'a,
+    Z: 'a + ?Sized,
+    M: 'a + ?Sized,
+    I: 'a + ?Sized,
+    Inb: 'a + ?Sized,
+> {
+    pub z80: &'a mut Z,
+    pub memory: &'a mut M,
+    pub io: &'a mut I,
+    pub inbox: &'a mut Inb,
+}
+
+impl<'a, Z: 'a + ?Sized, M: 'a + ?Sized, I: 'a + ?Sized, Inb: 'a + ?Sized> Z80MemT
+    for Z80InstructionsImpler<'a, Z, M, I, Inb>
+where
+    Z: Z80Internal,
+    M: Memory16,
+{
+    type Z80 = Z;
+    type Memory = M;
+
+    #[inline(always)]
+    fn z80(&mut self) -> &mut Self::Z80 {
+        self.z80
+    }
+
+    #[inline(always)]
+    fn memory(&mut self) -> &mut Self::Memory {
+        self.memory
+    }
+}
+
+macro_rules! no {
+    ($x:expr; $var:ident; {$($rest: tt)*}) => {{
+        let $var = &mut $x.z80;
+        {
+            $($rest)*
+        }
+    }};
+}
+
+macro_rules! mem {
+    ($x:expr; $var:ident; {$($rest: tt)*}) => {{
+        let $var = &mut Z80MemImpler {
+            z80: $x.z80,
+            memory: $x.memory,
+        };
+        {
+            $($rest)*
+        }
+    }};
+}
+
+macro_rules! io {
+    ($x:expr; $var:ident; {$($rest: tt)*}) => {{
+        let mut $var = Z80IoImpler {
+            z80: $x.z80,
+            memory: $x.memory,
+            io: $x.io,
+        };
+        {
+            $($rest)*
+        }
+    }};
+}
 
 macro_rules! process_argument {
     ($nn:tt, $n:tt, $d:tt, $e:tt,n) => {
@@ -37,6 +105,7 @@ macro_rules! process_argument {
 
 macro_rules! process_arguments {
     ($self_: ident,
+     $wtrait: ident,
      $mnemonic: ident,
      $nn: tt,
      $n: tt,
@@ -44,42 +113,52 @@ macro_rules! process_arguments {
      $e: tt,
      ($($args: tt),*)
     ) => {
-        $self_.
-        $mnemonic
-        (
-            $(
-                process_argument!($nn, $n, $d, $e, $args)
-            ),*
-        )
+        $wtrait!{
+            $self_ ;
+            trait_ ;
+            {
+                trait_.
+                    $mnemonic
+                    (
+                        $(
+                            process_argument!($nn, $n, $d, $e, $args)
+                        ),*
+                    )
+            }
+        }
     }
 }
 
 #[inline]
-fn send_instruction_memo<Z>(z: &mut Z, instruction_start: u16, instruction_after: u16)
-where
-    Z: Memory16 + Inbox + ?Sized,
-    Z::Memo: From<Z80Memo>,
+fn send_instruction_memo<'a, Z: 'a + ?Sized, M: 'a + ?Sized, I: 'a + ?Sized, Inb: 'a + ?Sized>(
+    z: &mut Z80InstructionsImpler<'a, Z, M, I, Inb>,
+    instruction_start: u16,
+    instruction_after: u16,
+) where
+    Z: Z80Internal,
+    M: Memory16,
+    Inb: Inbox<Memo = Z80Memo>,
 {
-    if !z.active() {
+    if !z.inbox.active() {
         return;
     }
 
     let opcode = match instruction_after.wrapping_sub(instruction_start) {
-        1 => Opcode::OneByte([z.read(instruction_start)]),
+        1 => Opcode::OneByte([z.memory.read(instruction_start)]),
         2 => Opcode::TwoBytes([
-            z.read(instruction_start),
-            z.read(instruction_start.wrapping_add(1)),
+            z.memory.read(instruction_start),
+            z.memory.read(instruction_start.wrapping_add(1)),
         ]),
         3 => Opcode::ThreeBytes([
-            z.read(instruction_start),
-            z.read(instruction_start.wrapping_add(1)),
-            z.read(instruction_start.wrapping_add(2)),
+            z.memory.read(instruction_start),
+            z.memory.read(instruction_start.wrapping_add(1)),
+            z.memory.read(instruction_start.wrapping_add(2)),
         ]),
         4 => Opcode::FourBytes([
-            z.read(instruction_start),
-            z.read(instruction_start.wrapping_add(1)),
-            z.read(instruction_start.wrapping_add(2)),
-            z.read(instruction_start.wrapping_add(3)),
+            z.memory.read(instruction_start),
+            z.memory.read(instruction_start.wrapping_add(1)),
+            z.memory.read(instruction_start.wrapping_add(2)),
+            z.memory.read(instruction_start.wrapping_add(3)),
         ]),
         _ => panic!("opcode more than 4 bytes?"),
     };
@@ -92,10 +171,10 @@ where
         Opcode::OneByte([0xCB]) => {}
         Opcode::TwoBytes([0xFD, 0xCB]) => {}
         Opcode::TwoBytes([0xDD, 0xCB]) => {}
-        _ => z.receive(From::from(Z80Memo::Instruction {
+        _ => z.inbox.receive(Z80Memo::Instruction {
             pc: instruction_start,
             opcode,
-        })),
+        }),
     }
 }
 
@@ -111,11 +190,12 @@ macro_rules! process_instruction {
             $mnemonic: ident () ;
             xx ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
 
             send_instruction_memo(
                 self,
@@ -123,11 +203,11 @@ macro_rules! process_instruction {
                 pc,
             );
 
-            self.$mnemonic();
-            if self.reg16(BC) == 0 {
-                self.inc_cycles(16);
+            $wtrait!{self; w; { w.$mnemonic() }};
+            if self.z80.reg16(BC) == 0 {
+                self.z80.inc_cycles(16);
             } else {
-                self.inc_cycles(21);
+                self.z80.inc_cycles(21);
             }
         }
     };
@@ -140,13 +220,14 @@ macro_rules! process_instruction {
             jrcc ($cc: ident, e) ;
             xx ;
             $documented:ident ;
-            z80
+            z80 ;
+            no
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
-            let e = self.read(pc) as i8;
-            self.set_reg16(PC, pc.wrapping_add(1));
+            let pc = self.z80.reg16(PC);
+            let e = self.memory.read(pc) as i8;
+            self.z80.set_reg16(PC, pc.wrapping_add(1));
 
             send_instruction_memo(
                 self,
@@ -154,11 +235,12 @@ macro_rules! process_instruction {
                 pc.wrapping_add(1),
             );
 
-            self.jrcc($cc, e);
-            if $cc.view(self) {
-                self.inc_cycles(12);
+            no!{self; w; { w.jrcc($cc, e) }};
+            let flags = self.z80.reg8(F);
+            if $cc.check(flags) {
+                self.z80.inc_cycles(12);
             } else {
-                self.inc_cycles(7);
+                self.z80.inc_cycles(7);
             }
         }
     };
@@ -171,13 +253,14 @@ macro_rules! process_instruction {
             callcc ($cc: ident, nn) ;
             xx ;
             $documented:ident ;
-            z80
+            z80 ;
+            mem
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
             let nn = Viewable::<u16>::view(Address(pc), self);
-            self.set_reg16(PC, pc.wrapping_add(2));
+            self.z80.set_reg16(PC, pc.wrapping_add(2));
 
             send_instruction_memo(
                 self,
@@ -185,11 +268,12 @@ macro_rules! process_instruction {
                 pc.wrapping_add(2),
             );
 
-            self.callcc($cc, nn);
-            if $cc.view(self) {
-                self.inc_cycles(17);
+            mem!{self; w; { w.callcc($cc, nn) }};
+            let flags = self.z80.reg8(F);
+            if $cc.check(flags) {
+                self.z80.inc_cycles(17);
             } else {
-                self.inc_cycles(10);
+                self.z80.inc_cycles(10);
             }
         }
     };
@@ -202,11 +286,12 @@ macro_rules! process_instruction {
             retcc ($cc: ident) ;
             xx ;
             $documented:ident ;
-            z80
+            z80 ;
+            mem
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
 
             send_instruction_memo(
                 self,
@@ -214,11 +299,12 @@ macro_rules! process_instruction {
                 pc,
             );
 
-            self.retcc($cc);
-            if $cc.view(self) {
-                self.inc_cycles(11);
+            mem!{self; w; { w.retcc($cc) }};
+            let flags = self.z80.reg8(F);
+            if $cc.check(flags) {
+                self.z80.inc_cycles(11);
             } else {
-                self.inc_cycles(5);
+                self.z80.inc_cycles(5);
             }
         }
     };
@@ -231,11 +317,12 @@ macro_rules! process_instruction {
             cpir () ;
             xx ;
             $documented:ident ;
-            z80
+            z80 ;
+            mem
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
 
             send_instruction_memo(
                 self,
@@ -243,11 +330,11 @@ macro_rules! process_instruction {
                 pc,
             );
 
-            self.cpir();
-            if self.reg16(BC) == 0 || self.is_set_flag(ZF) {
-                self.inc_cycles(16);
+            mem!{self; w; { w.cpir() }};
+            if self.z80.reg16(BC) == 0 || self.z80.is_set_flag(ZF) {
+                self.z80.inc_cycles(16);
             } else {
-                self.inc_cycles(21);
+                self.z80.inc_cycles(21);
             }
         }
     };
@@ -260,11 +347,12 @@ macro_rules! process_instruction {
             cpdr () ;
             xx ;
             $documented:ident ;
-            z80
+            z80 ;
+            mem
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
 
             send_instruction_memo(
                 self,
@@ -272,11 +360,11 @@ macro_rules! process_instruction {
                 pc,
             );
 
-            self.cpdr();
-            if self.reg16(BC) == 0 || self.is_set_flag(ZF) {
-                self.inc_cycles(16);
+            mem!{self; w; { w.cpdr() }};
+            if self.z80.reg16(BC) == 0 || self.z80.is_set_flag(ZF) {
+                self.z80.inc_cycles(16);
             } else {
-                self.inc_cycles(21);
+                self.z80.inc_cycles(21);
             }
         }
     };
@@ -289,11 +377,12 @@ macro_rules! process_instruction {
             $mnemonic: ident () ;
             xx ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         process_instruction!{@block
-            [ $opcode; $opcode_name; ; $mnemonic () ; xx ; $documented ; z80 ]
+            [ $opcode; $opcode_name; ; $mnemonic () ; xx ; $documented ; z80 ; $wtrait ]
         }
     };
 
@@ -305,11 +394,12 @@ macro_rules! process_instruction {
             $mnemonic:ident($($arguments:tt)*) ;
             $cycles:expr ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
 
             send_instruction_memo(
                 self,
@@ -317,8 +407,8 @@ macro_rules! process_instruction {
                 pc,
             );
 
-            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
-            self.inc_cycles($cycles);
+            process_arguments!(self, $wtrait, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.z80.inc_cycles($cycles);
         }
     };
 
@@ -330,13 +420,14 @@ macro_rules! process_instruction {
             $mnemonic:ident($($arguments:tt)*) ;
             $cycles:expr ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
-            let n = self.read(pc);
-            self.set_reg16(PC, pc.wrapping_add(1));
+            let pc = self.z80.reg16(PC);
+            let n = self.memory.read(pc);
+            self.z80.set_reg16(PC, pc.wrapping_add(1));
 
             send_instruction_memo(
                 self,
@@ -344,8 +435,8 @@ macro_rules! process_instruction {
                 pc.wrapping_add(1),
             );
 
-            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
-            self.inc_cycles($cycles);
+            process_arguments!(self, $wtrait, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.z80.inc_cycles($cycles);
         }
     };
 
@@ -357,13 +448,14 @@ macro_rules! process_instruction {
             $mnemonic:ident($($arguments:tt)*) ;
             $cycles:expr ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
-            let e = self.read(pc) as i8;
-            self.set_reg16(PC, pc.wrapping_add(1));
+            let pc = self.z80.reg16(PC);
+            let e = self.memory.read(pc) as i8;
+            self.z80.set_reg16(PC, pc.wrapping_add(1));
 
             send_instruction_memo(
                 self,
@@ -371,8 +463,8 @@ macro_rules! process_instruction {
                 pc.wrapping_add(1),
             );
 
-            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
-            self.inc_cycles($cycles);
+            process_arguments!(self, $wtrait, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.z80.inc_cycles($cycles);
         }
     };
 
@@ -384,13 +476,14 @@ macro_rules! process_instruction {
             $mnemonic:ident($($arguments:tt)*) ;
             $cycles:expr ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
-            let d = self.read(pc) as i8;
-            self.set_reg16(PC, pc.wrapping_add(1));
+            let pc = self.z80.reg16(PC);
+            let d = self.memory.read(pc) as i8;
+            self.z80.set_reg16(PC, pc.wrapping_add(1));
 
             send_instruction_memo(
                 self,
@@ -398,8 +491,8 @@ macro_rules! process_instruction {
                 pc.wrapping_add(1),
             );
 
-            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
-            self.inc_cycles($cycles);
+            process_arguments!(self, $wtrait, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.z80.inc_cycles($cycles);
         }
     };
 
@@ -411,14 +504,15 @@ macro_rules! process_instruction {
             $mnemonic:ident($($arguments:tt)*) ;
             $cycles:expr ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
-            let d = self.read(pc) as i8;
-            let n = self.read(pc.wrapping_add(1));
-            self.set_reg16(PC, pc.wrapping_add(2));
+            let pc = self.z80.reg16(PC);
+            let d = self.memory.read(pc) as i8;
+            let n = self.memory.read(pc.wrapping_add(1));
+            self.z80.set_reg16(PC, pc.wrapping_add(2));
 
             send_instruction_memo(
                 self,
@@ -426,8 +520,8 @@ macro_rules! process_instruction {
                 pc.wrapping_add(2),
             );
 
-            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
-            self.inc_cycles($cycles);
+            process_arguments!(self, $wtrait, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.z80.inc_cycles($cycles);
         }
     };
 
@@ -439,13 +533,14 @@ macro_rules! process_instruction {
             $mnemonic:ident($($arguments:tt)*) ;
             $cycles:expr ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
             let nn = Viewable::<u16>::view(Address(pc), self);
-            self.set_reg16(PC, pc.wrapping_add(2));
+            self.z80.set_reg16(PC, pc.wrapping_add(2));
 
             send_instruction_memo(
                 self,
@@ -453,8 +548,8 @@ macro_rules! process_instruction {
                 pc.wrapping_add(2),
             );
 
-            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
-            self.inc_cycles($cycles);
+            process_arguments!(self, $wtrait, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.z80.inc_cycles($cycles);
         }
     };
 
@@ -463,10 +558,14 @@ macro_rules! process_instruction {
 
 macro_rules! create_function {
     ($fn_name:ident, $mac_name:ident, $prefix_size:expr) => {
-        pub fn $fn_name<Z>(z: &mut Z, opcode: u8)
-        where
-            Z: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
-            Z::Memo: From<Z80Memo>,
+        pub fn $fn_name<'a, Z: 'a, M: 'a, I: 'a, Inb: 'a>(
+            z: &mut Z80InstructionsImpler<'a, Z, M, I, Inb>,
+            opcode: u8,
+        ) where
+            Z: Z80Internal + ?Sized,
+            M: Memory16 + ?Sized,
+            I: Io16 + ?Sized,
+            Inb: Inbox<Memo = Z80Memo> + ?Sized,
         {
             #[allow(non_snake_case)]
             trait ArrayTrait {
@@ -988,14 +1087,17 @@ macro_rules! create_function {
                     Self::xFF,
                 ];
             }
-            impl<T> ArrayTrait for T
+            impl<'a, Z: 'a, M: 'a, I: 'a, Inb: 'a> ArrayTrait
+                for Z80InstructionsImpler<'a, Z, M, I, Inb>
             where
-                T: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
-                T::Memo: From<Z80Memo>,
+                Z: Z80Internal + ?Sized,
+                M: Memory16 + ?Sized,
+                I: Io16 + ?Sized,
+                Inb: Inbox<Memo = Z80Memo> + ?Sized,
             {
                 $mac_name!{process_instruction}
             }
-            <Z as ArrayTrait>::ARRAY[opcode as usize](z);
+            <Z80InstructionsImpler<'a, Z, M, I, Inb> as ArrayTrait>::ARRAY[opcode as usize](z);
         }
     };
 }
@@ -1019,26 +1121,31 @@ macro_rules! process_instruction_double_prefix {
             $mnemonic:ident($($arguments:tt)*) ;
             $cycles:expr ;
             $documented:ident ;
-            z80
+            z80 ;
+            $wtrait: ident
         ]
     ) => {
         fn $opcode_name(&mut self, d: i8) {
-            let pc = self.reg16(PC);
+            let pc = self.z80.reg16(PC);
 
             send_instruction_memo(self, pc.wrapping_sub(4), pc);
 
-            process_arguments!(self, $mnemonic, nn, n, d, e, ($($arguments)*));
-            self.inc_cycles($cycles);
+            process_arguments!(self, $wtrait, $mnemonic, nn, n, d, e, ($($arguments)*));
+            self.z80.inc_cycles($cycles);
         }
     };
 }
 
 macro_rules! create_function_double_prefix {
     ($fn_name:ident, $mac_name:ident) => {
-        pub fn $fn_name<Z>(z: &mut Z, opcode: u8)
-        where
-            Z: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
-            Z::Memo: From<Z80Memo>,
+        pub fn $fn_name<'a, Z: 'a, M: 'a, I: 'a, Inb: 'a>(
+            z: &mut Z80InstructionsImpler<'a, Z, M, I, Inb>,
+            opcode: u8,
+        ) where
+            Z: Z80Internal + ?Sized,
+            M: Memory16 + ?Sized,
+            I: Io16 + ?Sized,
+            Inb: Inbox<Memo = Z80Memo> + ?Sized,
         {
             #[allow(non_snake_case)]
             trait ArrayTrait {
@@ -1559,17 +1666,20 @@ macro_rules! create_function_double_prefix {
                 ];
             }
 
-            impl<T> ArrayTrait for T
+            impl<'a, Z: 'a, M: 'a, I: 'a, Inb: 'a> ArrayTrait
+                for Z80InstructionsImpler<'a, Z, M, I, Inb>
             where
-                T: Z80Mem + Z80No + Z80Io + Z80Internal + Memory16 + Inbox + ?Sized,
-                T::Memo: From<Z80Memo>,
+                Z: Z80Internal + ?Sized,
+                M: Memory16 + ?Sized,
+                I: Io16 + ?Sized,
+                Inb: Inbox<Memo = Z80Memo> + ?Sized,
             {
                 $mac_name!{process_instruction_double_prefix}
             }
 
-            let pc = z.reg16(PC);
-            let d = z.read(pc.wrapping_sub(2)) as i8;
-            <Z as ArrayTrait>::ARRAY[opcode as usize](z, d);
+            let pc = z.z80.reg16(PC);
+            let d = z.memory.read(pc.wrapping_sub(2)) as i8;
+            <Z80InstructionsImpler<'a, Z, M, I, Inb> as ArrayTrait>::ARRAY[opcode as usize](z, d);
         }
     };
 }

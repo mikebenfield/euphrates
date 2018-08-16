@@ -1,10 +1,32 @@
 use super::*;
+use host_multimedia::SimpleGraphics;
 
-pub fn line<V>(vdp: &mut V) -> Result<(), SmsVdpGraphicsError>
+pub trait SmsVdpLineImpler: SmsVdpGraphics {
+    type Vdp: SmsVdpInternal;
+
+    fn vdp(&mut self) -> &mut Self::Vdp;
+}
+
+impl<'a, V: 'a, G: 'a> SmsVdpLineImpler for SmsVdpGraphicsImpler<'a, V, G>
 where
-    V: SmsVdpInternal + SmsVdpGraphics,
+    V: SmsVdpInternal,
+    G: SimpleGraphics,
 {
-    vdp.draw_line()?;
+    type Vdp = V;
+
+    #[inline(always)]
+    fn vdp(&mut self) -> &mut Self::Vdp {
+        self.vdp
+    }
+}
+
+pub fn line<V>(x: &mut V) -> Result<(), SmsVdpGraphicsError>
+where
+    V: SmsVdpLineImpler,
+{
+    x.draw_line()?;
+
+    let vdp = x.vdp();
 
     let v = vdp.v();
 
@@ -14,8 +36,6 @@ where
         let flags = vdp.status_flags();
         vdp.set_status_flags(flags | FRAME_INTERRUPT_FLAG);
         vdp.set_new_irq(true);
-        // XXX
-        // manifests::SET_FRAME_INTERRUPT.send(vdp, Payload::U16([v, 0, 0, 0]));
     }
 
     let new_v = (v + 1) % vdp.total_lines();
@@ -31,9 +51,6 @@ where
             vdp.set_line_counter(reg_line_counter);
             vdp.set_line_interrupt_pending(true);
             vdp.set_new_irq(true);
-            // XXX
-            // manifests::SET_LINE_INTERRUPT
-            //     .send(vdp, Payload::U16([v, reg_line_counter as u16, 0, 0]));
         }
     } else {
         let reg_line_counter = vdp.reg_line_counter();

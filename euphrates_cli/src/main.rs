@@ -21,8 +21,8 @@ use euphrates::host_multimedia::{FakeAudio, FakeGraphics};
 use euphrates::memo::NothingInbox;
 use euphrates::save;
 use euphrates::systems::sms::{
-    self, DebuggingInbox, Kind, MemWrap, MemoryMapperType, PointerSmsMemory,
-    Recording, Sms, SmsMemoryState, SmsState, TvSystem, Z80Internal,
+    self, DebuggingInbox, Kind, MemWrap, PointerSmsMemory, Recording, Sms, SmsMemoryMapper,
+    SmsMemoryState, SmsState, TvSystem,
 };
 
 use euphrates_sdl2::sms_user_interface;
@@ -69,7 +69,10 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
             }
         };
         () => {
-            match matches.value_of("memory_type").expect("unwrapping memory type") {
+            match matches
+                .value_of("memory_type")
+                .expect("unwrapping memory type")
+            {
                 "pointer" => eval_args!(MemWrap::<PointerSmsMemory>::default()),
                 _ => eval_args!(MemWrap::<SmsMemoryState>::default()),
             }
@@ -93,15 +96,15 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         "sms2" => Kind::Sms2,
         _ => Kind::Gg,
     };
-    let memory_map_type = match matches.value_of("memory_map").unwrap() {
-        "sg1000_1" => MemoryMapperType::Sg1000(1),
-        "sg1000_2" => MemoryMapperType::Sg1000(2),
-        "sg1000_4" => MemoryMapperType::Sg1000(4),
-        "codemasters" => MemoryMapperType::Codemasters,
-        _ => MemoryMapperType::Sega,
+    let memory_mapper = match matches.value_of("memory_map").unwrap() {
+        "sg1000_1" => SmsMemoryMapper::Sg1000(1),
+        "sg1000_2" => SmsMemoryMapper::Sg1000(2),
+        "sg1000_4" => SmsMemoryMapper::Sg1000(4),
+        "codemasters" => SmsMemoryMapper::Codemasters,
+        _ => SmsMemoryMapper::Sega,
     };
 
-    let state = SmsState::from_rom(Arc::new(rom), memory_map_type, tv_system, kind);
+    let state = SmsState::from_rom(Arc::new(rom), memory_mapper, tv_system, kind);
 
     let sdl = sdl2::init().unwrap();
 
@@ -112,7 +115,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         Some(s) => Some(PathBuf::from(s)),
     };
 
-    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[], false)?;
+    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[])?;
     user_interface.run()?;
 
     Ok(())
@@ -132,12 +135,12 @@ fn run_playback(matches: &ArgMatches) -> Result<()> {
     let mut user_interface =
         euphrates_sdl2::sms_user_interface::playback_ui(sms, &recording.player_statuses);
 
-    let start_cycles = Z80Internal::cycles(user_interface.master_system());
+    let start_cycles = user_interface.master_system().z80().cycles();
     let start_time = Instant::now();
 
     user_interface.run()?;
 
-    let end_cycles = Z80Internal::cycles(user_interface.master_system());
+    let end_cycles = user_interface.master_system().z80().cycles();
     let end_time = Instant::now();
 
     let time = end_time.duration_since(start_time);
@@ -166,7 +169,7 @@ fn run_load(matches: &ArgMatches) -> Result<()> {
 
     let sms = new_sms(&sdl, state, matches)?;
 
-    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[], false)?;
+    let mut user_interface = sms_user_interface::ui(sms, &sdl, save_directory, &[])?;
 
     user_interface.run()?;
 
@@ -186,7 +189,7 @@ fn run_record(matches: &ArgMatches) -> Result<()> {
     let sms = new_sms(&sdl, recording.state, matches)?;
 
     let mut user_interface =
-        sms_user_interface::ui(sms, &sdl, save_directory, &recording.player_statuses, false)?;
+        sms_user_interface::ui(sms, &sdl, save_directory, &recording.player_statuses)?;
 
     user_interface.run()?;
 

@@ -3,47 +3,15 @@
 use failure::Error;
 
 use host_multimedia::SimpleAudio;
-use impler::{Cref, Impl, Mref, Ref};
 
 /// The hardware interface for the SN76489 sound chip.
 pub trait Sn76489Interface {
     fn write(&mut self, data: u8);
 }
 
-pub struct Sn76489InterfaceImpl;
-
-impl<T> Sn76489Interface for T
-where
-    T: Impl<Sn76489InterfaceImpl> + ?Sized,
-    T::Impler: Sn76489Interface,
-{
-    #[inline]
-    fn write(&mut self, data: u8) {
-        self.make_mut().write(data)
-    }
-}
-
 pub trait Sn76489Audio {
     fn queue(&mut self, target_cycles: u64) -> Result<(), Error>;
     fn hold(&mut self);
-}
-
-pub struct Sn76489AudioImpl;
-
-impl<T: ?Sized> Sn76489Audio for T
-where
-    T: Impl<Sn76489AudioImpl>,
-    T::Impler: Sn76489Audio,
-{
-    #[inline]
-    fn queue(&mut self, target_cycles: u64) -> Result<(), Error> {
-        self.make_mut().queue(target_cycles)
-    }
-
-    #[inline]
-    fn hold(&mut self) {
-        self.make_mut().hold()
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -114,26 +82,27 @@ macro_rules! min_nonzero {
     };
 }
 
-pub struct SimpleSn76489AudioImpler<T: ?Sized>(Ref<T>);
-
-impl<T: ?Sized> SimpleSn76489AudioImpler<T> {
-    #[inline(always)]
-    pub fn new<'a>(t: &'a T) -> Cref<'a, Self> {
-        Cref::Own(SimpleSn76489AudioImpler(unsafe { Ref::new(t) }))
-    }
-
-    #[inline(always)]
-    pub fn new_mut<'a>(t: &'a mut T) -> Mref<'a, Self> {
-        Mref::Own(SimpleSn76489AudioImpler(unsafe { Ref::new_mut(t) }))
-    }
+pub struct Sn76489Impler<'a, Sn76489: 'a, Audio: 'a> {
+    pub sn76489: &'a mut Sn76489,
+    pub audio: &'a mut Audio,
 }
 
-impl<T> Sn76489Audio for SimpleSn76489AudioImpler<T>
+impl<'a, Audio: 'a> Sn76489Audio for Sn76489Impler<'a, FakeSn76489, Audio> {
+    #[inline(always)]
+    fn queue(&mut self, _target_cycles: u64) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn hold(&mut self) {}
+}
+
+impl<'a, Audio: 'a> Sn76489Audio for Sn76489Impler<'a, Sn76489State, Audio>
 where
-    T: AsRef<Sn76489State> + AsMut<Sn76489State> + SimpleAudio + ?Sized,
+    Audio: SimpleAudio,
 {
     fn queue(&mut self, target_cycles: u64) -> Result<(), Error> {
-        if self.0._0().as_ref().cycles >= target_cycles {
+        if self.sn76489.cycles >= target_cycles {
             return Ok(());
         }
 
@@ -163,72 +132,72 @@ where
         }
 
         let amplitudes: [i16; 4] = [
-            convert_volume(self.0._0().as_ref().registers[1]),
-            convert_volume(self.0._0().as_ref().registers[3]),
-            convert_volume(self.0._0().as_ref().registers[5]),
-            convert_volume(self.0._0().as_ref().registers[7]),
+            convert_volume(self.sn76489.registers[1]),
+            convert_volume(self.sn76489.registers[3]),
+            convert_volume(self.sn76489.registers[5]),
+            convert_volume(self.sn76489.registers[7]),
         ];
 
         {
-            let s = self.0.mut_0();
             let mut i: usize = 0;
-            while i < s.buffer_len() {
-                let tone0 = s.as_ref().polarity[0] as i16 * amplitudes[0];
-                let tone1 = s.as_ref().polarity[1] as i16 * amplitudes[1];
-                let tone2 = s.as_ref().polarity[2] as i16 * amplitudes[2];
-                let noise = s.as_ref().polarity[3] as i16 * amplitudes[3];
+            while i < self.audio.buffer_len() {
+                let tone0 = self.sn76489.polarity[0] as i16 * amplitudes[0];
+                let tone1 = self.sn76489.polarity[1] as i16 * amplitudes[1];
+                let tone2 = self.sn76489.polarity[2] as i16 * amplitudes[2];
+                let noise = self.sn76489.polarity[3] as i16 * amplitudes[3];
                 let sum = tone0 + tone1 + tone2 + noise;
-                debug_assert!(s.buffer_len() <= u16::max_value() as usize);
+                debug_assert!(self.audio.buffer_len() <= u16::max_value() as usize);
                 let count = min_nonzero!(
-                    (s.buffer_len() - i) as u16,
-                    s.as_ref().counters[0],
-                    s.as_ref().counters[1],
-                    s.as_ref().counters[2],
-                    s.as_ref().counters[3]
+                    (self.audio.buffer_len() - i) as u16,
+                    self.sn76489.counters[0],
+                    self.sn76489.counters[1],
+                    self.sn76489.counters[2],
+                    self.sn76489.counters[3]
                 );
                 let last_idx = count as usize + i;
                 for j in i..last_idx as usize {
-                    s.buffer_set(j, sum);
+                    self.audio.buffer_set(j, sum);
                 }
                 for j in 0..3 {
-                    s.as_mut().counters[j] -= count;
-                    let tone_reg = s.as_ref().registers[2 * j];
+                    self.sn76489.counters[j] -= count;
+                    let tone_reg = self.sn76489.registers[2 * j];
                     if tone_reg == 0 || tone_reg == 1 {
-                        s.as_mut().polarity[j] = 1;
-                        s.as_mut().counters[j] = 0x3FF;
-                    } else if s.as_ref().counters[j] == 0 {
-                        s.as_mut().polarity[j] *= -1;
-                        s.as_mut().counters[j] = tone_reg;
+                        self.sn76489.polarity[j] = 1;
+                        self.sn76489.counters[j] = 0x3FF;
+                    } else if self.sn76489.counters[j] == 0 {
+                        self.sn76489.polarity[j] *= -1;
+                        self.sn76489.counters[j] = tone_reg;
                     }
                 }
-                s.as_mut().counters[3] -= count;
-                if s.as_ref().counters[3] == 0 {
-                    s.as_mut().counters[3] = match 0x3 & s.as_ref().registers[6] {
+                self.sn76489.counters[3] -= count;
+                if self.sn76489.counters[3] == 0 {
+                    self.sn76489.counters[3] = match 0x3 & self.sn76489.registers[6] {
                         0 => 0x20,
                         1 => 0x40,
                         2 => 0x80,
-                        _ => 2 * s.as_mut().registers[4],
+                        _ => 2 * self.sn76489.registers[4],
                     };
-                    let bit0 = 1 & s.as_ref().linear_feedback;
+                    let bit0 = 1 & self.sn76489.linear_feedback;
                     let bit0_shifted = 1 << 15;
-                    s.as_mut().polarity[3] = 2 * (bit0 as i8) - 1;
-                    if s.as_ref().registers[6] & 4 != 0 {
+                    self.sn76489.polarity[3] = 2 * (bit0 as i8) - 1;
+                    if self.sn76489.registers[6] & 4 != 0 {
                         // white noise
-                        let bit3_shifted = (8 & s.as_ref().linear_feedback) << 12;
+                        let bit3_shifted = (8 & self.sn76489.linear_feedback) << 12;
                         let feed_bit = bit0_shifted ^ bit3_shifted;
-                        s.as_mut().linear_feedback = feed_bit | (s.as_ref().linear_feedback >> 1);
+                        self.sn76489.linear_feedback =
+                            feed_bit | (self.sn76489.linear_feedback >> 1);
                     } else {
                         // "periodic noise"
-                        s.as_mut().linear_feedback =
-                            bit0_shifted | (s.as_ref().linear_feedback >> 1);
+                        self.sn76489.linear_feedback =
+                            bit0_shifted | (self.sn76489.linear_feedback >> 1);
                     }
                 }
                 i = last_idx;
             }
 
-            s.as_mut().cycles += s.buffer_len() as u64;
+            self.sn76489.cycles += self.audio.buffer_len() as u64;
 
-            s.queue_buffer()?;
+            self.audio.queue_buffer()?;
         }
 
         self.queue(target_cycles)
@@ -249,14 +218,4 @@ pub struct FakeSn76489;
 impl Sn76489Interface for FakeSn76489 {
     #[inline]
     fn write(&mut self, _data: u8) {}
-}
-
-impl Sn76489Audio for FakeSn76489 {
-    #[inline]
-    fn queue(&mut self, _target_cycles: u64) -> Result<(), Error> {
-        Ok(())
-    }
-
-    #[inline]
-    fn hold(&mut self) {}
 }
