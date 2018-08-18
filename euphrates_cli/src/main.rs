@@ -21,8 +21,8 @@ use euphrates::host_multimedia::{FakeAudio, FakeGraphics};
 use euphrates::memo::NothingInbox;
 use euphrates::save;
 use euphrates::systems::sms::{
-    self, DebuggingInbox, Kind, MemWrap, PointerSmsMemory, Recording, Sms, SmsMemoryMapper,
-    SmsMemoryState, SmsState, TvSystem,
+    self, BoxedInbox, DebuggingInbox, Kind, MemWrap, PointerSmsMemory, Recording, Sms,
+    SmsMemoryMapper, SmsMemoryState, SmsState, TvSystem,
 };
 
 use euphrates_sdl2::sms_user_interface;
@@ -58,8 +58,18 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
         };
         ($memory:expr, $sn76489:expr, $audio:expr) => {
             match matches.value_of("debug").expect("unwrapping debug") {
-                "true" => eval_args!($memory, $sn76489, $audio, DebuggingInbox::default()),
-                _ => eval_args!($memory, $sn76489, $audio, NothingInbox::default()),
+                "true" => eval_args!(
+                    $memory,
+                    $sn76489,
+                    $audio,
+                    BoxedInbox::new(DebuggingInbox::default())
+                ),
+                _ => eval_args!(
+                    $memory,
+                    $sn76489,
+                    $audio,
+                    BoxedInbox::new(NothingInbox::default())
+                ),
             }
         };
         ($memory:expr) => {

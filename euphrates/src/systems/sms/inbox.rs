@@ -266,3 +266,58 @@ impl GetDebugger for NothingInbox<Z80Memo> {
         None
     }
 }
+
+pub trait Z80Inbox {
+    fn receive_impl(&mut self, memo: Z80Memo);
+    fn active(&self) -> bool;
+}
+
+impl<T> Z80Inbox for T
+where
+    T: Inbox<Memo = Z80Memo> + ?Sized,
+{
+    fn receive_impl(&mut self, memo: Z80Memo) {
+        self.receive_impl(memo);
+    }
+
+    fn active(&self) -> bool {
+        self.active()
+    }
+}
+
+pub trait InboxGetDebugger: Z80Inbox + GetDebugger {}
+
+impl<T> InboxGetDebugger for T
+where
+    T: ?Sized + Z80Inbox + GetDebugger,
+{
+}
+
+pub struct BoxedInbox(Box<dyn InboxGetDebugger>);
+
+impl BoxedInbox {
+    pub fn new<T>(item: T) -> Self
+    where
+        T: 'static + InboxGetDebugger,
+    {
+        BoxedInbox(Box::new(item))
+    }
+}
+
+impl GetDebugger for BoxedInbox {
+    fn debugger(&mut self) -> Option<&mut dyn Debugger> {
+        self.0.debugger()
+    }
+}
+
+impl Inbox for BoxedInbox {
+    type Memo = Z80Memo;
+
+    fn receive_impl(&mut self, memo: Z80Memo) {
+        self.0.receive_impl(memo);
+    }
+
+    fn active(&self) -> bool {
+        self.0.active()
+    }
+}
