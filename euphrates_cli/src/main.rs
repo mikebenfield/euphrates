@@ -21,12 +21,18 @@ use euphrates::host_multimedia::{FakeAudio, FakeGraphics};
 use euphrates::memo::NothingInbox;
 use euphrates::save;
 use euphrates::systems::sms::{
-    self, BoxedInbox, DebuggingInbox, Kind, MemWrap, PointerSmsMemory, Recording, Sms,
-    SmsMemoryMapper, SmsMemoryState, SmsState, TvSystem,
+    self, BoxedInbox, DebuggingInbox, Kind, MemWrap, Recording, Sms, SmsMemoryMapper, SmsState,
+    TvSystem,
 };
 
 use euphrates_sdl2::sms_user_interface;
 use euphrates_sdl2::{simple_audio::Audio, simple_graphics::Window};
+
+#[cfg(state_memory)]
+type MemoryType = sms::SmsMemoryState;
+
+#[cfg(not(state_memory))]
+type MemoryType = sms::PointerSmsMemory;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -39,52 +45,41 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
     };
 
     macro_rules! eval_args {
-        ($memory:expr, $sn76489:expr, $audio:expr, $inbox:expr, $graphics:expr) => {
+        ($sn76489:expr, $audio:expr, $inbox:expr, $graphics:expr) => {
             Ok(sms::new_sms(
-                frequency, state, $graphics, $audio, $sn76489, $inbox, $memory,
+                frequency,
+                state,
+                $graphics,
+                $audio,
+                $sn76489,
+                $inbox,
+                MemWrap::<MemoryType>::default(),
             )?)
         };
-        ($memory:expr, $sn76489:expr, $audio:expr, $inbox:expr) => {
+        ($sn76489:expr, $audio:expr, $inbox:expr) => {
             match matches.value_of("graphics").expect("unwrapping graphics") {
                 "true" => {
                     let mut graphics = Window::new(&sdl)?;
                     graphics.set_size(768, 576);
                     graphics.set_texture_size(256, 192);
                     graphics.set_title("Euphrates");
-                    eval_args!($memory, $sn76489, $audio, $inbox, graphics)
+                    eval_args!($sn76489, $audio, $inbox, graphics)
                 }
-                _ => eval_args!($memory, $sn76489, $audio, $inbox, FakeGraphics::default()),
+                _ => eval_args!($sn76489, $audio, $inbox, FakeGraphics::default()),
             }
         };
-        ($memory:expr, $sn76489:expr, $audio:expr) => {
+        ($sn76489:expr, $audio:expr) => {
             match matches.value_of("debug").expect("unwrapping debug") {
-                "true" => eval_args!(
-                    $memory,
-                    $sn76489,
-                    $audio,
-                    BoxedInbox::new(DebuggingInbox::default())
-                ),
-                _ => eval_args!(
-                    $memory,
-                    $sn76489,
-                    $audio,
-                    BoxedInbox::new(NothingInbox::default())
-                ),
-            }
-        };
-        ($memory:expr) => {
-            match matches.value_of("sound").expect("unwrapping sound") {
-                "true" => eval_args!($memory, Sn76489State::default(), Audio::new(sdl)?),
-                _ => eval_args!($memory, FakeSn76489, FakeAudio),
+                "true" => {
+                    eval_args!($sn76489, $audio, BoxedInbox::new(DebuggingInbox::default()))
+                }
+                _ => eval_args!($sn76489, $audio, BoxedInbox::new(NothingInbox::default())),
             }
         };
         () => {
-            match matches
-                .value_of("memory_type")
-                .expect("unwrapping memory type")
-            {
-                "pointer" => eval_args!(MemWrap::<PointerSmsMemory>::default()),
-                _ => eval_args!(MemWrap::<SmsMemoryState>::default()),
+            match matches.value_of("sound").expect("unwrapping sound") {
+                "true" => eval_args!(Sn76489State::default(), Audio::new(sdl)?),
+                _ => eval_args!(FakeSn76489, FakeAudio),
             }
         };
     }
@@ -263,14 +258,6 @@ fn run() -> Result<()> {
         .validator(frequency_validator)
         .help("Frequency of the Z80 processor");
 
-    let memory_type_arg = Arg::with_name("memory_type")
-        .long("memory_type")
-        .value_name("(pointer|state)")
-        .takes_value(true)
-        .default_value("pointer")
-        .possible_values(&["pointer", "state"])
-        .help("Which memory implementation to use");
-
     let sound_arg = Arg::with_name("sound")
         .long("sound")
         .value_name("BOOL")
@@ -310,7 +297,6 @@ fn run() -> Result<()> {
                 .arg(sound_arg.clone())
                 .arg(graphics_arg.clone())
                 .arg(frequency_arg.clone())
-                .arg(memory_type_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("load")
@@ -328,7 +314,6 @@ fn run() -> Result<()> {
                 .arg(frequency_arg.clone())
                 .arg(sound_arg.clone())
                 .arg(graphics_arg.clone())
-                .arg(memory_type_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("loadrecord")
@@ -346,7 +331,6 @@ fn run() -> Result<()> {
                 .arg(frequency_arg.clone())
                 .arg(sound_arg.clone())
                 .arg(graphics_arg.clone())
-                .arg(memory_type_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("playback")
@@ -363,7 +347,6 @@ fn run() -> Result<()> {
                 .arg(frequency_arg.clone())
                 .arg(sound_arg.clone())
                 .arg(graphics_arg.clone())
-                .arg(memory_type_arg.clone()),
         );
     let matches = app.get_matches();
 

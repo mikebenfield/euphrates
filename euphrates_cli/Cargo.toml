@@ -15,3 +15,6 @@ euphrates_x64 = { path = "../euphrates_x64", optional = true }
 sdl2 = "0.31"
 clap = "2.31"
 failure = "0.1.1"
+
+[features]
+state_memory = []
