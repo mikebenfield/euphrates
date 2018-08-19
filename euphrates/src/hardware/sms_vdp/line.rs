@@ -1,5 +1,4 @@
 use super::*;
-use host_multimedia::SimpleGraphics;
 
 pub trait SmsVdpLineImpler: SmsVdpGraphics {
     type Vdp: SmsVdpInternal;
@@ -10,7 +9,7 @@ pub trait SmsVdpLineImpler: SmsVdpGraphics {
 impl<'a, V: 'a, G: 'a> SmsVdpLineImpler for SmsVdpGraphicsImpler<'a, V, G>
 where
     V: SmsVdpInternal,
-    G: SimpleGraphics,
+    Self: SmsVdpGraphics,
 {
     type Vdp = V;
 

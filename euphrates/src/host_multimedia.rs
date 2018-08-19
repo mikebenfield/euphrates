@@ -1,7 +1,5 @@
 use std;
 
-use impler::Impl;
-
 use failure::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -35,36 +33,6 @@ pub trait SimpleGraphics {
 }
 
 pub struct SimpleGraphicsImpl;
-
-impl<T> SimpleGraphics for T
-where
-    T: Impl<SimpleGraphicsImpl> + ?Sized,
-    T::Impler: SimpleGraphics,
-{
-    #[inline]
-    fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
-        self.make_mut().set_resolution(width, height)
-    }
-
-    #[inline]
-    fn resolution(&self) -> (u32, u32) {
-        self.make().resolution()
-    }
-
-    #[inline]
-    fn paint(&mut self, x: u32, y: u32, color: SimpleColor) {
-        self.make_mut().paint(x, y, color)
-    }
-
-    fn get(&self, x: u32, y: u32) -> SimpleColor {
-        self.make().get(x, y)
-    }
-
-    #[inline]
-    fn render(&mut self) -> Result<()> {
-        self.make_mut().render()
-    }
-}
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct FakeGraphics(u32, u32);
@@ -114,42 +82,6 @@ pub trait SimpleAudio {
     fn queue_buffer(&mut self) -> Result<()>;
 
     fn clear(&mut self) -> Result<()>;
-}
-
-pub struct SimpleAudioImpl;
-
-impl<T> SimpleAudio for T
-where
-    T: Impl<SimpleAudioImpl> + ?Sized,
-    T::Impler: SimpleAudio,
-{
-    fn configure(&mut self, frequency: u32, buffer_size: u16) -> Result<()> {
-        self.make_mut().configure(frequency, buffer_size)
-    }
-
-    fn play(&mut self) -> Result<()> {
-        self.make_mut().play()
-    }
-
-    fn pause(&mut self) -> Result<()> {
-        self.make_mut().pause()
-    }
-
-    fn buffer_len(&self) -> usize {
-        self.make().buffer_len()
-    }
-
-    fn buffer_set(&mut self, i: usize, value: i16) {
-        self.make_mut().buffer_set(i, value)
-    }
-
-    fn queue_buffer(&mut self) -> Result<()> {
-        self.make_mut().queue_buffer()
-    }
-
-    fn clear(&mut self) -> Result<()> {
-        self.make_mut().clear()
-    }
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]

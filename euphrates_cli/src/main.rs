@@ -17,12 +17,12 @@ use sdl2::Sdl;
 
 use euphrates::hardware::sms_roms;
 use euphrates::hardware::sn76489::{FakeSn76489, Sn76489State};
-use euphrates::host_multimedia::{FakeAudio, FakeGraphics};
+use euphrates::host_multimedia::FakeAudio;
 use euphrates::memo::NothingInbox;
 use euphrates::save;
 use euphrates::systems::sms::{
-    self, BoxedInbox, DebuggingInbox, Kind, MemWrap, Recording, Sms, SmsMemoryMapper, SmsState,
-    TvSystem,
+    self, BoxedInbox, DebuggingInbox, FakeSmsGraphics, Kind, MemWrap, Recording, Sms,
+    SmsMemoryMapper, SmsState, TvSystem,
 };
 
 use euphrates_sdl2::sms_user_interface;
@@ -65,7 +65,7 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
                     graphics.set_title("Euphrates");
                     eval_args!($sn76489, $audio, $inbox, graphics)
                 }
-                _ => eval_args!($sn76489, $audio, $inbox, FakeGraphics::default()),
+                _ => eval_args!($sn76489, $audio, $inbox, FakeSmsGraphics::default()),
             }
         };
         ($sn76489:expr, $audio:expr) => {
@@ -296,7 +296,7 @@ fn run() -> Result<()> {
                 .arg(kind_arg.clone())
                 .arg(sound_arg.clone())
                 .arg(graphics_arg.clone())
-                .arg(frequency_arg.clone())
+                .arg(frequency_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("load")
@@ -313,7 +313,7 @@ fn run() -> Result<()> {
                 )
                 .arg(frequency_arg.clone())
                 .arg(sound_arg.clone())
-                .arg(graphics_arg.clone())
+                .arg(graphics_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("loadrecord")
@@ -330,7 +330,7 @@ fn run() -> Result<()> {
                 )
                 .arg(frequency_arg.clone())
                 .arg(sound_arg.clone())
-                .arg(graphics_arg.clone())
+                .arg(graphics_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("playback")
@@ -346,7 +346,7 @@ fn run() -> Result<()> {
                 )
                 .arg(frequency_arg.clone())
                 .arg(sound_arg.clone())
-                .arg(graphics_arg.clone())
+                .arg(graphics_arg.clone()),
         );
     let matches = app.get_matches();
 

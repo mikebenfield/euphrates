@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use failure::Error;
 
-use host_multimedia::{SimpleAudio, SimpleGraphics};
+use host_multimedia::SimpleAudio;
 use memo::Inbox;
 use utilities;
 
@@ -113,7 +113,7 @@ pub trait Sms {
 
 impl<Graphics, Audio, Sn76489, Mem, Inx> Sms for SmsS<Graphics, Audio, Sn76489, Mem, Inx>
 where
-    Graphics: SimpleGraphics,
+    for<'a> SmsVdpGraphicsImpler<'a, SmsVdpState, Graphics>: SmsVdpLineImpler,
     Audio: SimpleAudio,
     Sn76489: Sn76489Interface,
     for<'a> Sn76489Impler<'a, Sn76489, Audio>: Sn76489Audio,
@@ -195,7 +195,7 @@ pub fn new_sms<Graphics: 'static, Audio: 'static, Sn76489: 'static, Memory: 'sta
     _mem: MemWrap<Memory>,
 ) -> Result<Box<dyn Sms>, SmsCreationError>
 where
-    Graphics: SimpleGraphics,
+    for<'a> SmsVdpGraphicsImpler<'a, SmsVdpState, Graphics>: SmsVdpLineImpler,
     Audio: SimpleAudio,
     Sn76489: Sn76489Interface,
     for<'a> Sn76489Impler<'a, Sn76489, Audio>: Sn76489Audio,
@@ -278,7 +278,7 @@ fn run_frame<Graphics, Audio, Sn76489, Mem, Inx>(
     sms: &mut SmsS<Graphics, Audio, Sn76489, Mem, Inx>,
 ) -> Result<(), SmsEmulationError>
 where
-    Graphics: SimpleGraphics,
+    for<'a> SmsVdpGraphicsImpler<'a, SmsVdpState, Graphics>: SmsVdpLineImpler,
     Audio: SimpleAudio,
     Sn76489: Sn76489Interface,
     for<'a> Sn76489Impler<'a, Sn76489, Audio>: Sn76489Audio,

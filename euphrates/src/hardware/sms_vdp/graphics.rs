@@ -733,9 +733,11 @@ where
     Ok(())
 }
 
-pub struct FakeSmsVdpGraphicsImpler;
+#[derive(Copy, Clone, Default, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize,
+         Deserialize)]
+pub struct FakeSmsGraphics;
 
-impl SmsVdpGraphics for FakeSmsVdpGraphicsImpler {
+impl<'a, V: 'a> SmsVdpGraphics for SmsVdpGraphicsImpler<'a, V, FakeSmsGraphics> {
     #[inline]
     fn draw_line(&mut self) -> Result<(), SmsVdpGraphicsError> {
         Ok(())
