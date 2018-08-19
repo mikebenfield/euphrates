@@ -25,7 +25,7 @@ pub struct SmsState {
 
 impl SmsState {
     pub fn from_rom(
-        rom: Arc<Box<[[u8; 0x4000]]>>,
+        rom: Arc<Box<[u8]>>,
         mapper: SmsMemoryMapper,
         tv_system: TvSystem,
         vdp_kind: Kind,

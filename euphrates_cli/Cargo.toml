@@ -12,6 +12,7 @@ doc = false
 euphrates = { path = "../euphrates" }
 euphrates_sdl2 = { path = "../euphrates_sdl2" }
 euphrates_x64 = { path = "../euphrates_x64", optional = true }
+euphrates_virtual_memory = { path = "../euphrates_virtual_memory", optional = true}
 sdl2 = "0.31"
 clap = "2.31"
 failure = "0.1.1"

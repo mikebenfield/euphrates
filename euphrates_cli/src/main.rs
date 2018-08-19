@@ -3,7 +3,9 @@
 extern crate clap;
 extern crate euphrates;
 extern crate euphrates_sdl2;
-#[cfg(euphrates_x64)]
+#[cfg(feature = "euphrates_virtual_memory")]
+extern crate euphrates_virtual_memory;
+#[cfg(feature = "euphrates_x64")]
 extern crate euphrates_x64;
 extern crate failure;
 extern crate sdl2;
@@ -28,11 +30,14 @@ use euphrates::systems::sms::{
 use euphrates_sdl2::sms_user_interface;
 use euphrates_sdl2::{simple_audio::Audio, simple_graphics::Window};
 
-#[cfg(state_memory)]
+#[cfg(all(feature = "state_memory", not(feature = "euphrates_virtual_memory")))]
 type MemoryType = sms::SmsMemoryState;
 
-#[cfg(not(state_memory))]
+#[cfg(all(not(feature = "state_memory"), not(feature = "euphrates_virtual_memory")))]
 type MemoryType = sms::PointerSmsMemory;
+
+#[cfg(feature = "euphrates_virtual_memory")]
+type MemoryType = euphrates_virtual_memory::SmsVirtualMemory;
 
 type Result<T> = std::result::Result<T, Error>;
 

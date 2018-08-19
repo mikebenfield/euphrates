@@ -181,9 +181,10 @@ where
             memory.map_page(3, SystemRam);
         }
         SmsMemoryMapper::Codemasters => {
+            memory.set_system_ram_kib(8);
             memory.map_page(0, Rom(0));
             memory.map_page(1, Rom(1));
-            memory.map_page(0, Rom(0));
+            memory.map_page(2, Rom(0));
             memory.map_page(3, SystemRam);
         }
         SmsMemoryMapper::Sg1000(x) => {
@@ -328,8 +329,8 @@ pub trait SmsMemory: Memory16 {
 /// implementation via `SmsMemoryLoad`.
 #[derive(Clone)]
 pub struct SmsMemoryState {
-    pub rom: Arc<Box<[[u8; 0x4000]]>>,
-    pub system_ram: Box<[[u8; 0x400]]>,
+    pub rom: Arc<Box<[u8]>>,
+    pub system_ram: Box<[u8]>,
     pub main_cartridge_ram: MainCartridgeRam,
     pub half_cartridge_ram: Option<Box<[u8; 0x2000]>>,
     pub pages: [MemoryPage; 4],
@@ -342,8 +343,8 @@ mod _impl2 {
 
     #[derive(Hash, PartialEq, Serialize, Deserialize)]
     struct SmsMemoryStateDerive {
-        pub rom: Arc<Box<[[[[u8; 0x20]; 0x20]; 0x10]]>>,
-        pub system_ram: Box<[[[u8; 0x20]; 0x20]]>,
+        pub rom: Arc<Box<[u8]>>,
+        pub system_ram: Box<[u8]>,
         pub main_cartridge_ram: super::MainCartridgeRam,
         pub half_cartridge_ram: Option<Box<[[[u8; 0x20]; 0x10]; 0x10]>>,
         pub pages: [super::MemoryPage; 4],
@@ -362,9 +363,10 @@ impl SmsMemoryState {
     /// That is, are they smaller than the total number of pages in the ROM?
     pub fn check_valid(&self) -> Option<SmsMemoryLoadError> {
         use self::SmsMemoryLoadError::*;
-        let rom_pages = self.rom.len();
-        if rom_pages == 0 || rom_pages > 0x100 {
-            return Some(InvalidRomSize(rom_pages * 0x4000));
+        let rom_len = self.rom.len();
+        let rom_pages = rom_len / 0x4000;
+        if rom_len == 0 || rom_len > 0x400000 {
+            return Some(InvalidRomSize(rom_len));
         }
 
         for (slot, page) in self.pages.iter().enumerate() {
@@ -495,6 +497,7 @@ impl Memory16 for SmsMemoryState {
 }
 
 /// Check if writing to a register and update slots/pages as necessary.
+#[inline]
 pub fn memory_register_check<M>(memory: &mut M, logical_address: u16, value: u8)
 where
     M: SmsMemory + ?Sized,
@@ -508,8 +511,8 @@ where
 
 impl SmsMemory for SmsMemoryState {
     fn set_system_ram_kib(&mut self, kib: usize) {
-        let ram: Vec<[u8; 0x400]> = vec![[0u8; 0x400]; kib];
-        self.system_ram = ram.into_boxed_slice();
+        let len = kib * 0x400;
+        self.system_ram = vec![0u8; len].into_boxed_slice();
     }
 
     #[inline(always)]
@@ -529,7 +532,7 @@ impl SmsMemory for SmsMemoryState {
 
     #[inline(always)]
     fn rom_len(&self) -> usize {
-        self.rom.len() * 0x4000
+        self.rom.len()
     }
 
     #[inline(always)]
@@ -538,12 +541,12 @@ impl SmsMemory for SmsMemoryState {
     }
     #[inline(always)]
     fn rom_read(&self, index: usize) -> u8 {
-        self.rom[index >> 14][index & 0x3FFF]
+        self.rom[index]
     }
 
     #[inline(always)]
     fn rom_write(&mut self, index: usize, value: u8) {
-        Arc::make_mut(&mut self.rom)[index >> 14][index & 0x3FFF] = value;
+        Arc::make_mut(&mut self.rom)[index] = value;
     }
 
     #[inline(always)]
@@ -617,12 +620,12 @@ impl SmsMemory for SmsMemoryState {
 
     #[inline(always)]
     fn system_ram_read(&self, index: usize) -> u8 {
-        self.system_ram[index >> 10][index & 0x3FF]
+        self.system_ram[index]
     }
 
     #[inline(always)]
     fn system_ram_write(&mut self, index: usize, value: u8) {
-        self.system_ram[index >> 10][index & 0x3FF] = value
+        self.system_ram[index] = value
     }
 
     #[inline(always)]
@@ -696,7 +699,7 @@ pub trait SmsMemoryLoad: Sized {
         Self::load(state.clone())
     }
 
-    fn from_rom(rom: Box<[[u8; 0x4000]]>) -> Result<Self, SmsMemoryLoadError> {
+    fn from_rom(rom: Box<[u8; 0x4000]>) -> Result<Self, SmsMemoryLoadError> {
         let state = SmsMemoryState {
             rom: Arc::new(rom),
             system_ram: Default::default(),
@@ -870,7 +873,9 @@ impl PointerSmsMemory {
             SystemRam => {
                 let kib = state.system_ram.len();
                 for i in 0..16 {
-                    let ptr: *mut u8 = &mut state.system_ram[i % kib][0];
+                    let offset = (i % kib) * 0x400;
+                    let ptr: *mut u8 =
+                        unsafe { state.system_ram.as_mut_ptr().offset(offset as isize) };
                     minislots[i] = ptr;
                     write_minislots[i] = ptr;
                 }
@@ -902,7 +907,7 @@ impl PointerSmsMemory {
             }
             HalfCartridgeRam(page) => {
                 state.ensure_half_page();
-                let ptr0: *const u8 = &state.rom[page as usize][0];
+                let ptr0: *const u8 = unsafe { state.rom.as_ptr().offset(page as isize * 0x4000) };
                 let ptr1: *mut u8 = match &mut state.half_cartridge_ram {
                     &mut Some(ref mut x) => &mut x[0],
                     _ => unreachable!(),
@@ -917,7 +922,7 @@ impl PointerSmsMemory {
                 }
             }
             Rom(page) => {
-                let ptr: *const u8 = &state.rom[page as usize][0];
+                let ptr: *const u8 = unsafe { state.rom.as_ptr().offset(page as isize * 0x4000) };
                 for i in 0..16 {
                     let p = unsafe { ptr.offset(i as isize * 0x400) };
                     minislots[i] = p;
@@ -925,9 +930,9 @@ impl PointerSmsMemory {
                 }
             }
             RomButFirstKiB(page) => {
-                minislots[0] = &state.rom[0][0];
+                minislots[0] = state.rom.as_ptr();
                 write_minislots[0] = scrap_ptr;
-                let ptr: *const u8 = &state.rom[page as usize][0];
+                let ptr: *const u8 = unsafe { state.rom.as_ptr().offset(page as isize * 0x4000) };
                 for i in 1..16 {
                     let p = unsafe { ptr.offset(i as isize * 0x400) };
                     minislots[i] = p;
@@ -1016,11 +1021,11 @@ impl SmsMemory for PointerSmsMemory {
             let state = self.state_mut();
             if let Some(rom) = Arc::get_mut(&mut state.rom) {
                 // we have the only copy of the ROM; just mutate
-                rom[index >> 14][index & 0x3FFF] = value;
+                rom[index] = value;
                 return;
             }
             // there may be other copies; we must clone and reset our pointers
-            Arc::make_mut(&mut state.rom)[index >> 14][index & 0x3FFF] = value;
+            Arc::make_mut(&mut state.rom)[index] = value;
         }
         self.reset_pointers();
     }

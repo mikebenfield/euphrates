@@ -33,11 +33,10 @@ impl From<IoError> for SmsRomError {
     }
 }
 
-/// Turn the ROM image as a boxed slice of bytes into a boxed slice of `0x4000` byte arrays.
+/// If the ROM does not have the right length, fix that. Our ROMs will always
+/// have a length a multiple of 0x4000.
 ///
-/// Since SMS ROMs are composed of `0x4000` byte pages, we use the type `[[u8;
-/// 0x4000]]` to represent them. This function:
-///
+/// This function:
 /// * strips off a 512 byte header, if present
 /// * does ROM mirroring of `0x2000` byte slices (it just puts two copies of the
 ///   ROM image into a `[u8; 0x4000]`).
@@ -45,10 +44,7 @@ impl From<IoError> for SmsRomError {
 ///
 /// ROMs longer than `0x2000` bytes but not a multiple of `0x4000` will give an
 /// error. (I'm not sure at the moment whether such ROMs are valid.)
-pub fn format(mut rom: Box<[u8]>) -> Result<Box<[[u8; 0x4000]]>, SmsRomError> {
-    use std::mem::forget;
-    use std::slice::from_raw_parts_mut;
-
+pub fn format(rom: Box<[u8]>) -> Result<Box<[u8]>, SmsRomError> {
     let len = rom.len();
 
     if len == 0 || len > 0x400000 {
@@ -56,11 +52,7 @@ pub fn format(mut rom: Box<[u8]>) -> Result<Box<[[u8; 0x4000]]>, SmsRomError> {
     }
 
     if len % 0x4000 == 0 {
-        // we're good; just need to change the type
-        let ptr = rom.as_mut_ptr() as *mut [u8; 0x4000];
-        let new_len = len / 0x4000;
-        forget(rom);
-        return Ok(unsafe { Box::from_raw(from_raw_parts_mut(ptr, new_len)) });
+        return Ok(rom);
     }
 
     if len % 0x2000 == 0x200 {
@@ -69,7 +61,7 @@ pub fn format(mut rom: Box<[u8]>) -> Result<Box<[[u8; 0x4000]]>, SmsRomError> {
     }
 
     if len < 0x2000 {
-        // pad with 0? XXX
+        // pad with 0?
         let mut x = rom.into_vec();
         x.resize(0x2000, 0u8);
         return format(x.into_boxed_slice());
@@ -82,8 +74,7 @@ pub fn format(mut rom: Box<[u8]>) -> Result<Box<[[u8; 0x4000]]>, SmsRomError> {
         let mut x = Vec::with_capacity(0x4000);
         x.extend_from_slice(&rom[..]);
         x.extend_from_slice(&rom[..]);
-        // now format it correctly
-        return format(x.into_boxed_slice());
+        return Ok(x.into_boxed_slice());
     }
 
     return Err(SmsRomError::BadLength(len));
@@ -92,7 +83,7 @@ pub fn format(mut rom: Box<[u8]>) -> Result<Box<[[u8; 0x4000]]>, SmsRomError> {
 /// Load a SMS ROM from the indicated file.
 ///
 /// This function will fix up the ROM in the same way `format` does.
-pub fn from_file<P>(p: P) -> Result<Box<[[u8; 0x4000]]>, SmsRomError>
+pub fn from_file<P>(p: P) -> Result<Box<[u8]>, SmsRomError>
 where
     P: AsRef<Path>,
 {
