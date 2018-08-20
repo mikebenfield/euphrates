@@ -923,7 +923,7 @@ impl Opcode {
             ) => {
                 if let &Opcode::FourBytes(x) = self {
                     if $code1 == x[0] && $code2 == x[1] && $code3 == x[3] {
-                        d = x[3] as i8;
+                        d = x[2] as i8;
                         return Some(make_full_mnemonic!($mnemonic, $arg_list));
                     }
                 }
