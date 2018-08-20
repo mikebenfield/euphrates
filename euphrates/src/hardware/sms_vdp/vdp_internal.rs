@@ -704,7 +704,7 @@ pub trait SmsVdpInternal {
 
     /// Hardware method: is the VDP requesting an interrupt?
     #[inline]
-    fn requesting_mi(&self) -> bool {
+    fn requesting_interrupt(&self) -> bool {
         let frame_interrupt = self.status_flags() & FRAME_INTERRUPT_FLAG != 0;
         let line_interrupt = self.line_interrupt_pending();
         self.new_irq()

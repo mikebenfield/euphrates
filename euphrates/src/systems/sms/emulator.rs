@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -292,16 +294,16 @@ where
         })?;
         let vdp_cycles = sms.vdp.cycles();
         let z80_target_cycles = 2 * vdp_cycles / 3;
-        let vdp_interrupt = sms.vdp.requesting_mi();
         while sms.z80.cycles() < z80_target_cycles {
             // use a trait object for this to cut down on code bloat
             let sn76489: &mut dyn Sn76489Interface = &mut sms.sn76489;
+            let rc_vdp = Rc::new(RefCell::new(&mut sms.vdp));
             let irq = &mut SmsZ80IrqImpler {
                 pause_interrupt: &mut sms.pause_irq,
-                vdp_interrupt,
+                vdp: rc_vdp.clone(),
             };
             let io = &mut SmsIo16Impler {
-                vdp: &mut sms.vdp,
+                vdp: rc_vdp,
                 player_input: sms.player_input,
                 sn76489,
             };

@@ -1,6 +1,10 @@
 //! An implementation of `Z80Irq` for the Sega Master System.
 
-use super::z80::Z80Irq;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use hardware::sms_vdp::SmsVdpInternal;
+use hardware::z80::Z80Irq;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum SmsPauseInterruptState {
@@ -9,8 +13,8 @@ pub enum SmsPauseInterruptState {
     InterruptNeeded,
 }
 
-pub struct SmsZ80IrqImpler<'a> {
-    pub vdp_interrupt: bool,
+pub struct SmsZ80IrqImpler<'a, V: 'a> {
+    pub vdp: Rc<RefCell<&'a mut V>>,
     pub pause_interrupt: &'a mut SmsPauseInterruptState,
 }
 
@@ -21,10 +25,13 @@ impl Default for SmsPauseInterruptState {
     }
 }
 
-impl<'a> Z80Irq for SmsZ80IrqImpler<'a> {
+impl<'a, V: 'a> Z80Irq for SmsZ80IrqImpler<'a, V>
+where
+    V: SmsVdpInternal,
+{
     #[inline]
     fn requesting_mi(&mut self) -> Option<u8> {
-        if self.vdp_interrupt {
+        if self.vdp.borrow().requesting_interrupt() {
             Some(0xFF)
         } else {
             None

@@ -1,12 +1,15 @@
 //! The IO system of the Sega Master System.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use super::io16::Io16;
 use super::sms_player_input::SmsPlayerInput;
 use super::sms_vdp::{SmsVdpInterface, SmsVdpInternal};
 use super::sn76489::Sn76489Interface;
 
 pub struct SmsIo16Impler<'a, V: 'a + ?Sized, S: 'a + ?Sized> {
-    pub vdp: &'a mut V,
+    pub vdp: Rc<RefCell<&'a mut V>>,
     pub sn76489: &'a mut S,
     pub player_input: SmsPlayerInput,
 }
@@ -22,7 +25,7 @@ where
         let masked = (address & 0b11000001) as u8;
         let value = match masked {
             0b00000000 => {
-                match (self.vdp.kind(), self.player_input.pause()) {
+                match (self.vdp.borrow().kind(), self.player_input.pause()) {
                     (Kind::Gg, true) => 0,
                     (Kind::Gg, false) => 0x80,
                     // This is what the SMS 2 does. In the original SMS, reads
@@ -38,19 +41,19 @@ where
             }
             0b01000000 => {
                 // V counter
-                self.vdp.read_v()
+                self.vdp.borrow_mut().read_v()
             }
             0b01000001 => {
                 // H counter
-                self.vdp.read_h()
+                self.vdp.borrow_mut().read_h()
             }
             0b10000000 => {
                 // VDP data
-                self.vdp.read_data()
+                self.vdp.borrow_mut().read_data()
             }
             0b10000001 => {
                 // VDP control
-                self.vdp.read_control()
+                self.vdp.borrow_mut().read_control()
             }
             0b11000000 => {
                 // IO port A/B register
@@ -88,10 +91,10 @@ where
                 self.sn76489.write(value),
             0b10000000 =>
                 // VDP data port write
-                self.vdp.write_data(value),
+                self.vdp.borrow_mut().write_data(value),
             0b10000001 =>
                 // VDP control port write
-                self.vdp.write_control(value),
+                self.vdp.borrow_mut().write_control(value),
             _ => {}
         }
     }
