@@ -56,15 +56,13 @@ use failure::Error;
 
 use rand::{Rng, SeedableRng};
 
-use euphrates::impler::Impler;
 use euphrates::hardware::io16::Io16;
-use euphrates::hardware::memory16::Memory16Impl;
 use euphrates::hardware::z80::Reg16::*;
 use euphrates::hardware::z80::Reg8::*;
-use euphrates::hardware::z80::{Changeable, Z80Emulator, Z80EmulatorImpl, Z80EmulatorImpler,
-                               Z80Internal, Z80InternalImpl, Z80Interrupt, Z80IoImpl, Z80IoImpler,
-                               Z80MemImpl, Z80MemImpler, Z80NoImpl, Z80NoImpler, Z80RunImpl,
-                               Z80RunInterpreterImpler, Z80State};
+use euphrates::hardware::z80::{
+    Changeable, Z80Internal, Z80Irq, Z80MemT, Z80Run, Z80RunImpler, Z80State,
+};
+use euphrates::memo::NothingInbox;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -72,6 +70,17 @@ type Result<T> = std::result::Result<T, Error>;
 struct Z80System {
     memory: [u8; 0x10000],
     z80: Z80State,
+}
+
+impl Z80MemT for Z80System {
+    type Z80 = Z80State;
+    type Memory = [u8; 0x10000];
+    fn z80(&mut self) -> &mut Z80State {
+        &mut self.z80
+    }
+    fn memory(&mut self) -> &mut [u8; 0x10000] {
+        &mut self.memory
+    }
 }
 
 impl Default for Z80System {
@@ -83,148 +92,30 @@ impl Default for Z80System {
     }
 }
 
-impl Memory16Impl for Z80System {
-    type Impler = [u8; 0x10000];
+struct FakeIo;
 
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        f(&self.memory)
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        f(&mut self.memory)
-    }
-}
-
-impl Io16 for Z80System {
+impl Io16 for FakeIo {
     fn input(&mut self, _address: u16) -> u8 {
         0
     }
     fn output(&mut self, _address: u16, _value: u8) {}
 }
 
+struct FakeIrq;
+
+impl Z80Irq for FakeIrq {
+    fn requesting_mi(&mut self) -> Option<u8> {
+        None
+    }
+    fn requesting_nmi(&mut self) -> bool {
+        false
+    }
+    fn take_nmi(&mut self) {}
+}
+
 impl fmt::Display for Z80System {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.z80, f)
-    }
-}
-
-impl Z80InternalImpl for Z80System {
-    type Impler = Z80State;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        f(&self.z80)
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        f(&mut self.z80)
-    }
-}
-
-impl Z80NoImpl for Z80System {
-    type Impler = Z80NoImpler<Self>;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        Z80NoImpler::iclose(self, |z| f(z))
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        Z80NoImpler::iclose_mut(self, |z| f(z))
-    }
-}
-
-impl Z80MemImpl for Z80System {
-    type Impler = Z80MemImpler<Self>;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        Z80MemImpler::iclose(self, |z| f(z))
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        Z80MemImpler::iclose_mut(self, |z| f(z))
-    }
-}
-
-impl Z80IoImpl for Z80System {
-    type Impler = Z80IoImpler<Self>;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        Z80IoImpler::iclose(self, |z| f(z))
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        Z80IoImpler::iclose_mut(self, |z| f(z))
-    }
-}
-
-impl Z80Interrupt for Z80System {
-    fn check_interrupts(&mut self) {}
-    fn maskable_interrupt(&mut self, _x: u8) {}
-    fn nonmaskable_interrupt(&mut self) {}
-}
-
-impl Z80RunImpl for Z80System {
-    type Impler = Z80RunInterpreterImpler<Self>;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        Z80RunInterpreterImpler::iclose(self, |z| f(z))
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        Z80RunInterpreterImpler::iclose_mut(self, |z| f(z))
-    }
-}
-
-impl Z80EmulatorImpl for Z80System {
-    type Impler = Z80EmulatorImpler<Self>;
-
-    fn close<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&Self::Impler) -> T,
-    {
-        Z80EmulatorImpler::iclose(self, |z| f(z))
-    }
-
-    fn close_mut<F, T>(&mut self, f: F) -> T
-    where
-        F: FnOnce(&mut Self::Impler) -> T,
-    {
-        Z80EmulatorImpler::iclose_mut(self, |z| f(z))
     }
 }
 
@@ -239,7 +130,7 @@ where
     }
     mem[0..mem_start.len()].copy_from_slice(mem_start);
 
-    let mut z80 = Z80System {
+    let mut z = Z80System {
         z80: Default::default(),
         memory: mem,
     };
@@ -248,19 +139,19 @@ where
         B, C, D, E, A, H, L, B0, C0, D0, E0, A0, L0, H0, IXH, IXL, IYH, IYL,
     ].iter()
     {
-        z80.set_reg8(*reg, rng.gen());
+        z.z80.set_reg8(*reg, rng.gen());
     }
 
-    z80
+    z
 }
 
-fn write_core<P: AsRef<Path>>(path: P, z80: &Z80System) -> Result<()> {
+fn write_core<P: AsRef<Path>>(path: P, z: &Z80System) -> Result<()> {
     use std::fs::File;
     use std::io::Write;
 
-    let z80_size: usize = 16 + 2 * 4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
+    let z_size: usize = 16 + 2 * 4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
 
-    let mut buf: Vec<u8> = Vec::with_capacity(z80_size);
+    let mut buf: Vec<u8> = Vec::with_capacity(z_size);
 
     fn write_from<T>(val: T, buf: &mut Vec<u8>) {
         let size = mem::size_of::<T>() as isize;
@@ -272,41 +163,41 @@ fn write_core<P: AsRef<Path>>(path: P, z80: &Z80System) -> Result<()> {
         }
     }
 
-    write_from(z80.reg8(A), &mut buf);
-    write_from(z80.reg8(F) as c_int, &mut buf);
-    write_from(z80.reg8(B), &mut buf);
-    write_from(z80.reg8(C), &mut buf);
-    write_from(z80.reg8(D), &mut buf);
-    write_from(z80.reg8(E), &mut buf);
-    write_from(z80.reg8(H), &mut buf);
-    write_from(z80.reg8(L), &mut buf);
+    write_from(z.z80.reg8(A), &mut buf);
+    write_from(z.z80.reg8(F) as c_int, &mut buf);
+    write_from(z.z80.reg8(B), &mut buf);
+    write_from(z.z80.reg8(C), &mut buf);
+    write_from(z.z80.reg8(D), &mut buf);
+    write_from(z.z80.reg8(E), &mut buf);
+    write_from(z.z80.reg8(H), &mut buf);
+    write_from(z.z80.reg8(L), &mut buf);
 
-    write_from(z80.reg8(A0), &mut buf);
-    write_from(z80.reg8(F0) as c_int, &mut buf);
-    write_from(z80.reg8(B0), &mut buf);
-    write_from(z80.reg8(C0), &mut buf);
-    write_from(z80.reg8(D0), &mut buf);
-    write_from(z80.reg8(E0), &mut buf);
-    write_from(z80.reg8(H0), &mut buf);
-    write_from(z80.reg8(L0), &mut buf);
+    write_from(z.z80.reg8(A0), &mut buf);
+    write_from(z.z80.reg8(F0) as c_int, &mut buf);
+    write_from(z.z80.reg8(B0), &mut buf);
+    write_from(z.z80.reg8(C0), &mut buf);
+    write_from(z.z80.reg8(D0), &mut buf);
+    write_from(z.z80.reg8(E0), &mut buf);
+    write_from(z.z80.reg8(H0), &mut buf);
+    write_from(z.z80.reg8(L0), &mut buf);
 
-    write_from(z80.reg8(I), &mut buf);
+    write_from(z.z80.reg8(I), &mut buf);
 
-    let iff1: u8 = if z80.iff1() { 1 } else { 0 };
-    let iff2: u8 = if z80.iff2() { 2 } else { 0 };
+    let iff1: u8 = if z.z80.iff1() { 1 } else { 0 };
+    let iff2: u8 = if z.z80.iff2() { 2 } else { 0 };
     write_from(iff1 | iff2, &mut buf);
 
-    write_from(z80.reg8(R) as c_long, &mut buf);
+    write_from(z.z80.reg8(R) as c_long, &mut buf);
 
-    write_from(z80.reg16(PC), &mut buf);
-    write_from(z80.reg16(SP), &mut buf);
-    write_from(z80.reg16(IX), &mut buf);
-    write_from(z80.reg16(IY), &mut buf);
+    write_from(z.z80.reg16(PC), &mut buf);
+    write_from(z.z80.reg16(SP), &mut buf);
+    write_from(z.z80.reg16(IX), &mut buf);
+    write_from(z.z80.reg16(IY), &mut buf);
 
     let mut f = File::create(path)?;
 
     f.write_all(&buf[..])?;
-    f.write_all(&z80.memory)?;
+    f.write_all(&z.memory)?;
     Ok(())
 }
 
@@ -326,7 +217,7 @@ where
     let correct_core_size: usize =
         0x10000 + 16 + 2 * 4 + 2 * mem::size_of::<c_int>() + mem::size_of::<c_long>();
 
-    let mut z80: Z80System = Default::default();
+    let mut z: Z80System = Default::default();
 
     let mut buf: Vec<u8> = Vec::new();
     {
@@ -365,49 +256,49 @@ where
         reg.change(z, t);
     }
 
-    read_register(&mut z80, A, &mut i, &mut buf);
+    read_register(&mut z, A, &mut i, &mut buf);
     let mut ff: c_int = 0;
     read_into(&mut ff, &mut i, &mut buf);
-    z80.set_reg8(F, ff as u8);
-    read_register(&mut z80, B, &mut i, &mut buf);
-    read_register(&mut z80, C, &mut i, &mut buf);
-    read_register(&mut z80, D, &mut i, &mut buf);
-    read_register(&mut z80, E, &mut i, &mut buf);
-    read_register(&mut z80, H, &mut i, &mut buf);
-    read_register(&mut z80, L, &mut i, &mut buf);
+    z.z80.set_reg8(F, ff as u8);
+    read_register(&mut z, B, &mut i, &mut buf);
+    read_register(&mut z, C, &mut i, &mut buf);
+    read_register(&mut z, D, &mut i, &mut buf);
+    read_register(&mut z, E, &mut i, &mut buf);
+    read_register(&mut z, H, &mut i, &mut buf);
+    read_register(&mut z, L, &mut i, &mut buf);
 
-    read_register(&mut z80, A0, &mut i, &mut buf);
+    read_register(&mut z, A0, &mut i, &mut buf);
     let mut ff0: c_int = 0;
     read_into(&mut ff0, &mut i, &mut buf);
-    z80.set_reg8(F0, ff0 as u8);
-    read_register(&mut z80, B0, &mut i, &mut buf);
-    read_register(&mut z80, C0, &mut i, &mut buf);
-    read_register(&mut z80, D0, &mut i, &mut buf);
-    read_register(&mut z80, E0, &mut i, &mut buf);
-    read_register(&mut z80, H0, &mut i, &mut buf);
-    read_register(&mut z80, L0, &mut i, &mut buf);
+    z.z80.set_reg8(F0, ff0 as u8);
+    read_register(&mut z, B0, &mut i, &mut buf);
+    read_register(&mut z, C0, &mut i, &mut buf);
+    read_register(&mut z, D0, &mut i, &mut buf);
+    read_register(&mut z, E0, &mut i, &mut buf);
+    read_register(&mut z, H0, &mut i, &mut buf);
+    read_register(&mut z, L0, &mut i, &mut buf);
 
-    read_register(&mut z80, I, &mut i, &mut buf);
+    read_register(&mut z, I, &mut i, &mut buf);
 
     let mut iff: u8 = 0;
     read_into(&mut iff, &mut i, &mut buf);
-    z80.set_iff1((iff & 1) != 0);
-    z80.set_iff2((iff & 2) != 0);
+    z.z80.set_iff1((iff & 1) != 0);
+    z.z80.set_iff2((iff & 2) != 0);
 
     let mut rr: c_long = 0;
     read_into(&mut rr, &mut i, &mut buf);
-    z80.set_reg8(R, rr as u8);
+    z.z80.set_reg8(R, rr as u8);
 
-    read_register(&mut z80, PC, &mut i, &mut buf);
-    read_register(&mut z80, SP, &mut i, &mut buf);
-    read_register(&mut z80, IX, &mut i, &mut buf);
-    read_register(&mut z80, IY, &mut i, &mut buf);
+    read_register(&mut z, PC, &mut i, &mut buf);
+    read_register(&mut z, SP, &mut i, &mut buf);
+    read_register(&mut z, IX, &mut i, &mut buf);
+    read_register(&mut z, IY, &mut i, &mut buf);
 
     let mut mem = [0u8; 0x10000];
     mem.copy_from_slice(&buf[i..]);
-    z80.memory = mem;
+    z.memory = mem;
 
-    Ok(z80)
+    Ok(z)
 }
 
 /// Are the registers in the two Z80s identical?
@@ -419,22 +310,22 @@ fn z80_same_state(lhs: &Z80System, rhs: &Z80System) -> bool {
         B, C, D, E, A, H, L, B0, C0, D0, E0, A0, L0, H0, IXH, IXL, IYH, IYL, SPH, SPL, PCH, PCL,
     ].iter()
     {
-        if lhs.reg8(*reg) != rhs.reg8(*reg) {
+        if lhs.z80.reg8(*reg) != rhs.z80.reg8(*reg) {
             println!("diff register {:?}", reg);
             return false;
         }
     }
 
-    let f_lhs = lhs.reg8(F);
-    let f_rhs = rhs.reg8(F);
+    let f_lhs = lhs.z80.reg8(F);
+    let f_rhs = rhs.z80.reg8(F);
     // for the flag registers, don't check the undefined bits
     if f_lhs & 0b11010111 != f_rhs & 0b11010111 {
         println!("diff flags {:b} {:b}", f_lhs, f_rhs);
         return false;
     }
 
-    let f0_lhs = lhs.reg8(F0);
-    let f0_rhs = rhs.reg8(F0);
+    let f0_lhs = lhs.z80.reg8(F0);
+    let f0_rhs = rhs.z80.reg8(F0);
     // for the flag registers, don't check the undefined bits
     if f0_lhs & 0b11010111 != f0_rhs & 0b11010111 {
         println!("diff flags' {:b} {:b}", f0_lhs, f0_rhs);
@@ -752,9 +643,6 @@ fn generate_instructions_sequence<R>(
 where
     R: Rng,
 {
-    use rand::distributions::range::Range;
-    use rand::distributions::IndependentSample;
-
     let mut result: Vec<InstructionSequence> = Vec::with_capacity(count);
     for _ in 0..count {
         let inst = InstructionSequence {
@@ -765,7 +653,7 @@ where
     }
     for _ in 0..size {
         for i in 0..count {
-            let j = Range::new(0usize, instructions.len()).ind_sample(rng);
+            let j = rng.gen_range(0usize, instructions.len());
             let new_inst = &instructions[j];
             result[i].opcodes.extend_from_slice(&new_inst.opcodes[..]);
             result[i].mnemonics.push_str(&new_inst.mnemonics);
@@ -866,12 +754,12 @@ where
     let instructions = instruction_sequence.opcodes.clone();
     for i in 0..count {
         println!("\nTest {} of \n{:}", i, instruction_sequence.mnemonics);
-        let mut z80 = random_system(&instructions[..], rng);
-        z80.set_reg16(PC, 0);
+        let mut z = random_system(&instructions[..], rng);
+        z.z80.set_reg16(PC, 0);
 
         let dir = TempDir::new("euphrates_tmp")?;
         let file_path = dir.path().join("core.z80");
-        write_core(&file_path, &z80)?;
+        write_core(&file_path, &z)?;
         std::thread::sleep(std::time::Duration::from_millis(1));
         let mut child = Command::new("z80sim")
                     .current_dir(dir.path())
@@ -890,13 +778,19 @@ where
         }
         wait_for_exit(&mut child)?;
         let sim_z80 = read_core(&file_path)?;
-        let mut euphrates_z80 = z80.clone();
-        euphrates_z80.emulate(1000000);
+        let mut euphrates_z80 = z.clone();
+        Z80RunImpler {
+            z80: &mut euphrates_z80.z80,
+            memory: &mut euphrates_z80.memory,
+            io: &mut FakeIo,
+            irq: &mut FakeIrq,
+            inbox: &mut NothingInbox::default(),
+        }.run(1000000);
 
         if !z80_same_state(&euphrates_z80, &sim_z80) {
             return Ok(TestFailed(TestFailure {
                 mnemonics: instruction_sequence.mnemonics.clone(),
-                original_z80: z80,
+                original_z80: z,
                 sim_z80: sim_z80,
                 euphrates_z80: euphrates_z80,
             }));
@@ -970,7 +864,24 @@ fn main() {
         }
     }
 
-    let mut rng = rand::XorShiftRng::from_seed([s, 2, 3, 4]);
+    let mut rng = rand::XorShiftRng::from_seed([
+        (s) as u8,
+        (s >> 8) as u8,
+        (s >> 16) as u8,
+        (s >> 24) as u8,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+    ]);
     let r = test_against(n, i, t, &mut rng);
     match r {
         Ok(TestResult::TestFailed(x)) => {
