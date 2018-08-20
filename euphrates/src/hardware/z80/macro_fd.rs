@@ -248,7 +248,7 @@ macro_rules! euphrates_z80_fd {
 [ 0xC9 ; xC9 ;    ; ret    ()         ; 10 ; undoc ; z80 ; mem   ]
 [ 0xCA ; xCA ; nn ; jpcc   (Zcc, nn)  ; 10 ; undoc ; z80 ; no     ]
 
-[ 0xCB ; xCB ;      ; ddcb  ()          ;  0 ; doc ; z80 ; no   ]
+[ 0xCB ; xCB ;      ; fdcb  ()          ;  0 ; doc ; z80 ; no   ]
 
 [ 0xCC ; xCC ; nn ; callcc (Zcc, nn)  ; xx ; undoc ; z80 ; mem   ]
 [ 0xCD ; xCD ; nn ; call   (nn)       ; 17 ; undoc ; z80 ; mem   ]
