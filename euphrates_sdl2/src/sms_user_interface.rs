@@ -92,6 +92,7 @@ impl UiHelper for SdlUiHelper {
                     (R, true) => status.save_recording(None),
                     (Z, _) => status.save_state(None),
                     (M, false) => do_query(status, Query::RecentMemos),
+                    (Y, _) => do_command(status, Command::Step),
                     (N, false) => {
                         use euphrates::hardware::z80::Reg16::PC;
                         let pc = status.master_system().z80().reg16(PC);

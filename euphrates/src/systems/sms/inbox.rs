@@ -18,6 +18,8 @@ pub enum Query {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Command {
+    Hold,
+    Resume,
     Step,
     BreakAtPc(u16),
     RemovePcBreakpoints,
@@ -35,6 +37,7 @@ pub struct DebuggerImpl;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 enum DebugStatus {
     None,
+    Hold,
     Step,
 }
 
@@ -194,6 +197,10 @@ impl Inbox for DebuggingInbox {
             self.recent_memos.pop_front();
         }
 
+        if self.status == DebugStatus::Step {
+            self.status = DebugStatus::Hold
+        }
+
         if let Z80Memo::Instruction { pc, opcode } = memo {
             let current_info = self.instructions[pc as usize];
             self.instructions[pc as usize] = MemoryLocation {
@@ -217,6 +224,10 @@ impl Inbox for DebuggingInbox {
         // if the new memo matches a pattern, hold
 
         self.recent_memos.push_back(memo);
+    }
+
+    fn holding(&self) -> bool {
+        self.status == DebugStatus::Hold
     }
 }
 
@@ -242,9 +253,13 @@ impl Debugger for DebuggingInbox {
         use self::Command::*;
 
         match command {
+            Step => if self.status == DebugStatus::Hold {
+                self.status = DebugStatus::Step;
+            },
+            Hold => self.status = DebugStatus::Hold,
+            Resume => self.status = DebugStatus::None,
             BreakAtPc(pc) => self.pc_breakpoints.push(pc),
             RemovePcBreakpoints => self.pc_breakpoints = Vec::new(),
-            Step => self.status = DebugStatus::Step,
             // BreakAtMemo(pattern) => self.memo_patterns.push(pattern),
             // RemoveBreakMemos => self.memo_patterns = Vec::new(),
         }

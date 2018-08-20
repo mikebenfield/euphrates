@@ -91,6 +91,9 @@ fn run<'a, Z: 'a, M: 'a, Irq: 'a, I: 'a, Inb: 'a>(
     }
 
     while z.z80.cycles() < cycles {
+        if z.inbox.holding() {
+            return;
+        }
         let prefix = z.z80.prefix();
         let interrupt_status = z.z80.interrupt_status();
         let z80_cycles = z.z80.cycles();

@@ -17,9 +17,14 @@ pub trait Inbox {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn active(&self) -> bool {
         true
+    }
+
+    #[inline(always)]
+    fn holding(&self) -> bool {
+        false
     }
 }
 

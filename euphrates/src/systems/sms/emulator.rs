@@ -153,14 +153,19 @@ where
     }
 
     fn hold(&mut self) -> Result<(), SmsEmulationError> {
-        self.time_status.holding = true;
+        if let Some(d) = self.inbox.debugger() {
+            d.command(Command::Hold);
+        }
         Ok(())
     }
 
     fn resume(&mut self) -> Result<(), SmsEmulationError> {
+        if let Some(d) = self.inbox.debugger() {
+            d.command(Command::Resume);
+        }
+
         self.time_status.start_time = Instant::now();
         self.time_status.start_cycles = self.z80.cycles();
-        self.time_status.holding = false;
 
         // audio
         const AUDIO_BUFFER_SIZE: u16 = 0x800;
@@ -293,13 +298,21 @@ where
     sms.pause_irq.pause_pressed(sms.player_input.pause());
 
     loop {
-        sms_vdp::line(&mut SmsVdpGraphicsImpler {
-            graphics: &mut sms.graphics,
-            vdp: &mut sms.vdp,
-        })?;
-        let vdp_cycles = sms.vdp.cycles();
-        let z80_target_cycles = 2 * vdp_cycles / 3;
+        while 3 * sms.z80.cycles() >= 2 * sms.vdp.cycles() {
+            sms_vdp::line(&mut SmsVdpGraphicsImpler {
+                graphics: &mut sms.graphics,
+                vdp: &mut sms.vdp,
+            })?;
+        }
+        let z80_target_cycles = (sms.vdp.cycles() * 2) / 3;
         while sms.z80.cycles() < z80_target_cycles {
+            if sms.inbox.holding() {
+                use std::thread;
+                use std::time::Duration;
+                thread::sleep(Duration::from_millis(10));
+                return Ok(());
+            }
+                
             // use a trait object for this to cut down on code bloat
             let sn76489: &mut dyn Sn76489Interface = &mut sms.sn76489;
             let rc_vdp = Rc::new(RefCell::new(&mut sms.vdp));
