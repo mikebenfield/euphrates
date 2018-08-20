@@ -23,8 +23,8 @@ use euphrates::host_multimedia::FakeAudio;
 use euphrates::memo::NothingInbox;
 use euphrates::save;
 use euphrates::systems::sms::{
-    self, BoxedInbox, DebuggingInbox, FakeSmsGraphics, Kind, MemWrap, Recording, Sms,
-    SmsMemoryMapper, SmsState, TvSystem,
+    self, DebuggingInbox, FakeSmsGraphics, Kind, MemWrap, Recording, Sms, SmsMemoryMapper,
+    SmsState, TvSystem,
 };
 
 use euphrates_sdl2::sms_user_interface;
@@ -75,10 +75,8 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
         };
         ($sn76489:expr, $audio:expr) => {
             match matches.value_of("debug").expect("unwrapping debug") {
-                "true" => {
-                    eval_args!($sn76489, $audio, BoxedInbox::new(DebuggingInbox::default()))
-                }
-                _ => eval_args!($sn76489, $audio, BoxedInbox::new(NothingInbox::default())),
+                "true" => eval_args!($sn76489, $audio, DebuggingInbox::default()),
+                _ => eval_args!($sn76489, $audio, NothingInbox::default()),
             }
         };
         () => {
@@ -235,7 +233,7 @@ fn run() -> Result<()> {
         .help("Enable or disable debugging")
         .takes_value(true)
         .possible_values(&["true", "false"])
-        .default_value("false");
+        .default_value("true");
 
     let tv_arg = Arg::with_name("tv")
         .long("tv")
