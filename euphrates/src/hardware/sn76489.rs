@@ -29,6 +29,22 @@ pub struct Sn76489State {
     pub cycles: u64,
 }
 
+pub trait HasSn76489State {
+    fn state(&self) -> Sn76489State;
+
+    fn load(state: Sn76489State) -> Self;
+}
+
+impl HasSn76489State for Sn76489State {
+    fn state(&self) -> Sn76489State {
+        self.clone()
+    }
+
+    fn load(state: Sn76489State) -> Self {
+        state
+    }
+}
+
 impl Default for Sn76489State {
     fn default() -> Self {
         Sn76489State {
@@ -218,4 +234,14 @@ pub struct FakeSn76489;
 impl Sn76489Interface for FakeSn76489 {
     #[inline]
     fn write(&mut self, _data: u8) {}
+}
+
+impl HasSn76489State for FakeSn76489 {
+    fn state(&self) -> Sn76489State {
+        Default::default()
+    }
+
+    fn load(_state: Sn76489State) -> Self {
+        Default::default()
+    }
 }

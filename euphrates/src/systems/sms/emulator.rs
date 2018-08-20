@@ -23,6 +23,7 @@ pub struct SmsState {
     pub memory: SmsMemoryState,
     pub player_input: SmsPlayerInput,
     pub pause_irq: SmsPauseInterruptState,
+    pub sn76489: Sn76489State,
 }
 
 impl SmsState {
@@ -45,6 +46,7 @@ impl SmsState {
                 pages: Default::default(),
                 mapper,
             },
+            sn76489: Default::default(),
         };
         state.vdp.set_tv_system(tv_system);
         state.vdp.set_kind(vdp_kind);
@@ -117,7 +119,7 @@ impl<Graphics, Audio, Sn76489, Mem, Inx> Sms for SmsS<Graphics, Audio, Sn76489, 
 where
     for<'a> SmsVdpGraphicsImpler<'a, SmsVdpState, Graphics>: SmsVdpLineImpler,
     Audio: SimpleAudio,
-    Sn76489: Sn76489Interface,
+    Sn76489: Sn76489Interface + HasSn76489State,
     for<'a> Sn76489Impler<'a, Sn76489, Audio>: Sn76489Audio,
     Inx: Inbox<Memo = Z80Memo> + GetDebugger,
     Mem: Memory16 + SmsMemory,
@@ -146,6 +148,7 @@ where
             memory: self.memory.state(),
             player_input: self.player_input.clone(),
             pause_irq: self.pause_irq.clone(),
+            sn76489: self.sn76489.state(),
         }
     }
 
@@ -179,11 +182,11 @@ where
 }
 
 #[derive(Debug)]
-pub struct MemWrap<M>(PhantomData<M>);
+pub struct TypeWrap<M>(PhantomData<M>);
 
-impl<M> Default for MemWrap<M> {
+impl<M> Default for TypeWrap<M> {
     fn default() -> Self {
-        MemWrap(PhantomData)
+        TypeWrap(PhantomData)
     }
 }
 
@@ -192,14 +195,14 @@ pub fn new_sms<Graphics: 'static, Audio: 'static, Sn76489: 'static, Memory: 'sta
     state: SmsState,
     graphics: Graphics,
     audio: Audio,
-    sn76489: Sn76489,
     inbox: Inx,
-    _mem: MemWrap<Memory>,
+    _mem: TypeWrap<Memory>,
+    _sn76489: TypeWrap<Sn76489>,
 ) -> Result<Box<dyn Sms>, SmsCreationError>
 where
     for<'a> SmsVdpGraphicsImpler<'a, SmsVdpState, Graphics>: SmsVdpLineImpler,
     Audio: SimpleAudio,
-    Sn76489: Sn76489Interface,
+    Sn76489: Sn76489Interface + HasSn76489State,
     for<'a> Sn76489Impler<'a, Sn76489, Audio>: Sn76489Audio,
     Inx: Inbox<Memo = Z80Memo> + GetDebugger,
     Memory: SmsMemory + SmsMemoryLoad,
@@ -209,7 +212,6 @@ where
     Ok(Box::new(SmsS {
         graphics,
         audio,
-        sn76489,
         inbox,
         time_status,
         player_input: state.player_input,
@@ -217,6 +219,7 @@ where
         vdp: state.vdp,
         memory: <Memory as SmsMemoryLoad>::load(state.memory)?,
         z80: state.z80,
+        sn76489: Sn76489::load(state.sn76489),
     }))
 }
 

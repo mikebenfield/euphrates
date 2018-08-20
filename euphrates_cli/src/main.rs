@@ -23,8 +23,8 @@ use euphrates::host_multimedia::FakeAudio;
 use euphrates::memo::NothingInbox;
 use euphrates::save;
 use euphrates::systems::sms::{
-    self, DebuggingInbox, FakeSmsGraphics, Kind, MemWrap, Recording, Sms, SmsMemoryMapper,
-    SmsState, TvSystem,
+    self, DebuggingInbox, FakeSmsGraphics, Kind, Recording, Sms, SmsMemoryMapper, SmsState,
+    TvSystem, TypeWrap,
 };
 
 use euphrates_sdl2::sms_user_interface;
@@ -56,9 +56,9 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
                 state,
                 $graphics,
                 $audio,
-                $sn76489,
                 $inbox,
-                MemWrap::<MemoryType>::default(),
+                TypeWrap::<MemoryType>::default(),
+                $sn76489,
             )?)
         };
         ($sn76489:expr, $audio:expr, $inbox:expr) => {
@@ -81,8 +81,8 @@ fn new_sms(sdl: &Sdl, state: SmsState, matches: &ArgMatches) -> Result<Box<dyn S
         };
         () => {
             match matches.value_of("sound").expect("unwrapping sound") {
-                "true" => eval_args!(Sn76489State::default(), Audio::new(sdl)?),
-                _ => eval_args!(FakeSn76489, FakeAudio),
+                "true" => eval_args!(TypeWrap::<Sn76489State>::default(), Audio::new(sdl)?),
+                _ => eval_args!(TypeWrap::<FakeSn76489>::default(), FakeAudio),
             }
         };
     }
