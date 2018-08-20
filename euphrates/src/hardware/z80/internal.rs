@@ -68,15 +68,18 @@ impl Default for InterruptStatus {
 /// let z: Z80State = Default::default();
 /// format!("{}", Z80Display(&z));
 /// ```
-pub struct Z80Display<'a>(pub &'a dyn Z80Internal);
+pub struct Z80Display<'a, Z: 'a + ?Sized>(pub &'a Z);
 
-impl<'a> fmt::Display for Z80Display<'a> {
+impl<'a, Z: 'a> fmt::Display for Z80Display<'a, Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Reg16::*;
         use self::Reg8::*;
         format_args!(
             "SZYHXPNC  A   BC   DE   HL   IX   IY   SP   PC\n\
-             {:0>8b} {:0>2X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X}\n",
+             {:0>8b} {:0>2X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X} {:0>4X}",
             self.0.reg8(F),
             self.0.reg8(A),
             self.0.reg16(BC),

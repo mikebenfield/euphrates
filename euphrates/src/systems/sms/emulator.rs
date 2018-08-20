@@ -104,6 +104,12 @@ pub trait Sms {
 
     fn z80_mut(&mut self) -> &mut dyn Z80Internal;
 
+    fn vdp(&self) -> &dyn SmsVdpInterface;
+
+    fn vdp_mut(&mut self) -> &mut dyn SmsVdpInterface;
+
+    fn memory(&mut self) -> &mut dyn Memory16;
+
     fn debugger(&mut self) -> Option<&mut dyn Debugger>;
 
     fn run_frame(&mut self, player_input: SmsPlayerInput) -> Result<(), SmsEmulationError>;
@@ -130,6 +136,18 @@ where
 
     fn z80_mut(&mut self) -> &mut dyn Z80Internal {
         &mut self.z80
+    }
+
+    fn vdp(&self) -> &dyn SmsVdpInterface {
+        &self.vdp
+    }
+
+    fn vdp_mut(&mut self) -> &mut dyn SmsVdpInterface {
+        &mut self.vdp
+    }
+
+    fn memory(&mut self) -> &mut dyn Memory16 {
+        &mut self.memory
     }
 
     fn debugger(&mut self) -> Option<&mut dyn Debugger> {
@@ -312,7 +330,7 @@ where
                 thread::sleep(Duration::from_millis(10));
                 return Ok(());
             }
-                
+
             // use a trait object for this to cut down on code bloat
             let sn76489: &mut dyn Sn76489Interface = &mut sms.sn76489;
             let rc_vdp = Rc::new(RefCell::new(&mut sms.vdp));

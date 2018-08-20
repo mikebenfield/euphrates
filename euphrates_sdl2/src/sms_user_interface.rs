@@ -6,7 +6,7 @@ use sdl2;
 
 use euphrates::systems::sms::{
     joypad_a_bits, joypad_b_bits, Command, PlaybackStatus, Query, Sms, SmsEmulationError,
-    SmsPlayerInput, Ui, UiHelper, UiStatus, UserMessage,
+    SmsPlayerInput, Ui, UiHelper, UiStatus, UserMessage, Z80Display,
 };
 
 struct PlaybackHelper(PlaybackStatus);
@@ -87,10 +87,11 @@ impl UiHelper for SdlUiHelper {
                     keymod.contains(sdl2::keyboard::LSHIFTMOD)
                         || keymod.contains(sdl2::keyboard::RSHIFTMOD),
                 ) {
+                    (Z, _) => println!("{}", Z80Display(status.master_system().z80())),
                     (P, _) => player_status.set_pause(true),
                     (R, false) => status.begin_recording(),
                     (R, true) => status.save_recording(None),
-                    (Z, _) => status.save_state(None),
+                    (X, _) => status.save_state(None),
                     (M, false) => do_query(status, Query::RecentMemos),
                     (Y, _) => do_command(status, Command::Step),
                     (N, false) => {
