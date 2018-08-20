@@ -287,6 +287,8 @@ where
     Inx: Inbox<Memo = Z80Memo>,
     Mem: Memory16 + SmsMemory,
 {
+    sms.pause_irq.pause_pressed(sms.player_input.pause());
+
     loop {
         sms_vdp::line(&mut SmsVdpGraphicsImpler {
             graphics: &mut sms.graphics,

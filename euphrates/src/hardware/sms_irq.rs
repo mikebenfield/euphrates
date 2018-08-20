@@ -25,6 +25,18 @@ impl Default for SmsPauseInterruptState {
     }
 }
 
+impl SmsPauseInterruptState {
+    #[inline]
+    pub fn pause_pressed(&mut self, x: bool) {
+        if x && *self == SmsPauseInterruptState::Free {
+            *self = SmsPauseInterruptState::InterruptNeeded;
+        }
+        if !x && *self == SmsPauseInterruptState::InterruptTaken {
+            *self = SmsPauseInterruptState::Free;
+        }
+    }
+}
+
 impl<'a, V: 'a> Z80Irq for SmsZ80IrqImpler<'a, V>
 where
     V: SmsVdpInternal,
