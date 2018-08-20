@@ -15,7 +15,6 @@ mod utilities;
 #[macro_use]
 pub mod hardware;
 pub mod host_multimedia;
-pub mod impler;
 pub mod save;
 pub mod systems;
 
