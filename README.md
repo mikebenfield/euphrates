@@ -1,4 +1,4 @@
-# Euphrates: A Sega Master System Emulator
+# Euphrates: A Game Console Emulator
 
 Euphrates is an emulator for the Sega Master System, Sega Game Gear, and
 Sega SG-1000 Game consoles.
@@ -12,16 +12,19 @@ This repository consists of these crates:
 - `euphrates_x64`, a small library that can make Euphrates a bit more
 performant on x86-64 systems with BMI2 instructions;
 
+- `euphrates_virtual_memory`, a library implementing memory banking via native
+virtual memory;
+
 - `euphrates_cli`, an application to run Euphrates from the command line
 using `euphrates_sdl` for audio and video.
 
 If you just want to play some games, see the `euphrates_cli` crate. All
 officially released games that I've tested work. However, note that an excellent
 end user experience for playing games is not currently a high priority for
-Euphrates (for instance, you'll have to play with your keyboard, and you'll have
-to specify command line options for which memory map you want to use). Instead,
-Euphrates is intended to (eventually) be a platform for exploring artificial
-intelligence techniques.
+Euphrates (for instance, you'll have to play with your keyboard rather than a
+gamepad, and you'll have to specify command line options for which memory map
+you want to use). Instead, Euphrates is intended to (eventually) be a platform
+for exploring artificial intelligence techniques.
 
 See the README in the `euphrates` crate for more on Euphrates and its goals.
 

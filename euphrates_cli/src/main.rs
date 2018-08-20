@@ -96,7 +96,7 @@ fn run_rom(matches: &ArgMatches) -> Result<()> {
         sms_roms::from_file(&filename)?
     };
     let tv_system = match matches.value_of("tv").unwrap() {
-        "NTSC" => TvSystem::Ntsc,
+        "ntsc" => TvSystem::Ntsc,
         _ => TvSystem::Pal,
     };
     let kind = match matches.value_of("kind").unwrap() {
@@ -237,11 +237,11 @@ fn run() -> Result<()> {
 
     let tv_arg = Arg::with_name("tv")
         .long("tv")
-        .value_name("(NTSC|PAL)")
+        .value_name("(ntsc|pal)")
         .help("Use an NTSC or PAL Video Display Processor")
         .takes_value(true)
-        .possible_values(&["NTSC", "PAL"])
-        .default_value("NTSC");
+        .possible_values(&["ntsc", "pal"])
+        .default_value("ntsc");
 
     let frequency_validator = |s: String| {
         match s.as_ref() {

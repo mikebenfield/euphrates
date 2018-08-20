@@ -3,8 +3,8 @@
 Euphrates is an emulator for the Sega Master System, Sega Game Gear, and
 Sega SG-1000 Game consoles.
 
-This crate provides types and functions to provide Euphrates's multimedia needs
-with SDL2.
+This crate provides types and functions to implement Euphrates's multimedia
+traits with SDL2.
 
 ## License
 

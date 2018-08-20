@@ -8,14 +8,16 @@ It's available as a library, in the `euphrates` crate. This crate,
 
 To run `euphrates_cli`, you'll need to install Rust and SDL2.
 
-To play most Sega Master System ROMs:
+## Invoking euphrates_cli
+
+To play most Sega Master System ROMs, execute from this directory:
 ```
 cargo run --release -- rom --rom PATH_TO_ROM
 ```
 
 To play Codemasters games like Fantastic Dizzy:
 ```
-cargo run --release -- rom --rom PATH_TO_ROM --memory_map codemasters --tv PAL
+cargo run --release -- rom --rom PATH_TO_ROM --memory_map codemasters --tv pal
 ```
 
 To play Game Gear games:
@@ -33,7 +35,7 @@ Compilation will take a few minutes.
 During gameplay, control player 1 with keys WASDFG. Control player 2 with keys
 IJKL;'. Space is reset; P is pause (or, for the Game Gear, start).
 
-Press `n`
+## Saving and restoring
 
 If you want to be able to save states and playback, you should use the
 `--save_directory` option like this:
@@ -42,7 +44,7 @@ If you want to be able to save states and playback, you should use the
 cargo run --release -- rom --rom PATH_TO_ROM --save_directory PATH_TO_DIRECTORY
 ```
 
-During gameplay, press `Z` to save state. Press `r` to start recording gameplay
+During gameplay, press `x` to save state. Press `r` to start recording gameplay
 and `R` to save recorded gameplay.
 
 Resume from a saved state using
@@ -55,16 +57,47 @@ Run recorded gameplay using
 cargo run --release -- loadrecord --loadfile PATH_TO_RECORDED_GAMEPLAY
 ```
 
+To playback recorded gameplay at max speed and time the result:
+```
+cargo run --release -- playback --loadfile PATH_TO_RECORDED_GAMEPLAY --frequency unlimited
+```
+
+## Miscellaneous features
+
 If you have an x86-64 processor with BMI2 instructions, you can get better
-performance by instead invoking `cargo` as `cargo run --release --features
-euphrates_x64`.
+performance like this (this will require a recompile):
 
-If you run with the additional option `--debug true`, during gameplay, you can
-press `n` to print disassembly around the current Z80 instruction, or `N` to
-print a whole program disassembly. (Currently, whole program disassembly doesn't
-take into account memory banking; it just pretends that the memory map is a flat
-16 bit address space. This still works fine in most cases though.)
+```
+cargo run --release --features euphrates_x64` -- rom --rom PATH_TO_ROM
+```
 
+You can disable debugging features (see below) as follows:
+
+```
+cargo run --release -- rom --rom PATH_TO_ROM --debug false
+```
+
+This will provide a performance improvement (but one that is probably
+unnecessary for gameplay on modern computers).
+
+## Debugging
+
+Euphrates provides some debugging features (as long as you didn't invoke
+it with `--debug false`).
+
+During gameplay, you can press:
+
+* `n` to print disassembly around the current program counter;
+
+* `N` to print a whole-program disassembly;
+
+* `h` to hold execution;
+
+* `y` to step through one Z80 instruction;
+
+* `H` to resume execution;
+
+* `z` to display the current status of the emulated Z80 CPU.
 
 ## License
 

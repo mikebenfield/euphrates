@@ -1,38 +1,37 @@
-# Euphrates: A Sega Master System Emulator
+# Euphrates: A Game Console Emulator
 
 Euphrates is an emulator for the Sega Master System, Sega Game Gear, and
 Sega SG-1000 Game consoles.
 
 This crate, `euphrates`, is the main emulation library. It features emulation
 for the Z80 processor and other hardware components including the Sega Master
-System VDP. It also has a disassembler and infrastructure for other debugging
-tools.
+System VDP. It also has a disassembler and debugger.
 
 Euphrates is also available as a command line program; see the `euphrates_cli`
 crate.
 
 Euphrates is intended to be a platform for exploring artificial intelligence and
-reinforcement learning.
+reinforcement learning, but there are a few features that need to be added.
 
 ## Future
 
 The goal is to make Euphrates very fast, so that AI search methods may run
 extensive simulations as quickly as possible.
 
-To that end, the two most significant features I want to add to Euphrates
-are
+To that end, the most significant feature I will be adding soon is
 
-- [ ] dynamic recompilation;
+- [ ] dynamic recompilation,
 
-- [ ] using native virtual memory to emulate memory banking.
+and some time after that I will add
 
-Dynamic recompilation will be a pretty large undertaking. In the meantime,
+- [ ] GPU emulation of the video display processor.
+
+Dynamic recompilation will be a fairly large undertaking. In the meantime,
 some relatively straightforward features I will probably add are
 
 - [ ] Colecovision emulation;
 
-- [ ] An instruction-stepping debugger (this existed previously, but
-I removed it).
+- [ ] sound emulation via sine waves instead of square wves.
 
 Some bigger non-priority features I may add someday include
 
@@ -49,14 +48,9 @@ emulation for systems based on processors other than the Z80.
 
 ## Bugs
 
-- Compilation is obscenely slow. This may not be clear when compiling the
-`euphrates` library on its own, but it will become apparent when, for instance,
-compiling `euphrates_cli`. This is largely due to extensive use of type
-parameters.
-
-- There are a few graphical glitches on a few games.
-
-- If you load a saved state, sound may be glitchy for a few seconds.
+- Two VDP graphical modes are not implemented. These are not used by any
+official Master System, Game Gear, or SG-1000 game, but I'll need to implement
+them for the Colecovision.
 
 ## License
 
