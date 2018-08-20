@@ -1,10 +1,12 @@
-# Euphrates SDL2: Euphrates with the Simple DirectMedia Layer
+# Euphrates Virtual Memory
 
 Euphrates is an emulator for the Sega Master System, Sega Game Gear, and
 Sega SG-1000 Game consoles.
 
-This crate provides types and functions to provide Euphrates's multimedia needs
-with SDL2.
+This crate provides implementations of Euphrates's memory traits by exploiting
+virtual memory to emulate memory bank switching. At the moment it only works for
+Unix-like systems that have the MAP_ANON flag for mmap. Someday (maybe) I'll add
+a Windows implementation.
 
 ## License
 
