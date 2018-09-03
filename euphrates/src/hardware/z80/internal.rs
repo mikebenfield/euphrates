@@ -27,6 +27,7 @@ pub const ZF: u8 = 0x40;
 pub const SF: u8 = 0x80;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum Prefix {
     NoPrefix,
     Cb,
@@ -231,15 +232,75 @@ where
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[repr(C)]
 pub struct Z80State {
     pub cycles: u64,
     pub registers: [u16; 13],
     pub halted: bool,
-    /// iff1 is bit 0; iff2 is bit 1
-    pub iff: u8,
+    pub iff1: bool,
+    pub iff2: bool,
     pub prefix: Prefix,
-    pub interrupt_status: InterruptStatus,
     pub interrupt_mode: InterruptMode,
+    pub interrupt_status: InterruptStatus,
+}
+
+/// This module contains offsets for the fields of the Z80State. It's probably
+/// only needed for code in C or assembly.
+///
+/// Each public const is the offset, in bytes, of that feature from the
+/// beginning of the `Z80State` struct.
+pub mod offsets {
+    use super::*;
+
+    macro_rules! def_reg8_offset {
+        ($reg:ident) => {
+            pub const $reg: usize = 8 + Reg8::$reg as usize;
+        };
+    }
+
+    macro_rules! def_reg8_offset_all {
+        ($($reg: ident,)*) => {
+            $(
+                def_reg8_offset!{$reg}
+            )*
+        }
+    }
+
+    def_reg8_offset_all!{
+        C, B, E, D, F, A, L, H, C0, B0, E0, D0, F0, A0, L0,
+        H0, IXL, IXH, IYL, IYH, SPL, SPH, PCL, PCH, I, R,
+    }
+
+    macro_rules! def_reg16_offset {
+        ($reg:ident) => {
+            pub const $reg: usize = 8 + 2 * (Reg16::$reg as usize);
+        };
+    }
+
+    macro_rules! def_reg16_offset_all {
+        ($($reg: ident,)*) => {
+            $(
+                def_reg16_offset!{$reg}
+            )*
+        }
+    }
+
+    def_reg16_offset_all! {
+        BC, DE, AF, HL, BC0, DE0,
+        AF0, HL0, IX, IY, SP, PC,
+    }
+
+    pub const CYCLES: usize = 0;
+
+    pub const HALTED: usize = 8 + 2 * 13;
+
+    pub const IFF1: usize = HALTED + 1;
+
+    pub const IFF2: usize = IFF1 + 1;
+
+    pub const PREFIX: usize = IFF2 + 1;
+
+    pub const INTERRUPT_MODE: usize = PREFIX + 1;
 }
 
 impl Default for Z80State {
@@ -248,7 +309,8 @@ impl Default for Z80State {
             cycles: 0,
             registers: Default::default(),
             halted: false,
-            iff: 0,
+            iff1: false,
+            iff2: false,
             prefix: Prefix::NoPrefix,
             interrupt_status: Default::default(),
             interrupt_mode: Default::default(),
@@ -314,30 +376,22 @@ impl Z80Internal for Z80State {
 
     #[inline]
     fn iff1(&self) -> bool {
-        self.iff & 1 != 0
+        self.iff1
     }
 
     #[inline]
     fn set_iff1(&mut self, x: bool) {
-        if x {
-            self.iff |= 1
-        } else {
-            self.iff &= 0xFE
-        }
+        self.iff1 = x
     }
 
     #[inline]
     fn iff2(&self) -> bool {
-        self.iff & 2 != 0
+        self.iff2
     }
 
     #[inline]
     fn set_iff2(&mut self, x: bool) {
-        if x {
-            self.iff |= 2
-        } else {
-            self.iff &= 0xFD
-        }
+        self.iff2 = x
     }
 
     #[inline]

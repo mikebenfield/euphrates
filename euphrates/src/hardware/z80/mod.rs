@@ -45,9 +45,9 @@ use self::arithmetic_help::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum InterruptMode {
-    Im0,
-    Im1,
-    Im2,
+    Im0 = 0,
+    Im1 = 1,
+    Im2 = 2,
 }
 
 impl Default for InterruptMode {
