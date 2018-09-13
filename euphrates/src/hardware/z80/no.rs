@@ -2,97 +2,83 @@
 
 use super::*;
 
+use super::instruction::instruction_traits::*;
+
 use self::Reg16::*;
 use self::Reg8::*;
 
-pub trait Z80No {
-    fn adc16(&mut self, x: Reg16, y: Reg16);
-    fn add16(&mut self, x: Reg16, y: Reg16);
-    fn ccf(&mut self);
-    fn cpl(&mut self);
-    fn daa(&mut self);
-    fn dec16(&mut self, x: Reg16);
-    fn di(&mut self);
-    fn djnz(&mut self, e: i8);
+pub struct Z80NoImpler<Z: ?Sized>(*mut Z);
 
-    /// Note that just calling `ei` is not sufficient to emulate the `ei`
-    /// instruction.
-    ///
-    /// This method will set the `iff1` and `iff2` flags, as it's supposed to -
-    /// but the Z80 actually does not accept interrupts until after the
-    /// *following* instruction, so the emulator must do some work to make that
-    /// happen.
-    fn ei(&mut self);
-    fn exx(&mut self);
-    fn halt(&mut self);
-    fn im(&mut self, x: u8);
-    fn inc16(&mut self, x: Reg16);
-    fn jpcc(&mut self, cc: ConditionCode, nn: u16);
-    fn jr(&mut self, e: i8);
-    fn jrcc(&mut self, cc: ConditionCode, e: i8);
-    fn ld_ir(&mut self, x: Reg8, y: Reg8);
-    fn neg(&mut self);
-    fn nop(&mut self);
-    fn sbc16(&mut self, x: Reg16, y: Reg16);
-    fn scf(&mut self);
+impl<Z: ?Sized> Z80NoImpler<Z> {
+    #[inline(always)]
+    pub unsafe fn new(z: &mut Z) -> Self {
+        Z80NoImpler(z)
+    }
 
-    /// pseudo instruction
-    fn dd(&mut self);
-
-    /// pseudo instruction
-    fn fd(&mut self);
-
-    /// pseudo instruction
-    fn cb(&mut self);
-
-    /// pseudo instruction
-    fn ed(&mut self);
-
-    /// pseudo instruction
-    fn ddcb(&mut self);
-
-    /// pseudo instruction
-    fn fdcb(&mut self);
+    #[inline(always)]
+    fn z80(&mut self) -> &mut Z {
+        unsafe { &mut *self.0 }
+    }
 }
 
-impl<T> Z80No for T
+impl<Z> Adc16<Reg16, Reg16> for Z80NoImpler<Z>
 where
-    T: Z80Internal + ?Sized,
+    Z: Z80Internal + ?Sized,
 {
     fn adc16(&mut self, x: Reg16, y: Reg16) {
-        let x0 = self.reg16(x);
-        let y0 = self.reg16(y);
-        let cf = if self.is_set_flag(CF) { 1u8 } else { 0u8 };
-        let result = adc16_help(self, x0, y0, cf as u16);
-        self.set_reg16(x, result);
+        let x0 = self.z80().reg16(x);
+        let y0 = self.z80().reg16(y);
+        let cf = if self.z80().is_set_flag(CF) { 1u8 } else { 0u8 };
+        let result = adc16_help(self.z80(), x0, y0, cf as u16);
+        self.z80().set_reg16(x, result);
     }
+}
 
+impl<Z> Add16<Reg16, Reg16> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn add16(&mut self, x: Reg16, y: Reg16) {
-        let x0 = self.reg16(x);
-        let y0 = self.reg16(y);
-        let result = add16_help(self, x0, y0, 0);
-        self.set_reg16(x, result);
+        let x0 = self.z80().reg16(x);
+        let y0 = self.z80().reg16(y);
+        let result = add16_help(self.z80(), x0, y0, 0);
+        self.z80().set_reg16(x, result);
     }
+}
 
+impl<Z> Ccf for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn ccf(&mut self) {
-        let cf = self.is_set_flag(CF);
-        self.set_flag_by(HF, cf);
-        self.set_flag_by(CF, !cf);
-        self.clear_flag(NF);
+        let cf = self.z80().is_set_flag(CF);
+        self.z80().set_flag_by(HF, cf);
+        self.z80().set_flag_by(CF, !cf);
+        self.z80().clear_flag(NF);
     }
+}
 
+impl<Z> Cpl for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn cpl(&mut self) {
-        let a = self.reg8(A);
-        self.set_reg8(A, !a);
-        self.set_flag(HF | NF);
+        let a = self.z80().reg8(A);
+        self.z80().set_reg8(A, !a);
+        self.z80().set_flag(HF | NF);
     }
+}
 
+impl<Z> Daa for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn daa(&mut self) {
         // see the table in Young
-        let a = self.reg8(A);
-        let cf = self.is_set_flag(CF);
-        let hf = self.is_set_flag(HF);
-        let nf = self.is_set_flag(NF);
+        let a = self.z80().reg8(A);
+        let cf = self.z80().is_set_flag(CF);
+        let hf = self.z80().is_set_flag(HF);
+        let nf = self.z80().is_set_flag(NF);
         let diff = match (cf, a >> 4, hf, a & 0xF) {
             (false, 0...9, false, 0...9) => 0,
             (false, 0...9, true, 0...9) => 0x6,
@@ -119,147 +105,263 @@ where
         } else {
             a.wrapping_add(diff)
         };
-        self.set_reg8(A, new_a);
+        self.z80().set_reg8(A, new_a);
 
-        self.set_parity(new_a);
-        self.set_zero(new_a);
-        self.set_sign(new_a);
-        self.set_flag_by(CF, new_cf != 0);
-        self.set_flag_by(HF, new_hf != 0);
+        self.z80().set_parity(new_a);
+        self.z80().set_zero(new_a);
+        self.z80().set_sign(new_a);
+        self.z80().set_flag_by(CF, new_cf != 0);
+        self.z80().set_flag_by(HF, new_hf != 0);
     }
+}
 
+impl<Z> Dec16<Reg16> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn dec16(&mut self, x: Reg16) {
-        let val = self.reg16(x);
-        self.set_reg16(x, val.wrapping_sub(1));
+        let val = self.z80().reg16(x);
+        self.z80().set_reg16(x, val.wrapping_sub(1));
     }
+}
 
+impl<Z> Di for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn di(&mut self) {
-        self.set_iff1(false);
-        self.set_iff2(false);
-        self.set_interrupt_status(InterruptStatus::NoCheck);
+        self.z80().set_iff1(false);
+        self.z80().set_iff2(false);
+        self.z80().set_interrupt_status(InterruptStatus::NoCheck);
     }
+}
 
+impl<Z> Djnz<i8> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn djnz(&mut self, e: i8) {
-        let b = self.reg8(B);
+        let b = self.z80().reg8(B);
         let new_b = b.wrapping_sub(1);
-        self.set_reg8(B, new_b);
+        self.z80().set_reg8(B, new_b);
         if new_b != 0 {
+            self.z80().inc_cycles(13);
             self.jr(e);
+        } else {
+            self.z80().inc_cycles(8);
         }
     }
+}
 
+impl<Z> Ei for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn ei(&mut self) {
-        self.set_iff1(true);
-        self.set_iff2(true);
-        let cycles = self.cycles().wrapping_add(4);
-        self.set_interrupt_status(InterruptStatus::Ei(cycles));
+        self.z80().set_iff1(true);
+        self.z80().set_iff2(true);
+        let cycles = self.z80().cycles().wrapping_add(4);
+        self.z80().set_interrupt_status(InterruptStatus::Ei(cycles));
     }
+}
 
+impl<Z> Exx for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn exx(&mut self) {
         for &(reg1, reg2) in [(BC, BC0), (DE, DE0), (HL, HL0)].iter() {
-            let val1 = self.reg16(reg1);
-            let val2 = self.reg16(reg2);
-            self.set_reg16(reg1, val2);
-            self.set_reg16(reg2, val1);
+            let val1 = self.z80().reg16(reg1);
+            let val2 = self.z80().reg16(reg2);
+            self.z80().set_reg16(reg1, val2);
+            self.z80().set_reg16(reg2, val1);
         }
     }
+}
 
+impl<Z> Halt for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn halt(&mut self) {
-        self.set_prefix(Prefix::Halt);
+        self.z80().set_prefix(Prefix::Halt);
     }
+}
 
+impl<Z> Im<u8> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn im(&mut self, x: u8) {
         match x {
-            0 => self.set_interrupt_mode(InterruptMode::Im0),
-            1 => self.set_interrupt_mode(InterruptMode::Im1),
-            2 => self.set_interrupt_mode(InterruptMode::Im2),
+            0 => self.z80().set_interrupt_mode(InterruptMode::Im0),
+            1 => self.z80().set_interrupt_mode(InterruptMode::Im1),
+            2 => self.z80().set_interrupt_mode(InterruptMode::Im2),
             _ => panic!("Z80: Invalid interrupt mode"),
         }
     }
+}
 
+impl<Z> Inc16<Reg16> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn inc16(&mut self, x: Reg16) {
-        let x0 = self.reg16(x);
-        self.set_reg16(x, x0.wrapping_add(1));
+        let x0 = self.z80().reg16(x);
+        self.z80().set_reg16(x, x0.wrapping_add(1));
     }
+}
 
+impl<Z> Jpcc<ConditionCode, u16> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn jpcc(&mut self, cc: ConditionCode, nn: u16) {
-        let flags = self.reg8(F);
+        let flags = self.z80().reg8(F);
         if cc.check(flags) {
-            self.set_reg16(PC, nn);
+            self.z80().set_reg16(PC, nn);
         }
     }
+}
 
+impl<Z> Jr<i8> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn jr(&mut self, e: i8) {
-        let pc = self.reg16(PC);
-        self.set_reg16(PC, pc.wrapping_add(e as i16 as u16));
+        let pc = self.z80().reg16(PC);
+        self.z80().set_reg16(PC, pc.wrapping_add(e as i16 as u16));
     }
+}
 
+impl<Z> Jrcc<ConditionCode, i8> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn jrcc(&mut self, cc: ConditionCode, e: i8) {
-        let flags = self.reg8(F);
+        let flags = self.z80().reg8(F);
         if cc.check(flags) {
+            self.z80().inc_cycles(12);
             self.jr(e);
+        } else {
+            self.z80().inc_cycles(7);
         }
     }
+}
 
+impl<Z> LdIr<Reg8, Reg8> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn ld_ir(&mut self, x: Reg8, y: Reg8) {
-        let y0 = self.reg8(y);
-        self.set_reg8(x, y0);
-        let iff2 = self.iff2();
-        self.set_sign(y0);
-        self.set_zero(y0);
-        self.clear_flag(NF | HF);
-        self.set_flag_by(PF, iff2);
+        let y0 = self.z80().reg8(y);
+        self.z80().set_reg8(x, y0);
+        let iff2 = self.z80().iff2();
+        self.z80().set_sign(y0);
+        self.z80().set_zero(y0);
+        self.z80().clear_flag(NF | HF);
+        self.z80().set_flag_by(PF, iff2);
     }
+}
 
+impl<Z> Neg for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn neg(&mut self) {
-        let a = self.reg8(A);
-        let result = sub_help(self, 0, a, 0);
-        self.set_reg8(A, result);
-        self.set_flag_by(PF, a == 0x80);
-        self.set_flag_by(CF, a != 0);
+        let a = self.z80().reg8(A);
+        let result = sub_help(self.z80(), 0, a, 0);
+        self.z80().set_reg8(A, result);
+        self.z80().set_flag_by(PF, a == 0x80);
+        self.z80().set_flag_by(CF, a != 0);
     }
+}
 
+impl<Z> Nop for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn nop(&mut self) {}
+}
 
+impl<Z> Sbc16<Reg16, Reg16> for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn sbc16(&mut self, x: Reg16, y: Reg16) {
-        let x0 = self.reg16(x);
-        let y0 = self.reg16(y);
-        let cf = if self.is_set_flag(CF) { 1u8 } else { 0u8 };
-        let result = adc16_help(self, x0, !y0, (1 ^ cf) as u16);
-        self.set_reg16(x, result);
-        let cf = self.is_set_flag(CF);
-        let hf = self.is_set_flag(HF);
-        self.set_flag_by(CF, !cf);
-        self.set_flag_by(HF, !hf);
-        self.set_flag(NF);
+        let x0 = self.z80().reg16(x);
+        let y0 = self.z80().reg16(y);
+        let cf = if self.z80().is_set_flag(CF) { 1u8 } else { 0u8 };
+        let result = adc16_help(self.z80(), x0, !y0, (1 ^ cf) as u16);
+        self.z80().set_reg16(x, result);
+        let cf = self.z80().is_set_flag(CF);
+        let hf = self.z80().is_set_flag(HF);
+        self.z80().set_flag_by(CF, !cf);
+        self.z80().set_flag_by(HF, !hf);
+        self.z80().set_flag(NF);
     }
+}
 
+impl<Z> Scf for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn scf(&mut self) {
-        self.clear_flag(HF | NF);
-        self.set_flag(CF);
+        self.z80().clear_flag(HF | NF);
+        self.z80().set_flag(CF);
     }
+}
 
+impl<Z> Dd for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn dd(&mut self) {
-        self.set_prefix(Prefix::Dd);
+        self.z80().set_prefix(Prefix::Dd);
     }
+}
 
+impl<Z> Fd for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn fd(&mut self) {
-        self.set_prefix(Prefix::Fd);
+        self.z80().set_prefix(Prefix::Fd);
     }
+}
 
+impl<Z> Cb for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn cb(&mut self) {
-        self.set_prefix(Prefix::Cb);
+        self.z80().set_prefix(Prefix::Cb);
     }
+}
 
+impl<Z> Ed for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn ed(&mut self) {
-        self.set_prefix(Prefix::Ed);
+        self.z80().set_prefix(Prefix::Ed);
     }
+}
 
+impl<Z> Ddcb for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn ddcb(&mut self) {
-        self.set_prefix(Prefix::DdCb);
+        self.z80().set_prefix(Prefix::DdCb);
     }
+}
 
+impl<Z> Fdcb for Z80NoImpler<Z>
+where
+    Z: Z80Internal + ?Sized,
+{
     fn fdcb(&mut self) {
-        self.set_prefix(Prefix::FdCb);
+        self.z80().set_prefix(Prefix::FdCb);
     }
 }

@@ -1,4 +1,3 @@
-use super::instructions::Z80InstructionsImpler;
 use super::*;
 use hardware::io16::Io16;
 use hardware::memory16::Memory16;
@@ -29,26 +28,68 @@ pub struct Z80RunImpler<
     pub inbox: &'a mut Inb,
 }
 
+impl<'a, Z, M, Irq, I, Inb> instruction::Z80Emulator for Z80RunImpler<'a, Z, M, Irq, I, Inb>
+where
+    Z: 'a + ?Sized + Z80Internal,
+    M: 'a + ?Sized + Memory16,
+    Irq: 'a + ?Sized + Z80Irq,
+    I: 'a + ?Sized + Io16,
+    Inb: 'a + ?Sized + Inbox<Memo = Z80Memo>,
+{
+    type No = Z80NoImpler<Z>;
+
+    type Mem = Z80MemImpler<Z, M>;
+
+    type Io = Z80IoImpler<Z, M, I>;
+
+    #[inline]
+    fn no<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut Self::No),
+    {
+        f(unsafe { &mut Z80NoImpler::new(self.z80) });
+    }
+
+    #[inline]
+    fn mem<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut Self::Mem),
+    {
+        f(unsafe { &mut Z80MemImpler::new(self.z80, self.memory) });
+    }
+
+    #[inline]
+    fn io<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut Self::Io),
+    {
+        f(unsafe { &mut Z80IoImpler::new(self.z80, self.memory, self.io) });
+    }
+
+    #[inline]
+    fn read_pc(&mut self) -> u8 {
+        self.memory.read(self.z80.reg16(PC))
+    }
+
+    #[inline]
+    fn inc_pc(&mut self) {
+        let pc = self.z80.reg16(PC);
+        self.z80.set_reg16(PC, pc.wrapping_add(1))
+    }
+
+    #[inline]
+    fn inc_cycles(&mut self, c: u64) {
+        let cycles = self.z80.cycles();
+        self.z80.set_cycles(cycles + c);
+    }
+}
+
 macro_rules! interrupt {
     ($x:expr; $var:ident; $($rest:tt)*) => {{
         let mut $var = Z80InterruptImpler {
             z80: $x.z80,
             memory: $x.memory,
             irq: $x.irq,
-            inbox: $x.inbox,
-        };
-        {
-            $($rest)*
-        }
-    }};
-}
-
-macro_rules! instructions {
-    ($x:expr; $var:ident; $($rest:tt)*) => {{
-        let mut $var = Z80InstructionsImpler {
-            z80: $x.z80,
-            memory: $x.memory,
-            io: $x.io,
             inbox: $x.inbox,
         };
         {
@@ -69,22 +110,6 @@ fn run<'a, Z: 'a, M: 'a, Irq: 'a, I: 'a, Inb: 'a>(
 {
     use self::InterruptStatus::*;
     use self::Prefix::*;
-
-    fn read_pc<'a, Z: 'a, M: 'a, Irq: 'a, I: 'a, Inb: 'a>(
-        z: &mut Z80RunImpler<'a, Z, M, Irq, I, Inb>,
-    ) -> u8
-    where
-        Z: Z80Internal + ?Sized,
-        M: Memory16 + ?Sized,
-        Irq: Z80Irq + ?Sized,
-        I: Io16 + ?Sized,
-        Inb: Inbox<Memo = Z80Memo> + ?Sized,
-    {
-        let pc = z.z80.reg16(PC);
-        let opcode: u8 = z.memory.read(pc);
-        z.z80.set_reg16(PC, pc.wrapping_add(1));
-        opcode
-    }
 
     if z.z80.interrupt_status() == InterruptStatus::NoCheck {
         z.z80.set_interrupt_status(InterruptStatus::Check);
@@ -112,44 +137,32 @@ fn run<'a, Z: 'a, M: 'a, Irq: 'a, I: 'a, Inb: 'a>(
             (NoPrefix, Ei(ei_cycles)) if z80_cycles > ei_cycles => {
                 interrupt!{z; i; i.check_interrupts()};
             }
-            (NoPrefix, _) => {
-                z.z80.inc_r(1);
-                let opcode = read_pc(z);
-                instructions!{z; i; instructions::execute_noprefix(&mut i, opcode)};
-            }
+            (NoPrefix, _) => instruction::noprefix(z),
             (Cb, _) => {
                 z.z80.set_prefix(NoPrefix);
-                let opcode = read_pc(z);
-                instructions!{z; i; instructions::execute_cb(&mut i, opcode)};
+                instruction::cb(z);
             }
             (Ed, _) => {
                 z.z80.set_prefix(NoPrefix);
-                let opcode = read_pc(z);
-                instructions!{z; i; instructions::execute_ed(&mut i, opcode)};
+                instruction::ed(z);
             }
             (Dd, _) => {
                 z.z80.inc_r(1);
                 z.z80.set_prefix(NoPrefix);
-                let opcode = read_pc(z);
-                instructions!{z; i; instructions::execute_dd(&mut i, opcode)};
+                instruction::dd(z);
             }
             (Fd, _) => {
                 z.z80.inc_r(1);
                 z.z80.set_prefix(NoPrefix);
-                let opcode = read_pc(z);
-                instructions!{z; i; instructions::execute_fd(&mut i, opcode)};
+                instruction::fd(z);
             }
             (DdCb, _) => {
                 z.z80.set_prefix(NoPrefix);
-                let _ = read_pc(z);
-                let opcode = read_pc(z);
-                instructions!{z; i; instructions::execute_ddcb(&mut i, opcode)};
+                instruction::ddcb(z);
             }
             (FdCb, _) => {
                 z.z80.set_prefix(NoPrefix);
-                let _ = read_pc(z);
-                let opcode = read_pc(z);
-                instructions!{z; i; instructions::execute_fdcb(&mut i, opcode)};
+                instruction::fdcb(z);
             }
         }
     }

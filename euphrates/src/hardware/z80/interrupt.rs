@@ -57,21 +57,17 @@ where
             self.z80.set_iff2(false);
             self.z80.set_prefix(Prefix::NoPrefix);
 
+            use self::instruction::instruction_traits::Rst;
+
             match self.z80.interrupt_mode() {
                 InterruptMode::Im1 => {
-                    Z80MemImpler {
-                        z80: self.z80,
-                        memory: self.memory,
-                    }.rst(0x38);
+                    unsafe { Z80MemImpler::new(self.z80, self.memory).rst(0x38u8) };
                     self.z80.inc_cycles(13);
                 }
                 InterruptMode::Im2 => {
                     let i = self.z80.reg8(Reg8::I);
                     let new_pc = utilities::to16(x, i);
-                    Z80MemImpler {
-                        z80: self.z80,
-                        memory: self.memory,
-                    }.rst(new_pc);
+                    unsafe { Z80MemImpler::new(self.z80, self.memory).rst(new_pc) };
                     self.z80.inc_cycles(19);
                 }
                 _ => unimplemented!(),
@@ -80,13 +76,12 @@ where
     }
 
     fn nonmaskable_interrupt(&mut self) {
+        use self::instruction::instruction_traits::Rst;
+
         self.z80.inc_r(1);
         self.z80.set_iff1(false);
         self.z80.set_prefix(Prefix::NoPrefix);
         self.z80.inc_cycles(11);
-        Z80MemImpler {
-            z80: self.z80,
-            memory: self.memory,
-        }.rst(0x66);
+        unsafe { Z80MemImpler::new(self.z80, self.memory).rst(0x66u8) };
     }
 }

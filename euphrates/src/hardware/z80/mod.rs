@@ -2,25 +2,11 @@
 
 use std::fmt;
 
+pub mod instruction;
+
 #[macro_use]
 mod instruction_list;
 
-#[macro_use]
-mod macro_noprefix;
-#[macro_use]
-mod macro_cb;
-#[macro_use]
-mod macro_ed;
-#[macro_use]
-mod macro_dd;
-#[macro_use]
-mod macro_fd;
-#[macro_use]
-mod macro_ddcb;
-#[macro_use]
-mod macro_fdcb;
-
-pub mod instructions;
 mod internal;
 mod interrupt;
 mod io;

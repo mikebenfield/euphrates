@@ -7,41 +7,21 @@ use self::Reg8::*;
 
 use super::*;
 
-/// Z80 instructions that require `Memory16` and `Io`.
-pub trait Z80Io {
-    fn in_c(&mut self, x: Reg8, y: Reg8);
-
-    fn in_f(&mut self, x: Reg8);
-
-    fn in_n(&mut self, x: Reg8, y: u8);
-
-    fn ind(&mut self);
-
-    fn indr(&mut self);
-
-    fn ini(&mut self);
-
-    fn inir(&mut self);
-
-    fn otdr(&mut self);
-
-    fn otir(&mut self);
-
-    fn out_c<T>(&mut self, x: Reg8, y: T)
-    where
-        T: Viewable<u8>;
-
-    fn out_n(&mut self, x: u8, y: Reg8);
-
-    fn outd(&mut self);
-
-    fn outi(&mut self);
+pub struct Z80IoImpler<Z: ?Sized, M: ?Sized, I: ?Sized> {
+    z80: *mut Z,
+    memory: *mut M,
+    io: *mut I,
 }
 
-pub struct Z80IoImpler<'a, Z: 'a + ?Sized, M: 'a + ?Sized, I: 'a + ?Sized> {
-    pub z80: &'a mut Z,
-    pub memory: &'a mut M,
-    pub io: &'a mut I,
+impl<Z: ?Sized, M: ?Sized, I: ?Sized> Z80IoImpler<Z, M, I> {
+    #[inline(always)]
+    pub unsafe fn new(z: &mut Z, m: &mut M, i: &mut I) -> Self {
+        Z80IoImpler {
+            z80: z,
+            memory: m,
+            io: i,
+        }
+    }
 }
 
 pub trait Z80IoT: Z80MemT {
@@ -50,7 +30,7 @@ pub trait Z80IoT: Z80MemT {
     fn io(&mut self) -> &mut Self::Io;
 }
 
-impl<'a, Z: 'a + ?Sized, M: 'a + ?Sized, I: 'a + ?Sized> Z80MemT for Z80IoImpler<'a, Z, M, I>
+impl<Z: ?Sized, M: ?Sized, I: ?Sized> Z80MemT for Z80IoImpler<Z, M, I>
 where
     Z: Z80Internal,
     M: Memory16,
@@ -60,16 +40,16 @@ where
 
     #[inline(always)]
     fn z80(&mut self) -> &mut Self::Z80 {
-        self.z80
+        unsafe { &mut *self.z80 }
     }
 
     #[inline(always)]
     fn memory(&mut self) -> &mut Self::Memory {
-        self.memory
+        unsafe { &mut *self.memory }
     }
 }
 
-impl<'a, Z: 'a, M: 'a, I: 'a> Z80IoT for Z80IoImpler<'a, Z, M, I>
+impl<Z, M, I> Z80IoT for Z80IoImpler<Z, M, I>
 where
     Z: Z80Internal + ?Sized,
     M: Memory16 + ?Sized,
@@ -79,13 +59,15 @@ where
 
     #[inline(always)]
     fn io(&mut self) -> &mut Self::Io {
-        self.io
+        unsafe { &mut *self.io }
     }
 }
 
-impl<U> Z80Io for U
+use super::instruction::instruction_traits::*;
+
+impl<U> InC<Reg8, Reg8> for U
 where
-    U: Z80IoT + ?Sized,
+    U: Z80IoT,
 {
     fn in_c(&mut self, x: Reg8, y: Reg8) {
         let address_lo = y.view(self);
@@ -94,11 +76,21 @@ where
         let val = self.io().input(address);
         x.change(self, val);
     }
+}
 
+impl<U> InF<Reg8> for U
+where
+    U: Z80IoT,
+{
     fn in_f(&mut self, x: Reg8) {
         in_help(self, x);
     }
+}
 
+impl<U> InN<Reg8, u8> for U
+where
+    U: Z80IoT,
+{
     fn in_n(&mut self, x: Reg8, y: u8) {
         let address_lo = y.view(self);
         let address_hi = x.view(self);
@@ -106,57 +98,102 @@ where
         let val = self.io().input(address);
         x.change(self, val);
     }
+}
 
+impl<U> Ind for U
+where
+    U: Z80IoT,
+{
     fn ind(&mut self) {
         let new_b = inid_help(self, 0xFFFF);
         self.z80().set_zero(new_b);
         self.z80().set_flag(NF);
     }
+}
 
+impl<U> Indr for U
+where
+    U: Z80IoT,
+{
     fn indr(&mut self) {
         self.ind();
         if self.z80().reg16(BC) != 0 {
             let pc = self.z80().reg16(PC);
             self.z80().set_reg16(PC, pc.wrapping_sub(2));
+            self.z80().inc_cycles(21);
+        } else {
+            self.z80().inc_cycles(16);
         }
     }
+}
 
+impl<U> Ini for U
+where
+    U: Z80IoT,
+{
     fn ini(&mut self) {
         let new_b = inid_help(self, 1);
 
         self.z80().set_zero(new_b);
         self.z80().set_flag(NF);
     }
+}
 
+impl<U> Inir for U
+where
+    U: Z80IoT,
+{
     fn inir(&mut self) {
         self.ini();
         if self.z80().reg16(BC) != 0 {
             let pc = self.z80().reg16(PC);
             self.z80().set_reg16(PC, pc.wrapping_sub(2));
+            self.z80().inc_cycles(21);
+        } else {
+            self.z80().inc_cycles(16);
         }
     }
+}
 
+impl<U> Otdr for U
+where
+    U: Z80IoT,
+{
     fn otdr(&mut self) {
         self.outd();
         if self.z80().reg8(B) != 0 {
             let pc = self.z80().reg16(PC);
             self.z80().set_reg16(PC, pc.wrapping_sub(2));
+            self.z80().inc_cycles(21);
+        } else {
+            self.z80().inc_cycles(16);
         }
     }
+}
 
+impl<U> Otir for U
+where
+    U: Z80IoT,
+{
     fn otir(&mut self) {
         self.outi();
 
         if self.z80().reg8(B) != 0 {
             let pc = self.z80().reg16(PC);
             self.z80().set_reg16(PC, pc.wrapping_sub(2));
+            self.z80().inc_cycles(21);
+        } else {
+            self.z80().inc_cycles(16);
         }
     }
+}
 
-    fn out_c<T>(&mut self, x: Reg8, y: T)
-    where
-        T: Viewable<u8>,
-    {
+impl<U, T> OutC<Reg8, T> for U
+where
+    U: Z80IoT,
+    T: Viewable<u8>,
+{
+    fn out_c(&mut self, x: Reg8, y: T) {
         let address_lo = x.view(self);
         let address_hi = B.view(self);
         let address = utilities::to16(address_lo, address_hi);
@@ -166,7 +203,12 @@ where
         // our output may have triggered an interrupt
         self.z80().set_interrupt_status(InterruptStatus::Check);
     }
+}
 
+impl<U> OutN<u8, Reg8> for U
+where
+    U: Z80IoT,
+{
     fn out_n(&mut self, x: u8, y: Reg8) {
         let address_lo = x.view(self);
         let address_hi = A.view(self);
@@ -177,7 +219,12 @@ where
         // our output may have triggered an interrupt
         self.z80().set_interrupt_status(InterruptStatus::Check);
     }
+}
 
+impl<U> Outd for U
+where
+    U: Z80IoT,
+{
     fn outd(&mut self) {
         outid_help(self, 0xFFFF);
         let new_b = B.view(self);
@@ -188,7 +235,12 @@ where
         // our output may have triggered an interrupt
         self.z80().set_interrupt_status(InterruptStatus::Check);
     }
+}
 
+impl<U> Outi for U
+where
+    U: Z80IoT,
+{
     fn outi(&mut self) {
         outid_help(self, 1);
         let new_b = B.view(self);
