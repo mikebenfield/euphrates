@@ -2,31 +2,36 @@
 
 use std::fmt;
 
+// submodules purely internal to this module
+mod arithmetic_help;
+mod io;
+mod mem;
+mod no;
+
+use self::arithmetic_help::*;
+use self::io::*;
+use self::mem::*;
+use self::no::*;
+
+// module only needed to provide an alternative implementation of Z80
+// instructions
 pub mod instruction;
 
 #[macro_use]
 mod instruction_list;
 
+// submodules anyone accessing this module may need
 mod internal;
 mod interrupt;
-mod io;
 mod irq;
-mod mem;
 mod memo;
-mod no;
 mod run;
 
 pub use self::internal::*;
 pub use self::interrupt::*;
-pub use self::io::*;
 pub use self::irq::*;
-pub use self::mem::*;
 pub use self::memo::*;
-pub use self::no::*;
 pub use self::run::*;
-
-mod arithmetic_help;
-use self::arithmetic_help::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[repr(u8)]

@@ -1,5 +1,5 @@
 //! This module contains traits and functions useful for implementing a Z80
-//! emulator.
+//! emulator. Most consumers of the `z80` module will not need this module.
 
 use super::*;
 
@@ -175,6 +175,7 @@ pub mod instruction_traits {
 
 use self::instruction_traits::*;
 
+/// Z80 instructions that don't require memory access or IO.
 pub trait No:
     Adc16<Reg16, Reg16>
     + Add16<Reg16, Reg16>
@@ -238,6 +239,7 @@ where
 {
 }
 
+/// Z80 instructions that may require memory access, but not IO.
 pub trait Mem:
     Adc<Reg8, Reg8>
     + Adc<Reg8, u8>
@@ -498,6 +500,7 @@ where
 {
 }
 
+/// Z80 instructions that may require memory or IO.
 pub trait Io:
     InC<Reg8, Reg8>
     + InF<Reg8>

@@ -10,6 +10,8 @@ use self::Reg8::*;
 pub struct Z80NoImpler<Z: ?Sized>(*mut Z);
 
 impl<Z: ?Sized> Z80NoImpler<Z> {
+    /// Caller's responsibility to make sure the result doesn't live longer than
+    /// the reference
     #[inline(always)]
     pub unsafe fn new(z: &mut Z) -> Self {
         Z80NoImpler(z)

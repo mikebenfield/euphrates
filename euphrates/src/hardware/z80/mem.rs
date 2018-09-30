@@ -14,6 +14,8 @@ pub struct Z80MemImpler<Z: ?Sized, M: ?Sized> {
 }
 
 impl<Z: ?Sized, M: ?Sized> Z80MemImpler<Z, M> {
+    /// Caller's responsibility to make sure the result doesn't live longer than
+    /// the reference
     #[inline(always)]
     pub unsafe fn new(z80: &mut Z, memory: &mut M) -> Self {
         Z80MemImpler { z80, memory }
