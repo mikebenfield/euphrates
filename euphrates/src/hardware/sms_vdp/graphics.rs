@@ -635,7 +635,7 @@ where
                     continue;
                 }
                 if palette_indices[j] != 0 {
-                    line_buffer[render_x] = palette_indices[j] + 16;
+                    line_buffer[render_x2] = palette_indices[j] + 16;
                 }
             }
         }
