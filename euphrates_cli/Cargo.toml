@@ -2,6 +2,16 @@
 name = "euphrates_cli"
 version = "0.1.0"
 authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/mikebenfield/euphrates"
+homepage = "https://github.com/mikebenfield/euphrates"
+keywords = ["emulator", "video", "game", "console", "z80"]
+categories = ["emulators", "games"]
+description = """
+An emulator for the video game consoles Sega Master System, Game Gear, and
+SG-1000.
+"""
 
 [[bin]]
 name = "euphrates"
@@ -9,13 +19,13 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-euphrates = { path = "../euphrates" }
-euphrates_sdl2 = { path = "../euphrates_sdl2" }
-euphrates_x64 = { path = "../euphrates_x64", optional = true }
-euphrates_virtual_memory = { path = "../euphrates_virtual_memory", optional = true}
+euphrates = { version = "0.1.0", path = "../euphrates" }
+euphrates_sdl2 = { version = "0.1.0",  path = "../euphrates_sdl2" }
+euphrates_x64 = { version = "0.1.0", path = "../euphrates_x64", optional = true }
+euphrates_virtual_memory = { version = "0.1.0", path = "../euphrates_virtual_memory", optional = true}
 sdl2 = "0.31"
-clap = "2.31"
-failure = "0.1.1"
+clap = "2.32"
+failure = "0.1.2"
 
 [features]
 state_memory = []

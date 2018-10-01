@@ -2,12 +2,22 @@
 name = "euphrates_sdl2"
 version = "0.1.0"
 authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/mikebenfield/euphrates"
+homepage = "https://github.com/mikebenfield/euphrates"
+keywords = ["emulator", "video", "game", "console", "z80"]
+categories = ["emulators", "games"]
+description = """
+Allows the use of the SDL2 multimedia library with the Euphrates game console
+emulator.
+"""
 
 [lib]
 name = "euphrates_sdl2"
 path = "src/lib.rs"
 
 [dependencies]
-euphrates = { path = "../euphrates" }
+euphrates = { version = "0.1.0", path = "../euphrates" }
 sdl2 = "0.31"
-failure = "0.1.1"
+failure = "0.1.2"

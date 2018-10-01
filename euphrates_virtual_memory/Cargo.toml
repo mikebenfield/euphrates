@@ -2,12 +2,22 @@
 name = "euphrates_virtual_memory"
 version = "0.1.0"
 authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/mikebenfield/euphrates"
+homepage = "https://github.com/mikebenfield/euphrates"
+keywords = ["emulator", "video", "game", "console", "z80"]
+categories = ["emulators", "games"]
+description = """
+Allows the Euphrates game console emulator library to use native virtual memory
+to emulate memory bank switching.
+"""
 
 [lib]
 name = "euphrates_virtual_memory"
 path = "src/lib.rs"
 
 [dependencies]
-euphrates = { path = "../euphrates" }
-libc = "0.2"
-rand = "0.5"
+euphrates = { version = "0.1.0", path = "../euphrates" }
+libc = "0.2.43"
+rand = "0.5.5"

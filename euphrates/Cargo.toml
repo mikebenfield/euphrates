@@ -2,19 +2,28 @@
 name = "euphrates"
 version = "0.1.0"
 authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/mikebenfield/euphrates"
+homepage = "https://github.com/mikebenfield/euphrates"
+keywords = ["emulator", "video", "game", "console", "z80"]
+categories = ["emulators", "games"]
+description = """
+A library for emulating video game consoles, in particular the Sega Master
+System, Game Gear, and SG-1000.
+"""
 
 [lib]
 name = "euphrates"
 path = "src/lib.rs"
 
 [dependencies]
-sdl2 = "0.31"
-serde = { version = "1.0.59", features = ["rc"] }
-serde_derive = "1.0"
-bincode = "1.0"
-failure = "0.1.1"
+serde = { version = "1.0.79", features = ["rc"] }
+serde_derive = "1.0.79"
+bincode = "1.0.1"
+failure = "0.1.2"
 chrono = "0.4"
 
 [dev-dependencies]
-rand = "0.5"
+rand = "0.5.5"
 tempdir = "0.3"

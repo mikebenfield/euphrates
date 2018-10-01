@@ -3,7 +3,6 @@
 #[macro_use]
 extern crate failure;
 extern crate chrono;
-extern crate sdl2;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
