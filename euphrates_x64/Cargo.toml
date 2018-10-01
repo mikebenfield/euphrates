@@ -2,6 +2,16 @@
 name = "euphrates_x64"
 version = "0.1.0"
 authors = ["Michael Benfield <mike.benfield@gmail.com>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/mikebenfield/euphrates"
+homepage = "https://github.com/mikebenfield/euphrates"
+keywords = ["emulator", "video", "game", "console", "z80"]
+categories = ["emulators", "games"]
+description = """
+A crate providing improved performance for the Euphrates game console emulator,
+for x86-64 CPUs with BMI2 instructions.
+"""
 
 [dependencies]
 euphrates = { version = "0.1.0", path = "../euphrates" }
